@@ -3,7 +3,7 @@
  * Panel de Control Ejecutivo y Radar Operativo en Tiempo Real
  */
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   TrendingUp,
   DollarSign,
@@ -18,7 +18,12 @@ import {
   Building2,
   ArrowUpRight,
   ShieldAlert,
-  Sparkles
+  Sparkles,
+  Waves,
+  Compass,
+  Sun,
+  Calendar,
+  CreditCard
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -78,6 +83,37 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ state, onNavigate 
   const totalCommissions = todayShifts.reduce((sum, s) => sum + (s?.grossCommission || 0), 0);
   const estGrossMargin = totalGrossSales > 0 ? ((totalGrossSales - totalEstCostOfGoods - totalCommissions) / totalGrossSales) * 100 : 54;
 
+  const totalTransferSales = (sales || [])
+    .filter((s) => s.paymentMethod === 'transferencia' && s.timestamp.startsWith(today))
+    .reduce((sum, s) => sum + s.totalAmount, 0) +
+    todayShifts.reduce((sum, s) => sum + (s?.totalTransferSales || 0), 0);
+
+  // Recaudación y Unidades por Localidad / Playa Costera
+  const localityStats = useMemo(() => {
+    const map: Record<string, { totalAmount: number; units: number; count: number }> = {};
+    (sales || []).forEach((s) => {
+      const loc = s.locationName || 'Santa Teresita';
+      let norm = loc;
+      if (loc.includes('Santa Teresita')) norm = 'Santa Teresita';
+      else if (loc.includes('Mar del Tuyú')) norm = 'Mar del Tuyú';
+      else if (loc.includes('Costa del Este')) norm = 'Costa del Este';
+      else if (loc.includes('Las Toninas')) norm = 'Las Toninas';
+      else if (loc.includes('San Bernardo')) norm = 'San Bernardo';
+
+      if (!map[norm]) {
+        map[norm] = { totalAmount: 0, units: 0, count: 0 };
+      }
+      map[norm].totalAmount += s.totalAmount;
+      map[norm].units += s.quantityUnitsEquivalent;
+      map[norm].count += 1;
+    });
+
+    return Object.entries(map).map(([locality, data]) => ({
+      locality,
+      ...data
+    })).sort((a, b) => b.totalAmount - a.totalAmount);
+  }, [sales]);
+
   // Datos para gráfico por Vendedor
   const sellerChartData = todayShifts.map((s) => ({
     name: s.sellerName.split(' ')[0],
@@ -88,9 +124,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ state, onNavigate 
 
   // Datos para gráfico de Métodos de Pago
   const paymentData = [
-    { name: 'Efectivo', value: totalCashSales || 1 },
-    { name: 'Mercado Pago', value: totalMpSales || 1 }
-  ];
+    { name: 'Efectivo', value: totalCashSales || 0, fill: '#10b981' },
+    { name: 'Mercado Pago', value: totalMpSales || 0, fill: '#0ea5e9' },
+    { name: 'Transferencia', value: totalTransferSales || 0, fill: '#6366f1' }
+  ].filter((p) => p.value > 0);
+  if (paymentData.length === 0) {
+    paymentData.push({ name: 'Sin Ventas', value: 1, fill: '#64748b' });
+  }
 
   return (
     <div className="space-y-6 pb-12">
@@ -370,8 +410,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ state, onNavigate 
                     paddingAngle={5}
                     dataKey="value"
                   >
-                    <Cell fill="#10b981" />
-                    <Cell fill="#0ea5e9" />
+                    {paymentData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.fill} />
+                    ))}
                   </Pie>
                   <Tooltip
                     formatter={(val: any) => [`$${Number(val).toLocaleString()}`, 'Total']}
@@ -396,13 +437,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ state, onNavigate 
                 </span>
                 <span className="font-bold text-white">${totalMpSales.toLocaleString()}</span>
               </div>
+              <div className="flex items-center justify-between text-xs bg-slate-950/60 p-2 rounded-lg">
+                <span className="flex items-center text-indigo-400 font-medium">
+                  <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 mr-2"></span>
+                  Transferencias Bancarias
+                </span>
+                <span className="font-bold text-white">${totalTransferSales.toLocaleString()}</span>
+              </div>
             </div>
           </div>
 
           <div className="mt-4 pt-4 border-t border-slate-800">
             <button
               onClick={() => onNavigate('vouchers')}
-              className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 rounded-xl transition-all flex items-center justify-center space-x-1.5 border border-slate-700"
+              className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 rounded-xl transition-all flex items-center justify-center space-x-1.5 border border-slate-700 cursor-pointer"
             >
               <span>Auditar Comprobantes IA</span>
               <ArrowUpRight className="w-3.5 h-3.5" />
@@ -410,6 +458,158 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ state, onNavigate 
           </div>
         </div>
 
+      </div>
+
+      {/* Radar de Playas & Reportes de Vendedores en Vivo (Marea, Afluencia e Inconvenientes) */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+          <div className="flex items-center space-x-2">
+            <div className="w-8 h-8 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center">
+              <Waves className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-white flex items-center space-x-2">
+                <span>Radar de Playas & Condiciones Costeras en Vivo</span>
+                <span className="px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 text-[10px] font-bold">
+                  {state.beachReports?.length || 0} reportes
+                </span>
+              </h2>
+              <p className="text-xs text-slate-400">
+                Avisos de marea, afluencia y desplazamientos reportados por vendedores en la arena.
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => onNavigate('seller')}
+            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl border border-slate-700 transition-all flex items-center space-x-1.5 self-start sm:self-auto cursor-pointer"
+          >
+            <Compass className="w-3.5 h-3.5 text-sky-400" />
+            <span>Ver Terminal Vendedor</span>
+          </button>
+        </div>
+
+        {state.beachReports && state.beachReports.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {state.beachReports.map((report) => {
+              const isAlert = report.reportType === 'inconveniente';
+              const isOpp = report.reportType === 'oportunidad';
+              return (
+                <div
+                  key={report.id}
+                  className={`p-4 rounded-xl border transition-all text-xs space-y-2.5 ${
+                    isAlert
+                      ? 'bg-rose-950/20 border-rose-900/60'
+                      : isOpp
+                      ? 'bg-amber-950/20 border-amber-900/60'
+                      : 'bg-slate-950/80 border-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-extrabold text-sm text-white flex items-center space-x-1">
+                      <MapPin className="w-3.5 h-3.5 text-amber-400" />
+                      <span>{report.locality}</span>
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono">{report.timestamp}</span>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5 text-[10px]">
+                    <span className={`px-2 py-0.5 rounded-full font-bold ${
+                      report.tide === 'marea_alta' || report.tide === 'sin_playa_marea_llena'
+                        ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                        : 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
+                    }`}>
+                      🌊 {report.tide.replace(/_/g, ' ')}
+                    </span>
+
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                      👥 Afluencia: {report.crowdLevel}
+                    </span>
+
+                    {report.reportType && (
+                      <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-medium">
+                        {report.reportType.replace(/_/g, ' ')}
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="text-slate-200 text-xs leading-relaxed bg-slate-900/60 p-2.5 rounded-lg border border-slate-800/80">
+                    "{report.comments}"
+                  </p>
+
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-900">
+                    <span>Vendedor: <strong className="text-slate-300">{report.sellerName}</strong></span>
+                    {report.sectorDetails && <span className="italic">{report.sectorDetails}</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="p-6 text-center text-slate-500 text-xs bg-slate-950/60 rounded-xl">
+            No se han registrado reportes de playa hoy todavía.
+          </div>
+        )}
+      </div>
+
+      {/* Recaudación por Localidad / Playa (Costa Atlántica) */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div>
+            <h2 className="text-base font-bold text-white flex items-center space-x-2">
+              <MapPin className="w-4 h-4 text-amber-400" />
+              <span>Recaudación & Tequeños Vendidos por Localidad / Playa</span>
+            </h2>
+            <p className="text-xs text-slate-400">
+              Desglose geográfico de ventas en la Costa Atlántica (Santa Teresita, Mar del Tuyú, Costa del Este, etc.)
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {/* Gráfico de Barras */}
+          <div className="lg:col-span-2 h-56 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={localityStats} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                <XAxis dataKey="locality" stroke="#94a3b8" fontSize={11} />
+                <YAxis stroke="#94a3b8" fontSize={11} tickFormatter={(v) => `$${v / 1000}k`} />
+                <Tooltip
+                  formatter={(val: any) => [`$${Number(val).toLocaleString()}`, 'Recaudado']}
+                  contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', color: '#fff' }}
+                />
+                <Bar dataKey="totalAmount" fill="#38bdf8" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Tabla Resumen */}
+          <div className="space-y-2">
+            {localityStats.map((loc, idx) => (
+              <div
+                key={loc.locality}
+                className="p-2.5 bg-slate-950/70 border border-slate-800 rounded-xl flex items-center justify-between text-xs"
+              >
+                <div>
+                  <span className="font-bold text-white block">
+                    {idx + 1}. {loc.locality}
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    {loc.units} tequeños • {loc.count} tickets
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="font-mono font-bold text-emerald-400 block">
+                    ${loc.totalAmount.toLocaleString()}
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-mono">
+                    ~${Math.round(loc.totalAmount / (loc.count || 1)).toLocaleString()} /venta
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Gráfico de Ventas por Vendedor */}

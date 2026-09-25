@@ -313,7 +313,7 @@ export interface ShiftStockItem {
   differenceUnits: number; // delivered + reSupplied - sold - returned - waste
 }
 
-export type PaymentMethod = 'efectivo' | 'mercado_pago';
+export type PaymentMethod = 'efectivo' | 'mercado_pago' | 'transferencia';
 
 export type VoucherValidationStatus = 
   | 'validada'            // 🟢 Validado (Coincide monto, fecha y existe en MP)
@@ -334,7 +334,11 @@ export interface SaleTransaction {
   totalAmount: number;
   paymentMethod: PaymentMethod;
   
-  // Datos de comprobante de transferencia (Mercado Pago)
+  // Localidad y sector de playa específico de la venta
+  locationName?: string; // ej: "Santa Teresita", "Mar del Tuyú", "Costa del Este", "Las Toninas", "San Bernardo"
+  beachSector?: string; // ej: "Muelle / Calle 38", "Bajada Calle 68", "Parador Pinar"
+
+  // Datos de comprobante de transferencia (Mercado Pago o Transferencia Bancaria)
   voucherPhotoUrl?: string;
   voucherExtractedData?: {
     operationId?: string;
@@ -397,6 +401,8 @@ export interface DailyShift {
   totalGrossSales: number;
   totalCashSales: number;
   totalMpSales: number;
+  totalTransferSales?: number;
+  season?: string; // ej: "Temporada 2026-2027"
   
   cashExpected: number;
   cashDeclared: number;
@@ -511,3 +517,24 @@ export interface StockTransfer {
   status: 'en_transito' | 'recibido_conforme' | 'con_diferencia';
   notes?: string;
 }
+
+// 11. Reportes de Estado de Playa y Mareas en Tiempo Real
+export type TideCondition = 'marea_baja' | 'marea_normal' | 'marea_alta' | 'sin_playa_marea_llena';
+export type CrowdLevel = 'muy_alta' | 'alta' | 'media' | 'baja' | 'desierta';
+export type BeachReportType = 'estado_general' | 'oportunidad' | 'inconveniente' | 'cambio_de_zona';
+
+export interface BeachConditionReport {
+  id: string;
+  timestamp: string;
+  sellerId: string;
+  sellerName: string;
+  shiftId?: string;
+  locality: string; // ej: "Santa Teresita", "Mar del Tuyú", "Costa del Este", "Las Toninas", "San Bernardo"
+  sectorDetails?: string; // ej: "Bajada Calle 32 - Parador", "Zona Muelle", "Calle 68"
+  tide: TideCondition;
+  crowdLevel: CrowdLevel;
+  reportType: BeachReportType;
+  comments: string;
+  temperatureOrWeather?: string;
+}
+

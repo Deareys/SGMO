@@ -24,7 +24,8 @@ import {
   StockTransfer,
   CartIncident,
   CommissionTier,
-  SystemConfig
+  SystemConfig,
+  BeachConditionReport
 } from './types';
 
 export const INITIAL_COMMISSION_TIERS: CommissionTier[] = [
@@ -783,35 +784,43 @@ export const INITIAL_HOUSES: OperationalHouse[] = [
 export const INITIAL_ZONES: BeachZone[] = [
   {
     id: 'ZONE-1',
-    name: 'Zona 1: Calle 63 ➔ Calle 45 (Norte Familiar)',
-    description: 'Playas amplias, carpas familiares y alta afluencia a media tarde.',
+    name: 'Santa Teresita (Centro & Muelle Calle 32 a 45)',
+    description: 'Zona de altísima afluencia familiar, paradores con música y paseo peatonal.',
     touristAffluence: 'alta',
-    avgDailySalesUnits: 320,
+    avgDailySalesUnits: 340,
     recommendedStartUnits: 300
   },
   {
     id: 'ZONE-2',
-    name: 'Zona 2: Calle 45 ➔ Calle 25 (Balnearios Jóvenes)',
-    description: 'Paradores con música, surfistas y consumo intensivo de combos.',
+    name: 'Mar del Tuyú (Bajadas Calle 68 a 79 & Paradores)',
+    description: 'Playas extensas, grupos juveniles, carpas y gran volumen de consumo vespertino.',
     touristAffluence: 'alta',
     avgDailySalesUnits: 380,
     recommendedStartUnits: 350
   },
   {
     id: 'ZONE-3',
-    name: 'Zona 3: Calle 25 ➔ Calle 10 (Muelle & Centro)',
-    description: 'Zona de alto tránsito peatonal constante y puestos de pescadores.',
+    name: 'Costa del Este (Playa El Pinar & Parador Central)',
+    description: 'Público familiar premium, consumo elevado de combos docena y aderezos gourmet.',
     touristAffluence: 'alta',
-    avgDailySalesUnits: 340,
+    avgDailySalesUnits: 350,
     recommendedStartUnits: 320
   },
   {
     id: 'ZONE-4',
-    name: 'Zona 4: Calle 10 ➔ Faro Sur (Playa Tranquila)',
-    description: 'Extensión amplia con sombrillas dispersas y grupos familiares.',
+    name: 'Las Toninas (Playas Norte & Paradores Tranquilos)',
+    description: 'Playas abiertas y amplias, ideal para recorridos extendidos en orilla.',
     touristAffluence: 'media',
-    avgDailySalesUnits: 220,
-    recommendedStartUnits: 200
+    avgDailySalesUnits: 240,
+    recommendedStartUnits: 220
+  },
+  {
+    id: 'ZONE-5',
+    name: 'San Bernardo (Costanera & Bajada Peatonal)',
+    description: 'Gran concentración de jóvenes y familias, alto movimiento durante toda la tarde.',
+    touristAffluence: 'alta',
+    avgDailySalesUnits: 400,
+    recommendedStartUnits: 360
   }
 ];
 
@@ -1786,4 +1795,50 @@ export const INITIAL_TRANSFERS: StockTransfer[] = [
     notes: 'Despacho matutino con furgón refrigerado a -18°C.'
   }
 ];
+
+export const INITIAL_BEACH_REPORTS: BeachConditionReport[] = [
+  {
+    id: 'BREP-01',
+    timestamp: '2026-08-31 11:30',
+    sellerId: 'USR-VEND-1',
+    sellerName: 'Lucas Benítez',
+    shiftId: 'SHIFT-20260831-01',
+    locality: 'Santa Teresita',
+    sectorDetails: 'Bajada Calle 39 (Muelle)',
+    tide: 'marea_alta',
+    crowdLevel: 'alta',
+    reportType: 'inconveniente',
+    comments: 'Marea alta tapó parte de la playa en Santa Teresita. Me replegué hacia la zona de carpas altas donde hay buena venta.',
+    temperatureOrWeather: '28°C Soleado con brisa marina'
+  },
+  {
+    id: 'BREP-02',
+    timestamp: '2026-08-31 12:15',
+    sellerId: 'USR-VEND-2',
+    sellerName: 'Esteban Morales',
+    shiftId: 'SHIFT-20260831-01',
+    locality: 'Mar del Tuyú',
+    sectorDetails: 'Bajada Calle 68 - Balneario Central',
+    tide: 'marea_normal',
+    crowdLevel: 'muy_alta',
+    reportType: 'oportunidad',
+    comments: 'Muchísima gente en la orilla en Mar del Tuyú. Torneo de vóley playero en parador, alto consumo de combos x6 y x12.',
+    temperatureOrWeather: '29°C Despejado'
+  },
+  {
+    id: 'BREP-03',
+    timestamp: '2026-08-31 13:00',
+    sellerId: 'USR-VEND-3',
+    sellerName: 'Micaela Rossi',
+    shiftId: 'SHIFT-20260831-03',
+    locality: 'Costa del Este',
+    sectorDetails: 'Playa El Pinar - Parador Las Camelias',
+    tide: 'marea_baja',
+    crowdLevel: 'muy_alta',
+    reportType: 'oportunidad',
+    comments: 'Playa ancha y familias completas. Salen muchos combos con salsas caseras.',
+    temperatureOrWeather: '27°C Agradable'
+  }
+];
+
 

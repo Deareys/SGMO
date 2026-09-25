@@ -1,6 +1,5 @@
 node_modules/
-build/
-dist/
+# build/ y dist/ permitidos para actualización y pruebas en repositorio de GitHub
 coverage/
 .DS_Store
 *.log

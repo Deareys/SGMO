@@ -32,13 +32,20 @@ import {
   Clock,
   ArrowRight,
   UserCheck,
-  Award
+  Award,
+  Waves,
+  MapPin,
+  Compass,
+  Sun,
+  Wind,
+  CreditCard
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { AppState, storageService } from '../services/storageService';
 import { analyzeVoucherWithAI, VoucherAnalysisResult } from '../services/aiValidationService';
 import { CameraCaptureModal } from './CameraCaptureModal';
 import { calculateCommissionForSales } from '../utils/commissionUtils';
+import { PaymentMethod, TideCondition, CrowdLevel, BeachReportType } from '../types';
 
 interface SellerTerminalViewProps {
   state: AppState;
@@ -66,7 +73,41 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
   const [selectedItemType, setSelectedItemType] = useState<'unidad' | 'combo3' | 'combo6' | 'combo12'>('combo3');
   const [quantityMultiplier, setQuantityMultiplier] = useState(1);
   const [selectedVarietyId, setSelectedVarietyId] = useState(varieties[0]?.id || 'VAR-CLASICO');
-  const [paymentMethod, setPaymentMethod] = useState<'efectivo' | 'mercado_pago'>('efectivo');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('efectivo');
+
+  // Localidad y sector de playa para la venta actual (se puede cambiar al desplazarse por marea u otra razón)
+  const assignedLocality = useMemo(() => {
+    if (!activeShift?.zoneName) return 'Santa Teresita';
+    if (activeShift.zoneName.includes('Santa Teresita')) return 'Santa Teresita';
+    if (activeShift.zoneName.includes('Mar del Tuyú')) return 'Mar del Tuyú';
+    if (activeShift.zoneName.includes('Costa del Este')) return 'Costa del Este';
+    if (activeShift.zoneName.includes('Las Toninas')) return 'Las Toninas';
+    if (activeShift.zoneName.includes('San Bernardo')) return 'San Bernardo';
+    return activeShift.zoneName.split(' ')[0] || 'Santa Teresita';
+  }, [activeShift]);
+
+  const [saleLocation, setSaleLocation] = useState<string>('Santa Teresita');
+  const [saleSectorDetail, setSaleSectorDetail] = useState<string>('');
+  const [showCustomSectorInput, setShowCustomSectorInput] = useState<boolean>(false);
+
+  // Sincronizar localidad con la jornada asignada
+  React.useEffect(() => {
+    if (assignedLocality) {
+      setSaleLocation(assignedLocality);
+      setBeachReportLocality(assignedLocality);
+    }
+  }, [assignedLocality]);
+
+  // Reporte de Estado de Playa (Marea, Afluencia, Oportunidad/Inconveniente)
+  const [showBeachReportModal, setShowBeachReportModal] = useState(false);
+  const [beachReportLocality, setBeachReportLocality] = useState(assignedLocality || 'Santa Teresita');
+  const [beachReportSector, setBeachReportSector] = useState('');
+  const [beachReportTide, setBeachReportTide] = useState<TideCondition>('marea_normal');
+  const [beachReportCrowd, setBeachReportCrowd] = useState<CrowdLevel>('alta');
+  const [beachReportType, setBeachReportType] = useState<BeachReportType>('estado_general');
+  const [beachReportComments, setBeachReportComments] = useState('');
+  const [beachReportWeather, setBeachReportWeather] = useState('28°C Soleado');
+  const [beachReportSuccessMsg, setBeachReportSuccessMsg] = useState<string | null>(null);
 
   // Estados de Comprobante MP y Cámara
   const [voucherImage, setVoucherImage] = useState<string | null>(null);
@@ -187,6 +228,8 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
       quantityUnitsEquivalent: calculatedTotalUnits,
       totalAmount: calculatedTotalAmount,
       paymentMethod,
+      locationName: saleLocation,
+      beachSector: saleSectorDetail.trim() || undefined,
       voucherPhotoUrl: voucherImage || undefined,
       voucherExtractedData: voucherAnalysis ? voucherAnalysis.extractedData : undefined,
       validationStatus: voucherAnalysis
@@ -211,6 +254,36 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
     setVoucherImage(null);
     setVoucherAnalysis(null);
     setQuantityMultiplier(1);
+  };
+
+  // Manejar envío de Reporte de Estado de Playa
+  const handleConfirmBeachReport = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!beachReportComments.trim()) {
+      alert('Por favor ingresá un comentario u observación sobre la playa.');
+      return;
+    }
+
+    storageService.createBeachReport({
+      sellerId: currentUser.id,
+      sellerName: currentUser.name,
+      shiftId: activeShift?.id,
+      locality: beachReportLocality,
+      sectorDetails: beachReportSector.trim() || undefined,
+      tide: beachReportTide,
+      crowdLevel: beachReportCrowd,
+      reportType: beachReportType,
+      comments: beachReportComments.trim(),
+      temperatureOrWeather: beachReportWeather.trim() || undefined
+    });
+
+    setBeachReportSuccessMsg(`¡Reporte de ${beachReportLocality} emitido! Coordinación y compañeros alertados.`);
+    setTimeout(() => {
+      setBeachReportSuccessMsg(null);
+      setShowBeachReportModal(false);
+      setBeachReportComments('');
+      setBeachReportSector('');
+    }, 1800);
   };
 
   // 2. Registrar Merma (rotura o caída)
@@ -736,8 +809,8 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
           </div>
         )}
 
-        {/* 2. Barra de Acciones Operativas Rápidas (Comprobantes, Merma, Sobrantes y Cierre) */}
-        <div className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-800/80 mt-3">
+        {/* 2. Barra de Acciones Operativas Rápidas (Comprobantes, Reporte de Playa, Merma, Sobrantes y Cierre) */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-3 border-t border-slate-800/80 mt-3">
           <button
             type="button"
             onClick={() => setShowMyVouchersModal(true)}
@@ -749,6 +822,20 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
             </div>
             <span className="text-[10px] text-sky-400 font-semibold">
               {myShiftVouchers.length} registrados
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowBeachReportModal(true)}
+            className="p-2.5 bg-gradient-to-b from-sky-950/40 to-sky-900/20 hover:from-sky-900/40 hover:to-sky-800/30 border border-sky-500/40 hover:border-sky-400 rounded-xl flex flex-col items-center justify-center space-y-1 transition-all text-sky-300 cursor-pointer group"
+          >
+            <div className="flex items-center space-x-1">
+              <Waves className="w-3.5 h-3.5 text-sky-400 group-hover:scale-110 transition-transform animate-pulse" />
+              <span className="text-[11px] font-bold text-white">Estado Playa</span>
+            </div>
+            <span className="text-[10px] text-sky-400 font-semibold">
+              Marea / Afluencia
             </span>
           </button>
 
@@ -773,7 +860,7 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
           >
             <div className="flex items-center space-x-1">
               <Coins className="w-3.5 h-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
-              <span className="text-[11px] font-bold text-emerald-200">Sobrantes & Cierre</span>
+              <span className="text-[11px] font-bold text-emerald-200">Sobrantes</span>
             </div>
             <span className="text-[10px] text-emerald-400 font-semibold">
               Arqueo final
@@ -781,6 +868,53 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
           </button>
         </div>
       </div>
+
+      {/* Radar de Estado de Playa en Vivo (Últimos Reportes de la Costa) */}
+      {state.beachReports && state.beachReports.length > 0 && (
+        <div className="bg-slate-900 border border-sky-900/40 rounded-2xl p-3.5 shadow-xl space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-bold text-sky-300 flex items-center space-x-1.5">
+              <Waves className="w-4 h-4 text-sky-400 animate-pulse" />
+              <span>Radar de Playas en Vivo — Avisos de la Costa</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowBeachReportModal(true)}
+              className="text-[11px] text-amber-400 hover:text-amber-300 font-bold flex items-center space-x-1 cursor-pointer"
+            >
+              <span>+ Nuevo aviso</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+            {state.beachReports.slice(0, 2).map((rep) => (
+              <div
+                key={rep.id}
+                className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 text-[11px] space-y-1"
+              >
+                <div className="flex items-center justify-between font-bold">
+                  <span className="text-amber-300 flex items-center space-x-1">
+                    <MapPin className="w-3 h-3 text-amber-400" />
+                    <span>{rep.locality}</span>
+                  </span>
+                  <span className="text-slate-400 text-[10px] font-mono">{rep.timestamp.slice(11, 16)} hs</span>
+                </div>
+                <div className="flex items-center space-x-2 text-[10px] text-slate-300">
+                  <span className="bg-sky-500/20 text-sky-300 px-1.5 py-0.5 rounded font-medium">
+                    🌊 {rep.tide.replace(/_/g, ' ')}
+                  </span>
+                  <span className="bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded font-medium">
+                    👥 Afluencia {rep.crowdLevel}
+                  </span>
+                </div>
+                <p className="text-slate-300 text-[11px] leading-snug line-clamp-2">
+                  <strong className="text-white">{rep.sellerName}:</strong> {rep.comments}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 3. Selector de Producto / Combo y Multiplicador */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-3">
@@ -878,47 +1012,135 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
         </div>
       </div>
 
-      {/* 5. Selector de Método de Pago */}
+      {/* 5. Selector de Playa / Localidad de esta Venta (Requerimiento Costa) */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-3">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center space-x-1.5">
+            <MapPin className="w-4 h-4 text-amber-400" />
+            <span>3. Playa / Localidad de esta Venta</span>
+          </label>
+          <span className="text-[11px] text-amber-400 font-bold font-mono">
+            {saleLocation} {saleSectorDetail ? `(${saleSectorDetail})` : ''}
+          </span>
+        </div>
+
+        {saleLocation !== assignedLocality && (
+          <div className="p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl text-[11px] text-amber-300 flex items-center space-x-2">
+            <span className="text-sm">🔄</span>
+            <span>
+              Marcando venta en <strong>{saleLocation}</strong> (desplazamiento fuera de <em>{assignedLocality}</em> por marea o recorrido). Se audita en métricas.
+            </span>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {['Santa Teresita', 'Mar del Tuyú', 'Costa del Este', 'Las Toninas', 'San Bernardo'].map((loc) => {
+            const isSelected = saleLocation === loc;
+            return (
+              <button
+                key={loc}
+                type="button"
+                onClick={() => setSaleLocation(loc)}
+                className={`p-2.5 rounded-xl border text-left text-xs font-bold transition-all cursor-pointer flex items-center justify-between ${
+                  isSelected
+                    ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md shadow-amber-500/20'
+                    : 'bg-slate-950/80 border-slate-800 text-slate-300 hover:border-slate-700'
+                }`}
+              >
+                <span>🏖️ {loc}</span>
+                {isSelected && <Check className="w-3.5 h-3.5 shrink-0 ml-1" />}
+              </button>
+            );
+          })}
+
+          <button
+            type="button"
+            onClick={() => setShowCustomSectorInput(!showCustomSectorInput)}
+            className={`p-2.5 rounded-xl border text-left text-xs font-bold transition-all cursor-pointer flex items-center justify-between ${
+              showCustomSectorInput || (!['Santa Teresita', 'Mar del Tuyú', 'Costa del Este', 'Las Toninas', 'San Bernardo'].includes(saleLocation))
+                ? 'bg-sky-500/20 border-sky-500 text-sky-300'
+                : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <span>📍 + Detalle sector</span>
+            <Compass className="w-3.5 h-3.5 shrink-0 ml-1" />
+          </button>
+        </div>
+
+        {showCustomSectorInput && (
+          <div className="pt-2 border-t border-slate-800 flex items-center space-x-2">
+            <input
+              type="text"
+              placeholder="Ej: Bajada Calle 38, Muelle, Orilla Carpas 3, Parador..."
+              value={saleSectorDetail}
+              onChange={(e) => setSaleSectorDetail(e.target.value)}
+              className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
+            />
+            <button
+              type="button"
+              onClick={() => setShowCustomSectorInput(false)}
+              className="px-3 py-2 bg-slate-800 text-slate-300 text-xs rounded-xl font-bold cursor-pointer hover:bg-slate-700"
+            >
+              Listo
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* 6. Selector de Método de Pago */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-3">
         <label className="text-xs font-bold uppercase tracking-wider text-slate-400 block">
-          3. Forma de Pago
+          4. Forma de Pago
         </label>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
           <button
             type="button"
             onClick={() => setPaymentMethod('efectivo')}
-            className={`p-3.5 rounded-xl border flex items-center justify-center space-x-2 font-bold text-xs sm:text-sm transition-all cursor-pointer ${
+            className={`p-3 rounded-xl border flex flex-col items-center justify-center space-y-1 font-bold text-xs sm:text-sm transition-all cursor-pointer ${
               paymentMethod === 'efectivo'
                 ? 'bg-emerald-600 text-white border-emerald-400 shadow-lg shadow-emerald-600/20'
                 : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:text-slate-200'
             }`}
           >
-            <DollarSign className="w-5 h-5" />
-            <span>Efectivo en Mano</span>
+            <DollarSign className="w-5 h-5 text-emerald-400" />
+            <span>Efectivo</span>
           </button>
 
           <button
             type="button"
             onClick={() => setPaymentMethod('mercado_pago')}
-            className={`p-3.5 rounded-xl border flex items-center justify-center space-x-2 font-bold text-xs sm:text-sm transition-all cursor-pointer ${
+            className={`p-3 rounded-xl border flex flex-col items-center justify-center space-y-1 font-bold text-xs sm:text-sm transition-all cursor-pointer ${
               paymentMethod === 'mercado_pago'
                 ? 'bg-sky-600 text-white border-sky-400 shadow-lg shadow-sky-600/20'
                 : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Smartphone className="w-5 h-5" />
-            <span>Mercado Pago (QR)</span>
+            <Smartphone className="w-5 h-5 text-sky-400" />
+            <span>Mercado Pago</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setPaymentMethod('transferencia')}
+            className={`p-3 rounded-xl border flex flex-col items-center justify-center space-y-1 font-bold text-xs sm:text-sm transition-all cursor-pointer ${
+              paymentMethod === 'transferencia'
+                ? 'bg-indigo-600 text-white border-indigo-400 shadow-lg shadow-indigo-600/20'
+                : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <CreditCard className="w-5 h-5 text-indigo-400" />
+            <span>Transferencia</span>
           </button>
         </div>
 
-        {/* Si es Mercado Pago: Cargar / Fotografiar Comprobante */}
-        {paymentMethod === 'mercado_pago' && (
+        {/* Si es Mercado Pago o Transferencia Bancaria: Cargar / Fotografiar Comprobante */}
+        {(paymentMethod === 'mercado_pago' || paymentMethod === 'transferencia') && (
           <div className="mt-3 p-3.5 bg-slate-950 border border-slate-800 rounded-xl space-y-3">
             <div className="flex items-center justify-between text-xs">
               <span className="font-semibold text-sky-400 flex items-center">
                 <Camera className="w-4 h-4 mr-1.5" />
-                Foto de Comprobante de Transferencia
+                Foto de Comprobante ({paymentMethod === 'mercado_pago' ? 'Mercado Pago' : 'Transferencia'})
               </span>
               <span className="text-[10px] text-slate-400">Validación OCR con Gemini</span>
             </div>
@@ -1598,6 +1820,208 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
             >
               Cerrar Vista
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Reporte de Estado de Playa & Mareas */}
+      {showBeachReportModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-5 shadow-2xl space-y-4 my-8 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center space-x-2">
+                <div className="w-8 h-8 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center">
+                  <Waves className="w-5 h-5 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white leading-tight">
+                    Reporte de Estado de Playa
+                  </h3>
+                  <span className="text-[11px] text-sky-400">
+                    Costa Atlántica • Información en Tiempo Real
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowBeachReportModal(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {beachReportSuccessMsg ? (
+              <div className="p-4 bg-emerald-500/20 border border-emerald-500/50 rounded-xl text-center space-y-2 text-emerald-300">
+                <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-400" />
+                <p className="font-bold text-sm">{beachReportSuccessMsg}</p>
+                <p className="text-xs text-slate-300">Actualizando radar operativo...</p>
+              </div>
+            ) : (
+              <form onSubmit={handleConfirmBeachReport} className="space-y-4">
+                {/* 1. Localidad y Sector */}
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
+                    1. Localidad & Sector Costero
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {['Santa Teresita', 'Mar del Tuyú', 'Costa del Este', 'Las Toninas', 'San Bernardo'].map((loc) => (
+                      <button
+                        key={loc}
+                        type="button"
+                        onClick={() => setBeachReportLocality(loc)}
+                        className={`p-2 rounded-xl text-xs font-bold border transition-all cursor-pointer text-left ${
+                          beachReportLocality === loc
+                            ? 'bg-sky-500 text-slate-950 border-sky-400 font-black'
+                            : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                        }`}
+                      >
+                        🏖️ {loc}
+                      </button>
+                    ))}
+                  </div>
+
+                  <input
+                    type="text"
+                    placeholder="Detalle de bajada o sector (ej: Bajada Calle 38, Muelle, Parador 2)..."
+                    value={beachReportSector}
+                    onChange={(e) => setBeachReportSector(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-400"
+                  />
+                </div>
+
+                {/* 2. Estado de Marea */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
+                    2. Estado de la Marea
+                  </label>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    {[
+                      { id: 'marea_baja', label: '🌊 Marea Baja', desc: 'Playa ancha, buena circulación' },
+                      { id: 'marea_normal', label: '🌊 Marea Normal', desc: 'Franja de playa adecuada' },
+                      { id: 'marea_alta', label: '⚠️ Marea Alta', desc: 'Poco espacio en orilla' },
+                      { id: 'sin_playa_marea_llena', label: '🚨 Sin Playa Seca', desc: 'Mar hasta las carpas/duna' }
+                    ].map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setBeachReportTide(item.id as any)}
+                        className={`p-2 rounded-xl border text-left cursor-pointer transition-all ${
+                          beachReportTide === item.id
+                            ? 'bg-sky-500/20 border-sky-400 text-sky-200 ring-1 ring-sky-400'
+                            : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        <div className="font-bold text-[11px] text-white">{item.label}</div>
+                        <div className="text-[10px] text-slate-400 leading-tight">{item.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 3. Afluencia de Personas */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
+                    3. Afluencia de Turistas
+                  </label>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[
+                      { id: 'muy_alta', label: '🔥 Muy Alta' },
+                      { id: 'alta', label: '👥 Alta' },
+                      { id: 'media', label: '🚶 Media' },
+                      { id: 'baja', label: '🏖️ Poca gente' }
+                    ].map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setBeachReportCrowd(item.id as any)}
+                        className={`p-2 rounded-xl border text-center text-xs font-bold cursor-pointer transition-all ${
+                          beachReportCrowd === item.id
+                            ? 'bg-amber-500 text-slate-950 border-amber-400 font-black'
+                            : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 4. Tipo de Situación */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
+                    4. Tipo de Reporte
+                  </label>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    {[
+                      { id: 'estado_general', label: 'ℹ️ Estado General', desc: 'Monitoreo de rutina' },
+                      { id: 'oportunidad', label: '💡 Oportunidad Comercial', desc: 'Torneo, música, alta demanda' },
+                      { id: 'inconveniente', label: '⚠️ Inconveniente', desc: 'Marea alta, viento, problema' },
+                      { id: 'cambio_de_zona', label: '🔄 Cambio de Sector', desc: 'Me desplazo a otra zona' }
+                    ].map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setBeachReportType(item.id as any)}
+                        className={`p-2 rounded-xl border text-left cursor-pointer transition-all ${
+                          beachReportType === item.id
+                            ? 'bg-amber-500/20 border-amber-400 text-amber-200 ring-1 ring-amber-400'
+                            : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        <div className="font-bold text-[11px] text-white">{item.label}</div>
+                        <div className="text-[10px] text-slate-400 leading-tight">{item.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 5. Comentario / Observación */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
+                    5. Observación del Vendedor (Obligatorio)
+                  </label>
+                  <textarea
+                    value={beachReportComments}
+                    onChange={(e) => setBeachReportComments(e.target.value)}
+                    placeholder="Ej: Marea alta tapó la orilla en Santa Teresita, me replegué 5 cuadras hacia Mar del Tuyú donde hay mucha gente y salen combos docena..."
+                    rows={3}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-400"
+                    required
+                  />
+                </div>
+
+                {/* Clima / Temperatura */}
+                <div className="flex items-center space-x-2">
+                  <Sun className="w-4 h-4 text-amber-400 shrink-0" />
+                  <input
+                    type="text"
+                    placeholder="Clima (ej: 29°C Soleado, viento leve)"
+                    value={beachReportWeather}
+                    onChange={(e) => setBeachReportWeather(e.target.value)}
+                    className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-300 focus:outline-none"
+                  />
+                </div>
+
+                {/* Botones */}
+                <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setShowBeachReportModal(false)}
+                    className="px-4 py-2 bg-slate-800 text-xs text-slate-300 rounded-xl hover:bg-slate-700"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-sky-500/20 flex items-center space-x-1.5 cursor-pointer"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Emitir Reporte a Coordinación</span>
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

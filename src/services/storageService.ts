@@ -31,7 +31,12 @@ import {
   VoucherValidationStatus,
   UserRole,
   CommissionTier,
-  SystemConfig
+  SystemConfig,
+  BeachConditionReport,
+  TideCondition,
+  CrowdLevel,
+  BeachReportType,
+  PaymentMethod
 } from '../types';
 
 import {
@@ -55,7 +60,8 @@ import {
   INITIAL_EXPENSES,
   INITIAL_ALERTS,
   INITIAL_AUDIT_LOGS,
-  INITIAL_TRANSFERS
+  INITIAL_TRANSFERS,
+  INITIAL_BEACH_REPORTS
 } from '../mockData';
 import { calculateCommissionForSales } from '../utils/commissionUtils';
 
@@ -66,6 +72,8 @@ export interface AppState {
   currentUser: UserProfile | null;
   selectedHouseId: string;
   isOnline: boolean;
+  activeSeason: string;
+  availableSeasons: string[];
   systemConfig: SystemConfig;
   supplyCategories: SupplyCategory[];
   suppliers: Supplier[];
@@ -83,6 +91,7 @@ export interface AppState {
   incidents: CartIncident[];
   shifts: DailyShift[];
   sales: SaleTransaction[];
+  beachReports: BeachConditionReport[];
   expenses: OperationalExpense[];
   alerts: OperationalAlert[];
   auditLogs: AuditLog[];
@@ -180,7 +189,11 @@ class StorageService {
             suppliers: parsed.suppliers || INITIAL_SUPPLIERS,
             recipes: parsed.recipes || INITIAL_RECIPES,
             productionOrders: parsed.productionOrders || INITIAL_PRODUCTION_ORDERS,
-            factoryIncidents: parsed.factoryIncidents || INITIAL_FACTORY_INCIDENTS
+            factoryIncidents: parsed.factoryIncidents || INITIAL_FACTORY_INCIDENTS,
+            zones: parsed.zones && parsed.zones.length >= 5 ? parsed.zones : INITIAL_ZONES,
+            beachReports: parsed.beachReports || INITIAL_BEACH_REPORTS,
+            activeSeason: parsed.activeSeason || 'Temporada 2026-2027',
+            availableSeasons: parsed.availableSeasons || ['Temporada 2026-2027', 'Temporada 2027-2028', 'Temporada 2028-2029']
           };
         } catch (e) {
           console.error('Error parseando almacenamiento local, cargando semillas iniciales', e);
@@ -192,6 +205,8 @@ class StorageService {
       currentUser: null, // Inicio en pantalla de login PIN
       selectedHouseId: 'HOUSE-NORTE',
       isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
+      activeSeason: 'Temporada 2026-2027',
+      availableSeasons: ['Temporada 2026-2027', 'Temporada 2027-2028', 'Temporada 2028-2029'],
       systemConfig: INITIAL_SYSTEM_CONFIG,
       supplyCategories: INITIAL_SUPPLY_CATEGORIES,
       suppliers: INITIAL_SUPPLIERS,
@@ -209,6 +224,7 @@ class StorageService {
       incidents: INITIAL_INCIDENTS,
       shifts: INITIAL_SHIFTS,
       sales: INITIAL_SALES,
+      beachReports: INITIAL_BEACH_REPORTS,
       expenses: INITIAL_EXPENSES,
       alerts: INITIAL_ALERTS,
       auditLogs: INITIAL_AUDIT_LOGS,
@@ -593,7 +609,9 @@ class StorageService {
     varietyId: string;
     quantityUnitsEquivalent: number;
     totalAmount: number;
-    paymentMethod: 'efectivo' | 'mercado_pago';
+    paymentMethod: PaymentMethod;
+    locationName?: string;
+    beachSector?: string;
     voucherPhotoUrl?: string;
     voucherExtractedData?: SaleTransaction['voucherExtractedData'];
     validationStatus?: VoucherValidationStatus;
@@ -620,6 +638,8 @@ class StorageService {
       quantityUnitsEquivalent: saleData.quantityUnitsEquivalent,
       totalAmount: saleData.totalAmount,
       paymentMethod: saleData.paymentMethod,
+      locationName: saleData.locationName || shift?.zoneName || 'Playa Costa',
+      beachSector: saleData.beachSector,
       voucherPhotoUrl: saleData.voucherPhotoUrl,
       voucherExtractedData: saleData.voucherExtractedData,
       validationStatus: saleData.validationStatus || (saleData.paymentMethod === 'efectivo' ? 'validada' : 'pendiente_revision'),
@@ -638,8 +658,15 @@ class StorageService {
       if (newSale.paymentMethod === 'efectivo') {
         shift.totalCashSales += newSale.totalAmount;
         shift.cashExpected += newSale.totalAmount;
-      } else {
+      } else if (newSale.paymentMethod === 'mercado_pago') {
         shift.totalMpSales += newSale.totalAmount;
+        if (newSale.validationStatus === 'validada') {
+          shift.mpValidatedAmount += newSale.totalAmount;
+        } else {
+          shift.mpPendingOrSuspiciousAmount += newSale.totalAmount;
+        }
+      } else if (newSale.paymentMethod === 'transferencia') {
+        shift.totalTransferSales = (shift.totalTransferSales || 0) + newSale.totalAmount;
         if (newSale.validationStatus === 'validada') {
           shift.mpValidatedAmount += newSale.totalAmount;
         } else {
@@ -669,11 +696,12 @@ class StorageService {
     }
 
     this.state.sales = [newSale, ...this.state.sales];
+    const locText = newSale.locationName ? ` en ${newSale.locationName}` : '';
     this.addAuditLog(
       'VENTA_REGISTRADA',
       'venta',
       saleId,
-      `Venta de ${newSale.itemType} (${newSale.quantityUnitsEquivalent} u) por $${newSale.totalAmount} vía ${newSale.paymentMethod} (${sellerName})`
+      `Venta de ${newSale.itemType} (${newSale.quantityUnitsEquivalent} u) por $${newSale.totalAmount} vía ${newSale.paymentMethod}${locText} (${sellerName})`
     );
     this.saveState();
     return newSale;
@@ -1683,12 +1711,87 @@ class StorageService {
     this.saveState();
   }
 
+  // --- 11. Reportes de Estado de Playa en Vivo ---
+  public createBeachReport(data: {
+    sellerId: string;
+    sellerName: string;
+    shiftId?: string;
+    locality: string;
+    sectorDetails?: string;
+    tide: TideCondition;
+    crowdLevel: CrowdLevel;
+    reportType: BeachReportType;
+    comments: string;
+    temperatureOrWeather?: string;
+  }): BeachConditionReport {
+    const reportId = `BREP-${Date.now()}`;
+    const newReport: BeachConditionReport = {
+      id: reportId,
+      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
+      ...data
+    };
+
+    this.state.beachReports = [newReport, ...(this.state.beachReports || [])];
+
+    // Disparar Alerta Operativa para Coordinador y Administrador
+    const alertLevel = data.reportType === 'inconveniente' ? 'advertencia' : 'informativa';
+    const titlePrefix = data.reportType === 'inconveniente'
+      ? '⚠️ Inconveniente en Playa'
+      : data.reportType === 'oportunidad'
+      ? '🔥 Oportunidad Comercial'
+      : data.reportType === 'cambio_de_zona'
+      ? '🔄 Cambio de Sector'
+      : 'ℹ️ Estado de Playa';
+
+    this.state.alerts.unshift({
+      id: `ALT-${Date.now()}`,
+      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
+      level: alertLevel,
+      title: `${titlePrefix}: ${data.locality}`,
+      message: `${data.sellerName} en ${data.locality} (${data.sectorDetails || 'Playa'}): ${data.comments}. Marea: ${data.tide.replace(/_/g, ' ')}, Afluencia: ${data.crowdLevel}.`,
+      category: 'clima',
+      relatedEntityId: reportId,
+      isRead: false,
+      resolved: false
+    });
+
+    this.addAuditLog(
+      'REPORTE_ESTADO_PLAYA',
+      'jornada',
+      reportId,
+      `Reporte de playa en ${data.locality} (${data.reportType}) por ${data.sellerName}: ${data.comments}`
+    );
+
+    this.saveState();
+    return newReport;
+  }
+
+  // --- 12. Gestión de Temporadas ---
+  public setActiveSeason(season: string): void {
+    this.state.activeSeason = season;
+    if (!this.state.availableSeasons.includes(season)) {
+      this.state.availableSeasons.push(season);
+    }
+    this.addAuditLog('CAMBIO_TEMPORADA', 'configuracion', season, `Se seleccionó como activa la ${season}`);
+    this.saveState();
+  }
+
+  public createSeason(seasonName: string): void {
+    if (!this.state.availableSeasons.includes(seasonName)) {
+      this.state.availableSeasons.push(seasonName);
+      this.addAuditLog('CREAR_TEMPORADA', 'configuracion', seasonName, `Nueva temporada creada: ${seasonName}`);
+      this.saveState();
+    }
+  }
+
   // --- Reset a datos iniciales de fábrica ---
   public resetToFactorySeed(): void {
     this.state = {
       currentUser: null,
       selectedHouseId: 'HOUSE-NORTE',
       isOnline: true,
+      activeSeason: 'Temporada 2026-2027',
+      availableSeasons: ['Temporada 2026-2027', 'Temporada 2027-2028', 'Temporada 2028-2029'],
       systemConfig: INITIAL_SYSTEM_CONFIG,
       supplyCategories: INITIAL_SUPPLY_CATEGORIES,
       suppliers: INITIAL_SUPPLIERS,
@@ -1706,6 +1809,7 @@ class StorageService {
       incidents: INITIAL_INCIDENTS,
       shifts: INITIAL_SHIFTS,
       sales: INITIAL_SALES,
+      beachReports: INITIAL_BEACH_REPORTS,
       expenses: INITIAL_EXPENSES,
       alerts: INITIAL_ALERTS,
       auditLogs: INITIAL_AUDIT_LOGS,
