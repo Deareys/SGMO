@@ -3,7 +3,7 @@
  * Módulo de Validación Asistida con IA de Comprobantes de Transferencia (Mercado Pago)
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ShieldCheck,
   ShieldAlert,
@@ -19,23 +19,35 @@ import {
   Check,
   RotateCcw,
   Layers,
-  ArrowRight
+  ArrowRight,
+  Loader2,
+  RefreshCw
 } from 'lucide-react';
 import { AppState, storageService } from '../services/storageService';
 import { VoucherValidationStatus } from '../types';
+import { verifyMercadoPagoPayment, checkMercadoPagoConfigStatus, MercadoPagoVerificationResponse } from '../services/aiValidationService';
+import { MercadoPagoTestLabModal } from './MercadoPagoTestLabModal';
 
 interface VoucherValidationViewProps {
   state: AppState;
 }
 
 export const VoucherValidationView: React.FC<VoucherValidationViewProps> = ({ state }) => {
-  const { sales, shifts, users } = state;
+  const { sales, shifts, users, varieties } = state;
 
   const [statusFilter, setStatusFilter] = useState<string>('todos');
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
+  const [isReverifying, setIsReverifying] = useState(false);
+  const [reverifyMessage, setReverifyMessage] = useState<string | null>(null);
+  const [mpServerStatus, setMpServerStatus] = useState<{ configured: boolean; mode: string; message: string } | null>(null);
+  const [showTestLabModal, setShowTestLabModal] = useState(false);
+
+  useEffect(() => {
+    checkMercadoPagoConfigStatus().then(setMpServerStatus);
+  }, []);
 
   // Filtrar ventas por transferencia / Mercado Pago
-  const mpSales = sales.filter((s) => s.paymentMethod === 'mercado_pago');
+  const mpSales = sales.filter((s) => s.paymentMethod === 'mercado_pago' || s.paymentMethod === 'transferencia');
 
   const filteredSales = mpSales.filter((s) => {
     if (statusFilter === 'todos') return true;
@@ -47,6 +59,64 @@ export const VoucherValidationView: React.FC<VoucherValidationViewProps> = ({ st
   // Acciones de Validación
   const handleUpdateStatus = (saleId: string, newStatus: VoucherValidationStatus) => {
     storageService.updateVoucherStatus(saleId, newStatus);
+  };
+
+  // Re-consultar API Mercado Pago en Vivo para el comprobante seleccionado
+  const handleReverifyWithMercadoPago = async () => {
+    if (!selectedSale) return;
+    const opId = selectedSale.voucherExtractedData?.operationId || selectedSale.mpApiVerification?.mpTransactionId;
+    if (!opId) {
+      alert('Esta venta no tiene un número de operación asignado para consultar a Mercado Pago.');
+      return;
+    }
+
+    setIsReverifying(true);
+    setReverifyMessage(null);
+
+    const otherOpIds = sales
+      .filter((s) => s.id !== selectedSale.id)
+      .map((s) => s.voucherExtractedData?.operationId || s.mpApiVerification?.mpTransactionId)
+      .filter(Boolean) as string[];
+
+    const result = await verifyMercadoPagoPayment({
+      operationId: opId,
+      expectedAmount: selectedSale.totalAmount,
+      existingOperationIds: otherOpIds
+    });
+
+    const newStatus: VoucherValidationStatus = result.verified
+      ? 'validada'
+      : result.isDuplicate
+      ? 'sospechosa'
+      : result.status === 'not_found'
+      ? 'inconsistente'
+      : 'pendiente_revision';
+
+    storageService.updateVoucherStatus(
+      selectedSale.id,
+      newStatus,
+      {
+        ...selectedSale.voucherExtractedData,
+        operationId: opId,
+        senderName: result.payerName || selectedSale.voucherExtractedData?.senderName
+      },
+      {
+        matchedInApi: result.verified,
+        mpTransactionId: result.operationId,
+        apiStatus: result.status,
+        verifiedAt: new Date().toISOString(),
+        payerName: result.payerName,
+        payerEmail: result.payerEmail,
+        amount: result.amount,
+        amountMatches: result.amountMatches,
+        isDuplicate: result.isDuplicate,
+        isLiveApi: result.isLiveApi,
+        message: result.message
+      }
+    );
+
+    setReverifyMessage(result.message);
+    setIsReverifying(false);
   };
 
   // Contadores por estado
@@ -75,6 +145,15 @@ export const VoucherValidationView: React.FC<VoucherValidationViewProps> = ({ st
           </div>
 
           <div className="flex items-center space-x-2">
+            <button
+              type="button"
+              onClick={() => setShowTestLabModal(true)}
+              className="px-4 py-2 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 flex items-center space-x-1.5 cursor-pointer transition-all"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>Laboratorio de Pruebas MP</span>
+            </button>
+
             <span className="text-xs bg-sky-950 text-sky-300 border border-sky-800 px-3 py-1.5 rounded-xl font-bold">
               {mpSales.length} Comprobantes Totales
             </span>
@@ -257,26 +336,73 @@ export const VoucherValidationView: React.FC<VoucherValidationViewProps> = ({ st
             </div>
 
             {/* Estado contra la API de Mercado Pago */}
-            <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 flex items-center justify-between text-xs">
-              <div className="flex items-center space-x-2.5">
-                <Smartphone className="w-5 h-5 text-sky-400" />
-                <div>
-                  <div className="font-bold text-white">Estado API Mercado Pago</div>
-                  <div className="text-[11px] text-slate-400">Verificación cruzada de acreditación en cuenta bancaria</div>
+            <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 space-y-2.5 text-xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2.5">
+                  <Smartphone className="w-5 h-5 text-sky-400" />
+                  <div>
+                    <div className="font-bold text-white flex items-center space-x-2">
+                      <span>Estado en Mercado Pago</span>
+                      {mpServerStatus && (
+                        <span className={`text-[10px] px-2 py-0.2 rounded-full font-mono ${
+                          mpServerStatus.configured
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                        }`}>
+                          {mpServerStatus.configured ? 'API Live Activa' : 'Modo Simulación'}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-slate-400">Verificación segura de acreditación en cuenta bancaria</div>
+                  </div>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={handleReverifyWithMercadoPago}
+                  disabled={isReverifying}
+                  className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 disabled:bg-slate-800 text-white rounded-lg text-xs font-bold flex items-center space-x-1.5 shadow-md shadow-sky-600/20 transition-all cursor-pointer disabled:cursor-not-allowed"
+                >
+                  {isReverifying ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Consultando MP...</span>
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Re-consultar MP</span>
+                    </>
+                  )}
+                </button>
               </div>
 
-              <div>
-                <span className={`px-2.5 py-1 rounded-lg font-bold text-xs ${
-                  selectedSale.validationStatus === 'validada'
-                    ? 'bg-emerald-500/20 text-emerald-300'
-                    : selectedSale.validationStatus === 'sospechosa'
-                    ? 'bg-rose-500/20 text-rose-300'
-                    : 'bg-slate-800 text-slate-400'
-                }`}>
-                  {selectedSale.validationStatus === 'validada' ? 'APROBADA & ACREDITADA' : 'PENDIENTE / REQUIERE REVISIÓN'}
-                </span>
-              </div>
+              {selectedSale.mpApiVerification && (
+                <div className="p-2.5 bg-slate-900 border border-slate-800 rounded-lg space-y-1 text-[11px]">
+                  <div className="flex justify-between font-bold">
+                    <span className="text-slate-300">ID en MP: {selectedSale.mpApiVerification.mpTransactionId || 'N/A'}</span>
+                    <span className={selectedSale.mpApiVerification.matchedInApi ? 'text-emerald-400' : 'text-amber-400'}>
+                      {selectedSale.mpApiVerification.apiStatus ? `Estado: ${selectedSale.mpApiVerification.apiStatus.toUpperCase()}` : ''}
+                    </span>
+                  </div>
+                  {selectedSale.mpApiVerification.payerName && (
+                    <div className="text-slate-400">
+                      Titular en MP: <strong className="text-white">{selectedSale.mpApiVerification.payerName}</strong>
+                    </div>
+                  )}
+                  {selectedSale.mpApiVerification.message && (
+                    <div className="text-slate-400 italic">
+                      "{selectedSale.mpApiVerification.message}"
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {reverifyMessage && (
+                <div className="p-2 bg-sky-950/40 border border-sky-600/40 rounded-lg text-[11px] text-sky-300 animate-fadeIn">
+                  🔔 {reverifyMessage}
+                </div>
+              )}
             </div>
 
             {/* Observaciones de la IA */}
@@ -321,6 +447,13 @@ export const VoucherValidationView: React.FC<VoucherValidationViewProps> = ({ st
         )}
 
       </div>
+      
+      {/* Modal Laboratorio de Pruebas Mercado Pago */}
+      <MercadoPagoTestLabModal
+        isOpen={showTestLabModal}
+        onClose={() => setShowTestLabModal(false)}
+        varieties={varieties}
+      />
 
     </div>
   );

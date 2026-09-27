@@ -64,6 +64,7 @@ import {
   INITIAL_BEACH_REPORTS
 } from '../mockData';
 import { calculateCommissionForSales } from '../utils/commissionUtils';
+import { soundAlerts } from '../utils/soundAlerts';
 
 const STORAGE_KEY = 'SGMO_TEQUENOS_COSTA_V2';
 const OFFLINE_QUEUE_KEY = 'SGMO_OFFLINE_SALES_QUEUE';
@@ -615,6 +616,7 @@ class StorageService {
     voucherPhotoUrl?: string;
     voucherExtractedData?: SaleTransaction['voucherExtractedData'];
     validationStatus?: VoucherValidationStatus;
+    mpApiVerification?: SaleTransaction['mpApiVerification'];
     gpsLocation?: { lat: number; lng: number; zoneName?: string };
   }): SaleTransaction {
     const shift = this.state.shifts.find((s) => s.id === saleData.shiftId);
@@ -643,6 +645,7 @@ class StorageService {
       voucherPhotoUrl: saleData.voucherPhotoUrl,
       voucherExtractedData: saleData.voucherExtractedData,
       validationStatus: saleData.validationStatus || (saleData.paymentMethod === 'efectivo' ? 'validada' : 'pendiente_revision'),
+      mpApiVerification: saleData.mpApiVerification,
       gpsLocation: saleData.gpsLocation,
       isOfflineCreated: !isOnline
     };
@@ -696,6 +699,45 @@ class StorageService {
     }
 
     this.state.sales = [newSale, ...this.state.sales];
+
+    // Si la venta es por Mercado Pago o Transferencia y presenta incidencias, alertar con sonido al Administrador/Coordinador
+    const isTransferPayment = newSale.paymentMethod === 'mercado_pago' || newSale.paymentMethod === 'transferencia';
+    const isProblematic = newSale.validationStatus === 'sospechosa' ||
+      newSale.validationStatus === 'inconsistente' ||
+      newSale.validationStatus === 'pendiente_revision' ||
+      Boolean(newSale.mpApiVerification && !newSale.mpApiVerification.matchedInApi);
+
+    if (isTransferPayment && isProblematic) {
+      const isCritical = newSale.validationStatus === 'sospechosa';
+      const opLabel = newSale.voucherExtractedData?.operationId || newSale.id;
+      const statusTitle = newSale.validationStatus === 'sospechosa'
+        ? 'Alerta de Fraude / Sospechosa'
+        : newSale.validationStatus === 'inconsistente'
+        ? 'Inconsistencia Detectada'
+        : 'Requiere Revisión Manual';
+
+      this.state.alerts.unshift({
+        id: `ALT-VOUCHER-${Date.now()}`,
+        timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
+        level: isCritical ? 'critica' : 'advertencia',
+        title: `🚨 Transferencia ${statusTitle} ($${newSale.totalAmount.toLocaleString()})`,
+        message: `${sellerName} en ${newSale.locationName || 'playa'} registró cobro MP por $${newSale.totalAmount.toLocaleString()} (Op: #${opLabel}) en estado "${newSale.validationStatus}". Motivo: ${newSale.voucherExtractedData?.aiNotes || newSale.mpApiVerification?.message || 'Pendiente de acreditación'}.`,
+        category: 'fraude',
+        relatedEntityId: newSale.id,
+        isRead: false,
+        resolved: false
+      });
+
+      // Emitir sonido de alerta si el usuario en sesión es Administrador o Coordinador
+      if (this.state.currentUser?.role === 'admin' || this.state.currentUser?.role === 'coordinator') {
+        soundAlerts.playTransferAlertSound();
+      }
+    } else if (isTransferPayment && newSale.validationStatus === 'validada') {
+      if (this.state.currentUser?.role === 'admin' || this.state.currentUser?.role === 'coordinator') {
+        soundAlerts.playTransferSuccessSound();
+      }
+    }
+
     const locText = newSale.locationName ? ` en ${newSale.locationName}` : '';
     this.addAuditLog(
       'VENTA_REGISTRADA',
@@ -793,6 +835,13 @@ class StorageService {
       previousStatus,
       status
     );
+
+    if (status === 'validada') {
+      soundAlerts.playTransferSuccessSound();
+    } else if (status === 'sospechosa' || status === 'inconsistente') {
+      soundAlerts.playTransferAlertSound();
+    }
+
     this.saveState();
   }
 

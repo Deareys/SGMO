@@ -70,6 +70,11 @@ export const INITIAL_SYSTEM_CONFIG: SystemConfig = {
   deductionRatePerMissingUnit: 1500,
   lowStockAlertThreshold: 50,
   systemName: 'SGMO — Tequeños Costa',
+  mercadoPagoConfig: {
+    alias: 'tequenos.costa.mp',
+    cvu: '0000003100084592019482',
+    accountHolder: 'Tequeños Costa SRL'
+  },
   updatedAt: '2026-08-31 09:00',
   updatedBy: 'Carlos Mendoza'
 };

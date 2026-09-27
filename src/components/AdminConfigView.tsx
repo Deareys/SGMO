@@ -32,10 +32,15 @@ import {
   Key,
   Eye,
   EyeOff,
-  Award
+  Award,
+  Smartphone,
+  QrCode,
+  Sparkles
 } from 'lucide-react';
 import { CommissionTiersTab } from './CommissionTiersTab';
+import { MercadoPagoTestLabModal } from './MercadoPagoTestLabModal';
 import { AppState, storageService } from '../services/storageService';
+import { checkMercadoPagoConfigStatus } from '../services/aiValidationService';
 import {
   SellingCart,
   ProductVariety,
@@ -92,6 +97,12 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
 
   // Estado temporal para Parámetros Globales
   const [globalParams, setGlobalParams] = useState<SystemConfig>(state.systemConfig);
+  const [mpStatus, setMpStatus] = useState<any | null>(null);
+  const [showTestLabModal, setShowTestLabModal] = useState(false);
+
+  React.useEffect(() => {
+    checkMercadoPagoConfigStatus().then(setMpStatus);
+  }, []);
 
   const notifySuccess = (msg: string) => {
     setSaveSuccessMsg(msg);
@@ -354,6 +365,138 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
               <p className="text-[11px] text-slate-400">
                 Genera advertencia preventiva cuando el stock en freezer desciende de este nivel.
               </p>
+            </div>
+
+            {/* SECCIÓN: Configuración de Mercado Pago & Cobros Digitales */}
+            <div className="md:col-span-2 bg-gradient-to-r from-sky-950/40 via-slate-900 to-slate-950 border border-sky-800/40 rounded-2xl p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-800 gap-2">
+                <div className="flex items-center space-x-2.5">
+                  <div className="p-2 rounded-xl bg-sky-500/20 text-sky-400 border border-sky-500/30">
+                    <Smartphone className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white flex items-center space-x-2">
+                      <span>Cobros Digitales & Mercado Pago Oficial</span>
+                      {mpStatus && (
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
+                          mpStatus.configured
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                        }`}>
+                          {mpStatus.configured ? 'Token Live Conectado' : 'Modo Simulación / Prueba'}
+                        </span>
+                      )}
+                    </h3>
+                    <p className="text-[11px] text-slate-400">
+                      Datos mostrados a los vendedores para dictar o generar QR a los compradores en la playa.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowTestLabModal(true)}
+                    className="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black text-xs rounded-xl shadow-md shadow-amber-500/20 flex items-center space-x-1.5 cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Laboratorio de Pruebas MP</span>
+                  </button>
+
+                  <div className="text-[11px] text-slate-400 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">
+                    Consulta: <strong className="text-white">API Oficial (server.ts)</strong>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Alias Oficial de Mercado Pago
+                  </label>
+                  <input
+                    type="text"
+                    value={globalParams.mercadoPagoConfig?.alias || 'tequenos.costa.mp'}
+                    onChange={(e) =>
+                      setGlobalParams({
+                        ...globalParams,
+                        mercadoPagoConfig: {
+                          alias: e.target.value,
+                          cvu: globalParams.mercadoPagoConfig?.cvu || '',
+                          accountHolder: globalParams.mercadoPagoConfig?.accountHolder || 'Tequeños Costa SRL'
+                        }
+                      })
+                    }
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-sky-300 focus:outline-none focus:border-sky-400 font-bold"
+                    placeholder="ej: tequenos.costa.mp"
+                    required
+                  />
+                  <span className="text-[10px] text-slate-500 block mt-1">
+                    El alias que los clientes ingresan en su app MP
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    CVU de la Cuenta
+                  </label>
+                  <input
+                    type="text"
+                    value={globalParams.mercadoPagoConfig?.cvu || '0000003100084592019482'}
+                    onChange={(e) =>
+                      setGlobalParams({
+                        ...globalParams,
+                        mercadoPagoConfig: {
+                          alias: globalParams.mercadoPagoConfig?.alias || 'tequenos.costa.mp',
+                          cvu: e.target.value,
+                          accountHolder: globalParams.mercadoPagoConfig?.accountHolder || 'Tequeños Costa SRL'
+                        }
+                      })
+                    }
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-sky-400"
+                    placeholder="22 dígitos"
+                  />
+                  <span className="text-[10px] text-slate-500 block mt-1">
+                    Por si pagan por transferencia bancaria tradicional
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Titular / Razón Social
+                  </label>
+                  <input
+                    type="text"
+                    value={globalParams.mercadoPagoConfig?.accountHolder || 'Tequeños Costa SRL'}
+                    onChange={(e) =>
+                      setGlobalParams({
+                        ...globalParams,
+                        mercadoPagoConfig: {
+                          alias: globalParams.mercadoPagoConfig?.alias || 'tequenos.costa.mp',
+                          cvu: globalParams.mercadoPagoConfig?.cvu || '',
+                          accountHolder: e.target.value
+                        }
+                      })
+                    }
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-400 font-semibold"
+                    placeholder="ej: Tequeños Costa SRL"
+                    required
+                  />
+                  <span className="text-[10px] text-slate-500 block mt-1">
+                    Nombre que aparece en el comprobante
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800 text-[11px] text-slate-400 space-y-1">
+                <span className="font-bold text-amber-400 flex items-center space-x-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Seguridad de Credenciales de Mercado Pago:</span>
+                </span>
+                <p>
+                  Por estrictas normas de seguridad, el <strong>Token de Acceso de Mercado Pago</strong> (<code>MERCADOPAGO_ACCESS_TOKEN</code>) nunca se almacena en el navegador ni en la base de datos visible; se configura como variable de entorno en el servidor. Todas las consultas de verificación y cruce se procesan de forma privada en el backend (<code>server.ts</code>).
+                </p>
+              </div>
             </div>
 
             <div className="md:col-span-2 flex justify-end">
@@ -1185,6 +1328,13 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
           }}
         />
       )}
+
+      {/* Modal Laboratorio de Pruebas Mercado Pago */}
+      <MercadoPagoTestLabModal
+        isOpen={showTestLabModal}
+        onClose={() => setShowTestLabModal(false)}
+        varieties={state.varieties}
+      />
 
     </div>
   );

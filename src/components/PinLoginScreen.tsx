@@ -1,7 +1,7 @@
 /**
  * SGMO — Tequeños Costa
  * Pantalla de Inicio de Sesión Seguro mediante PIN Personal de 4 Dígitos
- * Acceso individual, privado y directo por rol
+ * Alto Contraste Solar — Diseñado para lectura impecable bajo luz solar directa
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -12,7 +12,6 @@ import {
   ShieldCheck,
   CheckCircle2,
   Sparkles,
-  ArrowRight,
   KeyRound,
   RotateCcw
 } from 'lucide-react';
@@ -36,7 +35,6 @@ export const PinLoginScreen: React.FC<PinLoginScreenProps> = ({ onLoginSuccess }
     setIsAuthenticating(true);
     setErrorMsg(null);
 
-    // Pequeño retardo para dar feedback táctil y visual fluido
     setTimeout(() => {
       const result = storageService.loginWithPin(pinToValidate);
       if (result.success && result.user) {
@@ -48,93 +46,83 @@ export const PinLoginScreen: React.FC<PinLoginScreenProps> = ({ onLoginSuccess }
         setIsAuthenticating(false);
         setErrorMsg(result.error || 'PIN incorrecto. Acceso denegado.');
         setIsShaking(true);
+        setTimeout(() => setIsShaking(false), 500);
         setPin('');
-        setTimeout(() => setIsShaking(false), 600);
       }
     }, 250);
   }, [onLoginSuccess]);
 
-  const handleKeyPress = useCallback((num: string) => {
-    if (isAuthenticating || loginSuccessUser) return;
-    setErrorMsg(null);
-    setPin((prev) => {
-      if (prev.length >= 4) return prev;
-      const next = prev + num;
-      if (next.length === 4) {
-        handleValidatePin(next);
+  const handleKeyPress = (digit: string) => {
+    if (pin.length < 4 && !isAuthenticating && !loginSuccessUser) {
+      const newPin = pin + digit;
+      setPin(newPin);
+      if (newPin.length === 4) {
+        handleValidatePin(newPin);
       }
-      return next;
-    });
-  }, [isAuthenticating, loginSuccessUser, handleValidatePin]);
+    }
+  };
 
-  const handleDelete = useCallback(() => {
-    if (isAuthenticating || loginSuccessUser) return;
-    setErrorMsg(null);
-    setPin((prev) => prev.slice(0, -1));
-  }, [isAuthenticating, loginSuccessUser]);
+  const handleDelete = () => {
+    if (pin.length > 0 && !isAuthenticating && !loginSuccessUser) {
+      setPin(pin.slice(0, -1));
+      setErrorMsg(null);
+    }
+  };
 
-  const handleClear = useCallback(() => {
-    if (isAuthenticating || loginSuccessUser) return;
-    setErrorMsg(null);
-    setPin('');
-  }, [isAuthenticating, loginSuccessUser]);
+  const handleClear = () => {
+    if (!isAuthenticating && !loginSuccessUser) {
+      setPin('');
+      setErrorMsg(null);
+    }
+  };
 
-  // Soporte para teclado físico
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'].includes(e.key)) {
-        e.preventDefault();
+      if (/^[0-9]$/.test(e.key)) {
         handleKeyPress(e.key);
       } else if (e.key === 'Backspace') {
-        e.preventDefault();
         handleDelete();
-      } else if (e.key === 'Escape' || e.key === 'Delete') {
-        e.preventDefault();
+      } else if (e.key === 'Escape') {
         handleClear();
       }
     };
-
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleKeyPress, handleDelete, handleClear]);
+  }, [pin, isAuthenticating, loginSuccessUser]);
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center p-4 relative overflow-hidden select-none">
-      {/* Fondos decorativos sutiles */}
-      <div className="absolute top-1/4 -left-20 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-1/4 -right-20 w-80 h-80 bg-sky-500/10 rounded-full blur-3xl pointer-events-none" />
-
-      <div className="w-full max-w-md bg-slate-900/90 border border-slate-800 backdrop-blur-xl rounded-3xl p-6 sm:p-8 shadow-2xl relative z-10">
+    <div className="min-h-screen bg-slate-100 flex flex-col justify-center items-center p-4 relative select-none">
+      <div className="w-full max-w-sm sm:max-w-md bg-white border-2 border-slate-300 rounded-3xl p-6 sm:p-8 shadow-xl relative z-10">
         
         {/* Identidad y Logo */}
-        <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-amber-500 to-yellow-400 text-slate-950 font-black text-3xl shadow-lg shadow-amber-500/20 mb-3">
+        <div className="text-center mb-5">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-amber-400 to-yellow-400 border-2 border-amber-500 text-slate-950 font-black text-3xl shadow-md mb-2.5">
             🌮
           </div>
-          <h1 className="text-2xl font-black tracking-tight text-white flex items-center justify-center space-x-2">
+          <h1 className="text-2xl font-black tracking-tight text-slate-950 flex items-center justify-center space-x-2">
             <span>SGMO</span>
-            <span className="text-amber-400 font-medium text-xs px-2.5 py-0.5 rounded-full bg-amber-400/10 border border-amber-400/20">
+            <span className="text-amber-900 font-bold text-xs px-2.5 py-0.5 rounded-full bg-amber-100 border border-amber-300">
               Tequeños Costa
             </span>
           </h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Sistema de Gestión y Monitoreo de Operación Costera
+          <p className="text-xs text-slate-600 mt-0.5 font-medium">
+            Terminal de Gestión y Monitoreo Costero
           </p>
         </div>
 
-        {/* Mensaje de Bienvenida / Indicación */}
+        {/* Indicación */}
         <div className="text-center mb-5">
-          <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-slate-800/80 border border-slate-700/60 text-slate-300 text-xs font-medium mb-2">
-            <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+          <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-slate-100 border border-slate-300 text-slate-700 text-xs font-bold mb-1.5">
+            <KeyRound className="w-3.5 h-3.5 text-amber-600" />
             <span>Acceso Seguro por PIN</span>
           </div>
-          <p className="text-sm text-slate-300 font-semibold">
-            Ingresá tu PIN personal de 4 dígitos
+          <p className="text-sm text-slate-900 font-black">
+            Ingresá tu PIN de 4 dígitos
           </p>
         </div>
 
         {/* Visualizador de Dígitos (Dots de PIN) */}
-        <div className={`flex justify-center items-center space-x-4 mb-6 ${isShaking ? 'animate-bounce' : ''}`}>
+        <div className={`flex justify-center items-center space-x-3.5 mb-5 ${isShaking ? 'animate-bounce' : ''}`}>
           {[0, 1, 2, 3].map((index) => {
             const hasDigit = pin.length > index;
             const isCurrent = pin.length === index;
@@ -142,22 +130,22 @@ export const PinLoginScreen: React.FC<PinLoginScreenProps> = ({ onLoginSuccess }
             return (
               <div
                 key={index}
-                className={`w-12 h-14 rounded-2xl flex items-center justify-center border-2 transition-all duration-200 ${
+                className={`w-12 h-14 rounded-2xl flex items-center justify-center border-2 transition-all duration-150 ${
                   loginSuccessUser
-                    ? 'border-emerald-500 bg-emerald-500/20 text-emerald-400 scale-105'
+                    ? 'border-emerald-600 bg-emerald-100 text-emerald-800 scale-105'
                     : hasDigit
-                    ? 'border-amber-500 bg-amber-500/15 shadow-md shadow-amber-500/10'
+                    ? 'border-amber-500 bg-amber-100 shadow-sm'
                     : isCurrent
-                    ? 'border-amber-400/60 bg-slate-950 scale-105 shadow-inner'
-                    : 'border-slate-800 bg-slate-950/70'
+                    ? 'border-amber-500 bg-white scale-105 shadow-inner'
+                    : 'border-slate-300 bg-slate-50'
                 }`}
               >
                 {loginSuccessUser ? (
-                  <CheckCircle2 className="w-6 h-6 text-emerald-400 animate-scale" />
+                  <CheckCircle2 className="w-6 h-6 text-emerald-600 animate-scale" />
                 ) : hasDigit ? (
-                  <div className="w-4 h-4 rounded-full bg-amber-400 shadow-sm shadow-amber-300 animate-pulse" />
+                  <div className="w-4 h-4 rounded-full bg-amber-500 shadow-sm" />
                 ) : (
-                  <div className="w-2 h-2 rounded-full bg-slate-700" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-slate-300" />
                 )}
               </div>
             );
@@ -165,36 +153,36 @@ export const PinLoginScreen: React.FC<PinLoginScreenProps> = ({ onLoginSuccess }
         </div>
 
         {/* Mensaje de Error / Éxito */}
-        <div className="min-h-[38px] flex items-center justify-center mb-4">
+        <div className="min-h-[38px] flex items-center justify-center mb-3">
           {errorMsg && (
-            <div className="flex items-center space-x-2 text-xs font-medium text-rose-400 bg-rose-950/70 border border-rose-800/80 px-3.5 py-1.5 rounded-xl animate-fadeIn">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <div className="flex items-center space-x-1.5 text-xs font-bold text-rose-800 bg-rose-50 border border-rose-300 px-3.5 py-1.5 rounded-xl animate-fadeIn">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
               <span>{errorMsg}</span>
             </div>
           )}
           {isAuthenticating && !errorMsg && (
-            <div className="flex items-center space-x-2 text-xs font-medium text-amber-400 bg-amber-950/50 border border-amber-800/60 px-3 py-1 rounded-xl">
-              <Sparkles className="w-3.5 h-3.5 animate-spin" />
+            <div className="flex items-center space-x-2 text-xs font-bold text-amber-800 bg-amber-50 border border-amber-300 px-3 py-1 rounded-xl">
+              <Sparkles className="w-3.5 h-3.5 animate-spin text-amber-600" />
               <span>Validando credencial...</span>
             </div>
           )}
           {loginSuccessUser && (
-            <div className="flex items-center space-x-2 text-xs font-bold text-emerald-400 bg-emerald-950/80 border border-emerald-800 px-3.5 py-1.5 rounded-xl">
-              <ShieldCheck className="w-4 h-4" />
+            <div className="flex items-center space-x-2 text-xs font-black text-emerald-800 bg-emerald-100 border border-emerald-400 px-3.5 py-1.5 rounded-xl">
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
               <span>Bienvenido/a, {loginSuccessUser.name}</span>
             </div>
           )}
         </div>
 
-        {/* Teclado Numérico Táctil */}
-        <div className="grid grid-cols-3 gap-2.5 sm:gap-3 max-w-[280px] mx-auto">
+        {/* Teclado Numérico Táctil con Alto Contraste */}
+        <div className="grid grid-cols-3 gap-2 sm:gap-2.5 max-w-[280px] mx-auto">
           {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
             <button
               key={digit}
               type="button"
               onClick={() => handleKeyPress(digit)}
               disabled={isAuthenticating || !!loginSuccessUser}
-              className="h-14 sm:h-16 rounded-2xl bg-slate-800/90 hover:bg-slate-700/90 active:bg-amber-500 active:text-slate-950 active:scale-95 border border-slate-700/70 text-xl font-bold text-white transition-all flex items-center justify-center shadow-md focus:outline-none focus:ring-2 focus:ring-amber-500/50 disabled:opacity-50"
+              className="h-13 sm:h-15 rounded-2xl bg-white hover:bg-slate-50 active:bg-amber-400 active:text-slate-950 active:scale-95 border-2 border-slate-300 hover:border-slate-400 text-2xl font-black text-slate-950 transition-all flex items-center justify-center shadow-sm cursor-pointer disabled:opacity-50"
             >
               {digit}
             </button>
@@ -206,7 +194,7 @@ export const PinLoginScreen: React.FC<PinLoginScreenProps> = ({ onLoginSuccess }
             onClick={handleClear}
             disabled={isAuthenticating || !!loginSuccessUser || pin.length === 0}
             title="Borrar todo"
-            className="h-14 sm:h-16 rounded-2xl bg-slate-950/60 hover:bg-slate-800/80 active:scale-95 border border-slate-800 text-xs font-bold text-slate-400 hover:text-slate-200 transition-all flex flex-col items-center justify-center space-y-0.5 focus:outline-none disabled:opacity-30"
+            className="h-13 sm:h-15 rounded-2xl bg-slate-100 hover:bg-slate-200 active:scale-95 border-2 border-slate-300 text-xs font-bold text-slate-700 transition-all flex flex-col items-center justify-center space-y-0.5 cursor-pointer disabled:opacity-40"
           >
             <RotateCcw className="w-4 h-4" />
             <span className="text-[10px]">Limpiar</span>
@@ -217,7 +205,7 @@ export const PinLoginScreen: React.FC<PinLoginScreenProps> = ({ onLoginSuccess }
             type="button"
             onClick={() => handleKeyPress('0')}
             disabled={isAuthenticating || !!loginSuccessUser}
-            className="h-14 sm:h-16 rounded-2xl bg-slate-800/90 hover:bg-slate-700/90 active:bg-amber-500 active:text-slate-950 active:scale-95 border border-slate-700/70 text-xl font-bold text-white transition-all flex items-center justify-center shadow-md focus:outline-none focus:ring-2 focus:ring-amber-500/50 disabled:opacity-50"
+            className="h-13 sm:h-15 rounded-2xl bg-white hover:bg-slate-50 active:bg-amber-400 active:text-slate-950 active:scale-95 border-2 border-slate-300 hover:border-slate-400 text-2xl font-black text-slate-950 transition-all flex items-center justify-center shadow-sm cursor-pointer disabled:opacity-50"
           >
             0
           </button>
@@ -228,7 +216,7 @@ export const PinLoginScreen: React.FC<PinLoginScreenProps> = ({ onLoginSuccess }
             onClick={handleDelete}
             disabled={isAuthenticating || !!loginSuccessUser || pin.length === 0}
             title="Borrar último dígito"
-            className="h-14 sm:h-16 rounded-2xl bg-slate-950/60 hover:bg-slate-800/80 active:scale-95 border border-slate-800 text-slate-400 hover:text-rose-400 transition-all flex flex-col items-center justify-center space-y-0.5 focus:outline-none disabled:opacity-30"
+            className="h-13 sm:h-15 rounded-2xl bg-slate-100 hover:bg-slate-200 active:scale-95 border-2 border-slate-300 text-slate-700 hover:text-rose-700 transition-all flex flex-col items-center justify-center space-y-0.5 cursor-pointer disabled:opacity-40"
           >
             <Delete className="w-5 h-5" />
             <span className="text-[10px]">Borrar</span>
@@ -236,9 +224,9 @@ export const PinLoginScreen: React.FC<PinLoginScreenProps> = ({ onLoginSuccess }
         </div>
 
         {/* Pie de seguridad */}
-        <div className="mt-6 pt-4 border-t border-slate-800/80 text-center">
-          <p className="text-[11px] text-slate-400 flex items-center justify-center space-x-1">
-            <Lock className="w-3 h-3 text-slate-400" />
+        <div className="mt-5 pt-3 border-t border-slate-200 text-center">
+          <p className="text-[11px] text-slate-500 font-medium flex items-center justify-center space-x-1">
+            <Lock className="w-3.5 h-3.5 text-slate-400" />
             <span>Acceso individual restringido por perfil operativo</span>
           </p>
         </div>

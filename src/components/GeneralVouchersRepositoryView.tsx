@@ -42,10 +42,13 @@ import {
   LayoutGrid,
   List,
   Sparkles,
-  Info
+  Info,
+  RefreshCw,
+  Loader2
 } from 'lucide-react';
-import { AppState } from '../services/storageService';
+import { AppState, storageService } from '../services/storageService';
 import { SaleTransaction, VoucherValidationStatus } from '../types';
+import { verifyMercadoPagoPayment } from '../services/aiValidationService';
 
 interface GeneralVouchersRepositoryViewProps {
   state: AppState;
@@ -72,6 +75,72 @@ export const GeneralVouchersRepositoryView: React.FC<GeneralVouchersRepositoryVi
   const [zoomLevel, setZoomLevel] = useState<number>(1);
   const [rotationDegrees, setRotationDegrees] = useState<number>(0);
   const [copiedId, setCopiedId] = useState<boolean>(false);
+  const [reverifyingSaleId, setReverifyingSaleId] = useState<string | null>(null);
+  const [reverifyMessage, setReverifyMessage] = useState<string | null>(null);
+
+  const handleReverifyPayment = async (sale: SaleTransaction) => {
+    const opId = sale.voucherExtractedData?.operationId || sale.mpApiVerification?.mpTransactionId;
+    if (!opId) {
+      alert('Esta venta no tiene un número de operación asignado para consultar a Mercado Pago.');
+      return;
+    }
+
+    setReverifyingSaleId(sale.id);
+    setReverifyMessage(null);
+
+    const otherOpIds = sales
+      .filter((s) => s.id !== sale.id)
+      .map((s) => s.voucherExtractedData?.operationId || s.mpApiVerification?.mpTransactionId)
+      .filter(Boolean) as string[];
+
+    const result = await verifyMercadoPagoPayment({
+      operationId: opId,
+      expectedAmount: sale.totalAmount,
+      existingOperationIds: otherOpIds
+    });
+
+    const newStatus: VoucherValidationStatus = result.verified
+      ? 'validada'
+      : result.isDuplicate
+      ? 'sospechosa'
+      : result.status === 'not_found'
+      ? 'inconsistente'
+      : 'pendiente_revision';
+
+    const updatedExtracted = {
+      ...sale.voucherExtractedData,
+      operationId: opId,
+      senderName: result.payerName || sale.voucherExtractedData?.senderName
+    };
+
+    const updatedMpVerif = {
+      matchedInApi: result.verified,
+      mpTransactionId: result.operationId,
+      apiStatus: result.status,
+      verifiedAt: new Date().toISOString(),
+      payerName: result.payerName,
+      payerEmail: result.payerEmail,
+      amount: result.amount,
+      amountMatches: result.amountMatches,
+      isDuplicate: result.isDuplicate,
+      isLiveApi: result.isLiveApi,
+      message: result.message
+    };
+
+    storageService.updateVoucherStatus(sale.id, newStatus, updatedExtracted, updatedMpVerif);
+
+    if (inspectingSale?.id === sale.id) {
+      setInspectingSale({
+        ...sale,
+        validationStatus: newStatus,
+        voucherExtractedData: updatedExtracted,
+        mpApiVerification: updatedMpVerif
+      });
+    }
+
+    setReverifyMessage(result.message);
+    setReverifyingSaleId(null);
+  };
 
   // Determinar vendedores gestionados para Coordinador
   const coordinatorManagedSellerIds = useMemo(() => {
@@ -628,17 +697,32 @@ export const GeneralVouchersRepositoryView: React.FC<GeneralVouchersRepositoryVi
                   </div>
                 </div>
 
-                {/* Botón de inspección para coordinadores y administradores */}
-                <button
-                  type="button"
-                  onClick={() => handleOpenInspector(sale)}
-                  className="w-full py-2.5 bg-slate-950 hover:bg-slate-800 border-t border-slate-800 text-slate-200 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors cursor-pointer"
-                >
-                  <Eye className="w-3.5 h-3.5 text-sky-400" />
-                  <span>
-                    {currentUser.role === 'seller' ? 'Ver Mi Comprobante' : 'Revisar Comprobante'}
-                  </span>
-                </button>
+                {/* Botón de inspección y comprobación rápida */}
+                <div className="flex border-t border-slate-800 bg-slate-950">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenInspector(sale)}
+                    className="flex-1 py-2.5 hover:bg-slate-800 text-slate-200 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors cursor-pointer"
+                  >
+                    <Eye className="w-3.5 h-3.5 text-sky-400" />
+                    <span>
+                      {currentUser.role === 'seller' ? 'Ver Mi Comprobante' : 'Revisar Comprobante'}
+                    </span>
+                  </button>
+
+                  {(currentUser.role === 'admin' || currentUser.role === 'coordinator') && sale.validationStatus !== 'validada' && (
+                    <button
+                      type="button"
+                      onClick={() => handleReverifyPayment(sale)}
+                      disabled={reverifyingSaleId === sale.id}
+                      className="px-3 py-2.5 bg-sky-950/60 hover:bg-sky-900/60 text-sky-300 border-l border-slate-800 text-xs font-bold flex items-center space-x-1 transition-colors cursor-pointer disabled:opacity-50"
+                      title="Volver a consultar si el pago ya ingresó en Mercado Pago"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${reverifyingSaleId === sale.id ? 'animate-spin' : ''}`} />
+                      <span className="hidden sm:inline">Comprobar MP</span>
+                    </button>
+                  )}
+                </div>
 
               </div>
             );
@@ -750,14 +834,28 @@ export const GeneralVouchersRepositoryView: React.FC<GeneralVouchersRepositoryVi
 
                       {/* Acción */}
                       <td className="p-3 text-center">
-                        <button
-                          type="button"
-                          onClick={() => handleOpenInspector(sale)}
-                          className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center space-x-1 mx-auto transition-colors"
-                        >
-                          <Eye className="w-3.5 h-3.5 text-sky-400" />
-                          <span>Revisar</span>
-                        </button>
+                        <div className="flex items-center justify-center space-x-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenInspector(sale)}
+                            className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center space-x-1 transition-colors"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-sky-400" />
+                            <span>Revisar</span>
+                          </button>
+
+                          {(currentUser.role === 'admin' || currentUser.role === 'coordinator') && sale.validationStatus !== 'validada' && (
+                            <button
+                              type="button"
+                              onClick={() => handleReverifyPayment(sale)}
+                              disabled={reverifyingSaleId === sale.id}
+                              className="p-1.5 rounded-lg bg-sky-950/80 hover:bg-sky-900 text-sky-300 border border-sky-800/80 transition-colors disabled:opacity-50"
+                              title="Comprobar en Mercado Pago si ya ingresó el pago"
+                            >
+                              <RefreshCw className={`w-3.5 h-3.5 ${reverifyingSaleId === sale.id ? 'animate-spin' : ''}`} />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -967,36 +1065,74 @@ export const GeneralVouchersRepositoryView: React.FC<GeneralVouchersRepositoryVi
                     </div>
                   </div>
 
-                  {/* Ficha 3: Módulo Preparado para Validación Automática de Mercado Pago */}
-                  <div className="bg-sky-950/30 p-3.5 rounded-xl border border-sky-800/40 space-y-2">
+                  {/* Ficha 3: Módulo de Validación y Conciliación con Mercado Pago */}
+                  <div className="bg-sky-950/30 p-3.5 rounded-xl border border-sky-800/40 space-y-2.5">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] uppercase font-bold text-sky-300 tracking-wider flex items-center">
                         <Link2 className="w-3 h-3 mr-1" />
                         Conciliación Mercado Pago API
                       </span>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-sky-900/60 text-sky-200 border border-sky-700/60">
-                        Preparado
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold uppercase ${
+                        inspectingSale.validationStatus === 'validada'
+                          ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60'
+                          : inspectingSale.validationStatus === 'sospechosa'
+                          ? 'bg-rose-950/80 text-rose-300 border-rose-700/60'
+                          : 'bg-amber-950/80 text-amber-300 border-amber-700/60'
+                      }`}>
+                        {inspectingSale.validationStatus.replace(/_/g, ' ')}
                       </span>
                     </div>
-
-                    <p className="text-[11px] text-slate-300">
-                      Estructura preparada para enlazar con la API de Mercado Pago y webhooks de pagos entrantes.
-                    </p>
 
                     <div className="space-y-1 text-xs pt-1 border-t border-sky-900/40">
                       <div className="flex items-center justify-between text-[11px]">
                         <span className="text-slate-400">Estado en API MP:</span>
                         <span className="font-semibold text-white">
-                          {inspectingSale.mpApiVerification?.apiStatus || 'Aguardando sincronización webhook'}
+                          {inspectingSale.mpApiVerification?.apiStatus ? inspectingSale.mpApiVerification.apiStatus.toUpperCase() : 'Pendiente de consulta'}
                         </span>
                       </div>
                       <div className="flex items-center justify-between text-[11px]">
                         <span className="text-slate-400">ID de Transacción MP:</span>
-                        <span className="font-mono text-sky-300">
+                        <span className="font-mono text-sky-300 font-bold">
                           {inspectingSale.mpApiVerification?.mpTransactionId || inspectingSale.voucherExtractedData?.operationId || 'No asignado'}
                         </span>
                       </div>
+                      {inspectingSale.mpApiVerification?.payerName && (
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="text-slate-400">Titular en MP:</span>
+                          <span className="text-slate-200">{inspectingSale.mpApiVerification.payerName}</span>
+                        </div>
+                      )}
                     </div>
+
+                    {/* Botón de Comprobación Directa para Administrador y Coordinador */}
+                    {(currentUser.role === 'admin' || currentUser.role === 'coordinator') && (
+                      <div className="pt-2 border-t border-sky-900/40 space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => handleReverifyPayment(inspectingSale)}
+                          disabled={reverifyingSaleId === inspectingSale.id}
+                          className="w-full py-2 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 shadow-md shadow-sky-600/25 transition-all cursor-pointer"
+                        >
+                          {reverifyingSaleId === inspectingSale.id ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <span>Consultando API de Mercado Pago...</span>
+                            </>
+                          ) : (
+                            <>
+                              <RefreshCw className="w-3.5 h-3.5" />
+                              <span>Volver a comprobar si ingresó el dinero</span>
+                            </>
+                          )}
+                        </button>
+
+                        {reverifyMessage && (
+                          <div className="p-2 bg-slate-900 border border-slate-800 rounded-lg text-[11px] text-sky-300 animate-fadeIn">
+                            🔔 {reverifyMessage}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Ficha 4: Registro de Trazabilidad e Inmutabilidad */}

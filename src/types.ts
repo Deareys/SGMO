@@ -356,6 +356,13 @@ export interface SaleTransaction {
     mpTransactionId?: string;
     apiStatus?: string;
     verifiedAt?: string;
+    payerName?: string;
+    payerEmail?: string;
+    amount?: number;
+    amountMatches?: boolean;
+    isDuplicate?: boolean;
+    isLiveApi?: boolean;
+    message?: string;
   };
 
   gpsLocation?: {
@@ -457,6 +464,11 @@ export interface SystemConfig {
   deductionRatePerMissingUnit: number; // ej: 1500
   lowStockAlertThreshold: number;
   systemName: string;
+  mercadoPagoConfig?: {
+    alias: string; // ej: "tequenos.costa.mp"
+    cvu?: string; // ej: "0000003100012345678901"
+    accountHolder: string; // ej: "Tequeños Costa SRL"
+  };
   updatedAt?: string;
   updatedBy?: string;
 }
@@ -480,7 +492,7 @@ export interface OperationalAlert {
   level: 'critica' | 'advertencia' | 'informativa';
   title: string;
   message: string;
-  category: 'stock' | 'comprobante' | 'mantenimiento' | 'diferencia_caja' | 'liquidacion' | 'clima';
+  category: 'stock' | 'comprobante' | 'mantenimiento' | 'diferencia_caja' | 'liquidacion' | 'clima' | 'fraude';
   relatedEntityId?: string;
   isRead: boolean;
   resolved: boolean;
