@@ -1,0 +1,188 @@
+/**
+ * SGMO — Tequeños Costa
+ * Persistence Adapter: LocalStorage
+ *
+ * Implementa el puerto IStorageRepository de la Arquitectura Hexagonal
+ * utilizando el servicio de almacenamiento local con patrón reactivo (Observer).
+ */
+
+import { IStorageRepository } from '../../core/ports/IStorageRepository';
+import {
+  UserProfile,
+  SellingCart,
+  ProductVariety,
+  DailyShift,
+  SaleTransaction,
+  ShiftWasteRecord,
+  ShiftRestockRecord,
+  CommissionTier,
+  OperationalExpense,
+  ProductionOrder,
+  CartIncident
+} from '../../core/domain/types';
+import { storageService } from '../../services/storageService';
+
+export class LocalStorageAdapter implements IStorageRepository {
+  private service = storageService;
+
+  subscribe(listener: () => void): () => void {
+    return this.service.subscribe(listener);
+  }
+
+  getCurrentUser(): UserProfile | null {
+    return this.service.getState().currentUser;
+  }
+
+  setCurrentUser(user: UserProfile | null): void {
+    if (!user) {
+      this.service.logout();
+    } else {
+      this.service.loginWithPin(user.pin || '');
+    }
+  }
+
+  getUsers(): UserProfile[] {
+    return this.service.getState().users;
+  }
+
+  updateUser(id: string, updates: Partial<UserProfile>): void {
+    this.service.updateUser(id, updates);
+  }
+
+  getCarts(): SellingCart[] {
+    return this.service.getState().carts;
+  }
+
+  getCartById(cartId: string): SellingCart | undefined {
+    return this.service.getState().carts.find((c) => c.id === cartId);
+  }
+
+  updateCart(cartId: string, updates: Partial<SellingCart>): void {
+    this.service.updateCart(cartId, updates);
+  }
+
+  getVarieties(): ProductVariety[] {
+    return this.service.getState().varieties;
+  }
+
+  updateVariety(id: string, updates: Partial<ProductVariety>): void {
+    this.service.updateVariety(id, updates);
+  }
+
+  getActiveShiftForUser(userId: string): DailyShift | undefined {
+    return this.service.getState().shifts.find(
+      (s) => s.sellerId === userId && (s.status === 'en_curso' || s.status === 'planificada')
+    );
+  }
+
+  getShifts(): DailyShift[] {
+    return this.service.getState().shifts;
+  }
+
+  startShift(
+    cartId: string,
+    sellerId: string,
+    initialStock: { varietyId: string; quantity: number }[]
+  ): DailyShift {
+    return this.service.dispatchSellerShift({
+      houseId: this.service.getState().selectedHouseId || 'HOUSE-NORTE',
+      sellerId,
+      cartId,
+      zoneId: 'ZONE-STA-TERESITA-CENTRO',
+      stockToDeliver: initialStock,
+      gasPercentStart: 100,
+      napkinsDelivered: 5,
+      conesDelivered: 50,
+      saucesProvided: []
+    });
+  }
+
+  closeShift(shiftId: string, closingData: any): void {
+    this.service.closeAndReconcileShift({
+      shiftId,
+      cashDeclared: closingData.cashDeclared || 0,
+      gasPercentEnd: closingData.gasPercentEnd || 80,
+      returnedItems: closingData.returnedItems || [],
+      deductionMissingRatePerUnit: closingData.deductionMissingRatePerUnit,
+      bonusIncentive: closingData.bonusIncentive,
+      notes: closingData.notes,
+      coordinatorSignature: closingData.coordinatorSignature || 'Firma Coordinación'
+    });
+  }
+
+  recordSale(sale: any): SaleTransaction {
+    return this.service.registerSale(sale);
+  }
+
+  getSalesForShift(shiftId: string): SaleTransaction[] {
+    return this.service.getState().sales.filter((s) => s.shiftId === shiftId);
+  }
+
+  getSales(): SaleTransaction[] {
+    return this.service.getState().sales;
+  }
+
+  recordWaste(params: {
+    shiftId: string;
+    varietyId: string;
+    units: number;
+    reason: string;
+    notes?: string;
+  }): ShiftWasteRecord | undefined {
+    return this.service.recordShiftWaste(
+      params.shiftId,
+      params.varietyId,
+      params.units,
+      params.reason,
+      params.notes
+    );
+  }
+
+  getWasteRecords(shiftId?: string): ShiftWasteRecord[] {
+    const shifts = this.service.getState().shifts;
+    const allWastes: ShiftWasteRecord[] = [];
+    shifts.forEach((s) => {
+      if (!shiftId || s.id === shiftId) {
+        if (s.wasteRecords) {
+          allWastes.push(...s.wasteRecords);
+        }
+      }
+    });
+    return allWastes;
+  }
+
+  recordRestock(data: {
+    shiftId: string;
+    items: { varietyId: string; quantity: number }[];
+    notes?: string;
+  }): ShiftRestockRecord[] {
+    const result = this.service.addShiftRestock(data);
+    return result.restockRecords;
+  }
+
+  getCommissionTiers(): CommissionTier[] {
+    return this.service.getCommissionTiers();
+  }
+
+  updateCommissionTiers(tiers: CommissionTier[]): void {
+    this.service.saveCommissionTiers(tiers);
+  }
+
+  getOperatingCosts(): OperationalExpense[] {
+    return this.service.getState().expenses || [];
+  }
+
+  getProductionOrders(): ProductionOrder[] {
+    return this.service.getState().productionOrders || [];
+  }
+
+  getIncidents(): CartIncident[] {
+    return this.service.getState().incidents || [];
+  }
+
+  resetToFactorySeed(): void {
+    this.service.resetToFactorySeed();
+  }
+}
+
+export const localStorageAdapter = new LocalStorageAdapter();

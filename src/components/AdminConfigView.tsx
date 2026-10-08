@@ -328,25 +328,94 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
               </p>
             </div>
 
-            <div className="bg-slate-800/60 border border-slate-700/70 rounded-xl p-4 space-y-2">
-              <label className="block text-xs font-semibold text-slate-300">
-                Monto a Descontar por Unidad Faltante no justificada ($)
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-2.5 text-slate-400 text-sm">$</span>
-                <input
-                  type="number"
-                  value={globalParams.deductionRatePerMissingUnit}
-                  onChange={(e) =>
-                    setGlobalParams({ ...globalParams, deductionRatePerMissingUnit: Number(e.target.value) })
-                  }
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-8 pr-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400"
-                  required
-                />
+            {/* Política Escalonada de Mermas y Faltantes Injustificados */}
+            <div className="bg-slate-800/60 border border-slate-700/70 rounded-xl p-4 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-amber-400 uppercase tracking-wider">
+                  Política de Descuento por Merma y Faltantes Injustificados
+                </label>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Protección contra mermas excesivas o regalos no autorizados. Los tequeños justificados (caídas accidentales o degustación) tienen tarifa reducida; los excedentes injustificados se cobran a precio combo.
+                </p>
               </div>
-              <p className="text-[11px] text-slate-400">
-                Penalización por tequeño faltante en el recuento físico al regresar a la base.
-              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-medium text-slate-300">
+                    Tolerancia Justificada (≤ x unidades)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={globalParams.wasteToleranceThreshold ?? 3}
+                    onChange={(e) =>
+                      setGlobalParams({
+                        ...globalParams,
+                        wasteToleranceThreshold: Math.max(0, Number(e.target.value) || 0)
+                      })
+                    }
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400 font-mono"
+                    required
+                  />
+                  <span className="text-[10px] text-slate-400">Cantidad límite justificada (ej: 3 u)</span>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-medium text-slate-300">
+                    Descuento si ≤ x unidades ($)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-2.5 top-2 text-slate-400 text-xs">$</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={globalParams.wastePenaltyRateBelowOrEqual ?? 500}
+                      onChange={(e) =>
+                        setGlobalParams({
+                          ...globalParams,
+                          wastePenaltyRateBelowOrEqual: Math.max(0, Number(e.target.value) || 0)
+                        })
+                      }
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-6 pr-2 py-2 text-sm text-white focus:outline-none focus:border-amber-400 font-mono"
+                      required
+                    />
+                  </div>
+                  <span className="text-[10px] text-slate-400">Tarifa tolerada o costo (ej: $500 o $0)</span>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-medium text-slate-300">
+                    Descuento si &gt; x unidades ($ Combo)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-2.5 top-2 text-slate-400 text-xs">$</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={globalParams.wastePenaltyRateAbove ?? 2500}
+                      onChange={(e) =>
+                        setGlobalParams({
+                          ...globalParams,
+                          wastePenaltyRateAbove: Math.max(0, Number(e.target.value) || 0),
+                          deductionRatePerMissingUnit: Math.max(0, Number(e.target.value) || 0)
+                        })
+                      }
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-6 pr-2 py-2 text-sm text-amber-300 focus:outline-none focus:border-amber-400 font-mono font-bold"
+                      required
+                    />
+                  </div>
+                  <span className="text-[10px] text-amber-400/80">Tarifa injustificada combo (ej: $2.500)</span>
+                </div>
+              </div>
+
+              {/* Ejemplo dinámico de aplicación */}
+              <div className="p-2.5 bg-slate-900/80 border border-slate-700/50 rounded-lg text-[11px] text-slate-300 flex items-center gap-2">
+                <span className="text-amber-400 font-bold">ℹ Regla Activa:</span>
+                <span>
+                  Merma ≤ {globalParams.wasteToleranceThreshold ?? 3} u = <strong>${(globalParams.wastePenaltyRateBelowOrEqual ?? 500).toLocaleString()}/u</strong>.
+                  Excedente &gt; {globalParams.wasteToleranceThreshold ?? 3} u = <strong>${(globalParams.wastePenaltyRateAbove ?? 2500).toLocaleString()}/u</strong> (tarifa combo).
+                </span>
+              </div>
             </div>
 
             <div className="bg-slate-800/60 border border-slate-700/70 rounded-xl p-4 space-y-2">

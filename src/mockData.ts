@@ -68,6 +68,9 @@ export const INITIAL_SYSTEM_CONFIG: SystemConfig = {
   defaultCommissionRate: 0.20,
   commissionTiers: INITIAL_COMMISSION_TIERS,
   deductionRatePerMissingUnit: 1500,
+  wasteToleranceThreshold: 3,
+  wastePenaltyRateBelowOrEqual: 500,
+  wastePenaltyRateAbove: 2500,
   lowStockAlertThreshold: 50,
   systemName: 'SGMO — Tequeños Costa',
   mercadoPagoConfig: {

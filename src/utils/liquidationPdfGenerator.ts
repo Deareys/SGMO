@@ -354,7 +354,7 @@ export function downloadLiquidationPdf(shift: DailyShift): boolean {
     doc.setTextColor(slateSub[0], slateSub[1], slateSub[2]);
     doc.text(`• Comprobantes Validados:`, mpX + 4, y + 11.5);
     doc.setTextColor(emeraldDark[0], emeraldDark[1], emeraldDark[2]);
-    doc.text(formatCurrency(shift.mpValidatedAmount || shift.totalMpSales), mpX + payBoxWidth - 4, y + 11.5, { align: 'right' });
+    doc.text(formatCurrency(shift.mpValidatedAmount || 0), mpX + payBoxWidth - 4, y + 11.5, { align: 'right' });
 
     doc.setTextColor(slateSub[0], slateSub[1], slateSub[2]);
     doc.text(`• En Revisión / Observados:`, mpX + 4, y + 16.5);
@@ -425,7 +425,10 @@ export function downloadLiquidationPdf(shift: DailyShift): boolean {
     // Fila 4: Descuento por Faltantes de Unidades
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(slateSub[0], slateSub[1], slateSub[2]);
-    doc.text('Descuentos por Faltante de Unidades no justificadas:', margin + 5, y + 28);
+    const wasteDetail = shift.wasteDeductionBreakdown
+      ? ` (≤${shift.wasteDeductionBreakdown.toleratedUnits}u tol. + ${shift.wasteDeductionBreakdown.excessUnits}u combo)`
+      : '';
+    doc.text(`Descuentos por Merma/Faltante no justificado${wasteDetail}:`, margin + 5, y + 28);
     doc.setFont('helvetica', 'bold');
     if (shift.deductionsForMissingUnits && shift.deductionsForMissingUnits > 0) {
       doc.setTextColor(roseDark[0], roseDark[1], roseDark[2]);

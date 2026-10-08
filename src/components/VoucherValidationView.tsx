@@ -84,7 +84,7 @@ export const VoucherValidationView: React.FC<VoucherValidationViewProps> = ({ st
       existingOperationIds: otherOpIds
     });
 
-    const newStatus: VoucherValidationStatus = result.verified
+    const newStatus: VoucherValidationStatus = (result.verified && result.status === 'approved')
       ? 'validada'
       : result.isDuplicate
       ? 'sospechosa'

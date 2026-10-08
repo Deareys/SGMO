@@ -41,7 +41,7 @@ export async function verifyMercadoPagoPayment(params: {
     const data: MercadoPagoVerificationResponse = await response.json();
     return data;
   } catch (error: any) {
-    console.warn('Backend MP no disponible directamente o sin conexión en la playa, usando validación contingente:', error);
+    console.warn('Backend MP no disponible directamente o sin conexión en la playa, usando validación contingente segura:', error);
     const cleanId = (params.operationId || '').trim();
     const isDup = (params.existingOperationIds || []).includes(cleanId);
     
@@ -60,20 +60,21 @@ export async function verifyMercadoPagoPayment(params: {
     }
 
     const hasDigits = cleanId.replace(/\D/g, '').length >= 6;
+    // REGLA FINANCIERA OBLIGATORIA: Ausencia de confirmación positiva de Mercado Pago = PAGO NO CONFIRMADO
     return {
-      success: true,
-      verified: hasDigits,
-      status: hasDigits ? 'approved' : 'pending',
+      success: false,
+      verified: false,
+      status: 'pendiente_revision',
       operationId: cleanId,
       amount: params.expectedAmount,
       expectedAmount: params.expectedAmount,
-      amountMatches: true,
-      payerName: 'Cliente Mercado Pago (Playa)',
+      amountMatches: false,
+      payerName: undefined,
       isDuplicate: false,
       isLiveApi: false,
       message: hasDigits
-        ? `Operación #${cleanId} guardada localmente para auditoría de acreditación.`
-        : `Número #${cleanId} registrado. Pendiente de verificación por coordinación.`
+        ? `Operación #${cleanId} guardada localmente. PENDIENTE DE REVISIÓN: No se pudo verificar la acreditación con Mercado Pago por falta de conexión.`
+        : `Número #${cleanId} registrado. PENDIENTE DE REVISIÓN por coordinación.`
     };
   }
 }
@@ -415,7 +416,10 @@ function fallbackLocalVoucherAnalysis(params: {
   const amountMatches = true;
   const isDuplicateId = isDuplicate;
 
-  let validationStatus: 'validada' | 'pendiente_revision' | 'inconsistente' | 'sospechosa' = 'validada';
+  // OCR solo extrae información; la ausencia de confirmación bancaria oficial obliga a 'pendiente_revision'
+  let validationStatus: 'validada' | 'pendiente_revision' | 'inconsistente' | 'sospechosa' = isDuplicateId
+    ? 'sospechosa'
+    : 'pendiente_revision';
   let mismatchReason: string | undefined = undefined;
 
   if (isDuplicateId) {
@@ -431,18 +435,18 @@ function fallbackLocalVoucherAnalysis(params: {
       time: timeStr,
       senderName: 'Cliente Playa',
       destinationAccount: 'Tequeños Costa SRL',
-      confidenceScore: 0.95,
+      confidenceScore: 0.85,
       aiNotes: isDuplicateId
         ? 'Alerta de duplicidad detectada en el número de comprobante.'
-        : 'Comprobante escaneado correctamente y verificado.'
+        : 'Comprobante escaneado localmente. PENDIENTE DE REVISIÓN: No verificado en banco.'
     },
     validationStatus,
     matchResults: {
       amountMatches,
       dateMatches: true,
       isDuplicateOperationId: isDuplicateId,
-      mpApiMatched: !isDuplicateId,
-      mpTransactionStatus: isDuplicateId ? 'duplicate_flagged' : 'approved',
+      mpApiMatched: false, // NUNCA TRUE SIN CONFIRMACIÓN OFICIAL DE MERCADO PAGO
+      mpTransactionStatus: isDuplicateId ? 'duplicate_flagged' : 'pending',
       mismatchReason
     }
   };

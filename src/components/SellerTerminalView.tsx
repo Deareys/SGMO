@@ -313,18 +313,23 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
 
     const finalOpId = manualOperationId.trim() || voucherAnalysis?.extractedData.operationId;
 
-    // Determinar estado de validación según respuesta de MP o IA
+    // Determinar estado de validación según regla estricta:
+    // AUSENCIA DE CONFIRMACIÓN POSITIVA DE MERCADO PAGO = PAGO NO CONFIRMADO
     let finalValidationStatus: 'validada' | 'pendiente_revision' | 'inconsistente' | 'sospechosa' = 'pendiente_revision';
     if (paymentMethod === 'efectivo') {
       finalValidationStatus = 'validada';
-    } else if (mpVerification?.verified) {
-      finalValidationStatus = 'validada';
-    } else if (mpVerification?.isDuplicate) {
+    } else if (mpVerification?.isDuplicate || voucherAnalysis?.matchResults.isDuplicateOperationId) {
       finalValidationStatus = 'sospechosa';
-    } else if (voucherAnalysis) {
-      finalValidationStatus = voucherAnalysis.validationStatus;
-    } else if (paymentMethod === 'mercado_pago' || paymentMethod === 'transferencia') {
-      finalValidationStatus = finalOpId ? 'pendiente_revision' : 'pendiente_revision';
+    } else if (voucherAnalysis?.extractedData.isVisualAnomalyDetected) {
+      finalValidationStatus = 'sospechosa';
+    } else if (voucherAnalysis?.matchResults.amountMatches === false) {
+      finalValidationStatus = 'inconsistente';
+    } else if (mpVerification?.verified === true && mpVerification?.status === 'approved') {
+      // ÚNICAMENTE si la API oficial de Mercado Pago confirmó positivamente la acreditación
+      finalValidationStatus = 'validada';
+    } else {
+      // Sin confirmación bancaria positiva = PENDIENTE DE REVISIÓN (nunca confirmada)
+      finalValidationStatus = 'pendiente_revision';
     }
 
     storageService.registerSale({
@@ -711,21 +716,21 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
 
         {/* Modal de Autodespacho para Coordinador o Administrador */}
         {showSelfDispatchModal && currentUser.role !== 'seller' && (
-          <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white border-2 border-slate-300 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto text-slate-900">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-3">
                 <div className="flex items-center space-x-2">
-                  <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold">
+                  <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
                     <Store className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="text-base font-bold text-white">Autodespacho de Carrito</h3>
-                    <span className="text-[11px] text-slate-400">Asignar jornada para: {currentUser.name}</span>
+                    <h3 className="text-base font-black text-slate-950">Autodespacho de Carrito</h3>
+                    <span className="text-[11px] text-slate-600 font-semibold">Asignar jornada para: {currentUser.name}</span>
                   </div>
                 </div>
                 <button
                   onClick={() => setShowSelfDispatchModal(false)}
-                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800"
+                  className="text-slate-500 hover:text-slate-900 p-1 rounded-lg hover:bg-slate-100 cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -733,11 +738,11 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
 
               <form onSubmit={handleSelfDispatch} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Carrito Disponible</label>
+                  <label className="block text-xs font-black text-slate-800 mb-1">Carrito Disponible</label>
                   <select
                     value={selfDispatchCartId}
                     onChange={(e) => setSelfDispatchCartId(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-amber-400"
+                    className="w-full bg-slate-50 border-2 border-slate-300 rounded-xl p-2.5 text-xs text-slate-950 font-bold focus:outline-none focus:border-amber-500"
                     required
                   >
                     {availableHouseCarts.map((c) => (
@@ -749,11 +754,11 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Zona de Playa</label>
+                  <label className="block text-xs font-black text-slate-800 mb-1">Zona de Playa</label>
                   <select
                     value={selfDispatchZoneId}
                     onChange={(e) => setSelfDispatchZoneId(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-amber-400"
+                    className="w-full bg-slate-50 border-2 border-slate-300 rounded-xl p-2.5 text-xs text-slate-950 font-bold focus:outline-none focus:border-amber-500"
                     required
                   >
                     {zones.map((z) => (
@@ -765,60 +770,60 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
                 </div>
 
                 <div className="space-y-2 pt-1">
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-400">
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-800">
                     Stock Inicial en Conservadora (Unidades)
                   </label>
                   <div className="grid grid-cols-3 gap-2">
-                    <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-                      <span className="text-[11px] text-slate-400 block mb-1">Clásico</span>
+                    <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                      <span className="text-[11px] text-slate-700 block mb-1 font-bold">Clásico</span>
                       <input
                         type="number"
                         value={selfDispatchClasico}
                         onChange={(e) => setSelfDispatchClasico(Number(e.target.value))}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-xs font-bold text-white text-center"
+                        className="w-full bg-white border-2 border-slate-300 rounded-lg p-1.5 text-xs font-black text-slate-950 text-center font-mono"
                         min="0"
                         step="10"
                       />
                     </div>
-                    <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-                      <span className="text-[11px] text-slate-400 block mb-1">Ahumado</span>
+                    <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                      <span className="text-[11px] text-slate-700 block mb-1 font-bold">Ahumado</span>
                       <input
                         type="number"
                         value={selfDispatchAhumado}
                         onChange={(e) => setSelfDispatchAhumado(Number(e.target.value))}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-xs font-bold text-white text-center"
+                        className="w-full bg-white border-2 border-slate-300 rounded-lg p-1.5 text-xs font-black text-slate-950 text-center font-mono"
                         min="0"
                         step="10"
                       />
                     </div>
-                    <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-                      <span className="text-[11px] text-slate-400 block mb-1">Dulce</span>
+                    <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                      <span className="text-[11px] text-slate-700 block mb-1 font-bold">Dulce</span>
                       <input
                         type="number"
                         value={selfDispatchDulce}
                         onChange={(e) => setSelfDispatchDulce(Number(e.target.value))}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-xs font-bold text-white text-center"
+                        className="w-full bg-white border-2 border-slate-300 rounded-lg p-1.5 text-xs font-black text-slate-950 text-center font-mono"
                         min="0"
                         step="10"
                       />
                     </div>
                   </div>
-                  <div className="text-right text-[11px] text-amber-400 font-bold">
+                  <div className="text-right text-[11px] text-amber-900 font-black">
                     Total: {selfDispatchClasico + selfDispatchAhumado + selfDispatchDulce} unidades
                   </div>
                 </div>
 
-                <div className="flex justify-end space-x-2 pt-3 border-t border-slate-800">
+                <div className="flex justify-end space-x-2 pt-3 border-t border-slate-200">
                   <button
                     type="button"
                     onClick={() => setShowSelfDispatchModal(false)}
-                    className="px-4 py-2 bg-slate-800 text-xs text-slate-300 rounded-xl hover:bg-slate-700"
+                    className="px-4 py-2 bg-slate-100 text-xs font-bold text-slate-700 rounded-xl hover:bg-slate-200 cursor-pointer"
                   >
                     Cancelar
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 bg-gradient-to-r from-amber-500 to-yellow-400 text-slate-950 text-xs font-black rounded-xl shadow-lg shadow-amber-500/20"
+                    className="px-5 py-2.5 bg-amber-400 hover:bg-amber-300 border-2 border-amber-500 text-slate-950 text-xs font-black rounded-xl shadow-sm cursor-pointer"
                   >
                     Iniciar Mi Jornada de Venta
                   </button>
@@ -1409,7 +1414,11 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
                         ) : (
                           <>
                             <AlertTriangle className="w-4 h-4 text-amber-700" />
-                            <span>OPERACIÓN NO ENCONTRADA EN MP</span>
+                            <span>
+                              {mpVerification.status === 'not_found'
+                                ? 'OPERACIÓN NO ENCONTRADA EN MP'
+                                : 'PENDIENTE DE ACREDITACIÓN / REVISIÓN'}
+                            </span>
                           </>
                         )}
                       </span>

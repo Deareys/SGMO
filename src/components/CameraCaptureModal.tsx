@@ -158,23 +158,23 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-4">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col max-h-[95vh]">
+    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+      <div className="bg-white border-2 border-slate-300 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col max-h-[95vh] text-slate-900">
         
         {/* Cabecera */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-slate-950/70">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-slate-50">
           <div className="flex items-center space-x-2">
-            <div className="p-1.5 rounded-lg bg-sky-500/20 text-sky-400">
+            <div className="p-1.5 rounded-lg bg-sky-100 text-sky-800">
               <Camera className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white">Fotografiar Comprobante</h3>
-              <p className="text-[11px] text-slate-400">Enfocá la pantalla del comprador con Mercado Pago</p>
+              <h3 className="text-sm font-black text-slate-950">Fotografiar Comprobante</h3>
+              <p className="text-[11px] text-slate-600 font-medium">Enfocá la pantalla del comprador con Mercado Pago</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-all"
+            className="p-1.5 text-slate-500 hover:text-slate-900 rounded-lg hover:bg-slate-200 transition-all cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -246,13 +246,13 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
         </div>
 
         {/* Barra de Controles Inferiores */}
-        <div className="p-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between gap-3">
+        <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3">
           {capturedPhoto ? (
             <>
               <button
                 type="button"
                 onClick={handleRetake}
-                className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition-all flex items-center justify-center space-x-1.5 cursor-pointer"
+                className="flex-1 py-3 bg-slate-200 hover:bg-slate-300 text-slate-900 text-xs font-bold rounded-xl transition-all flex items-center justify-center space-x-1.5 cursor-pointer"
               >
                 <RefreshCw className="w-4 h-4" />
                 <span>Volver a Tomar</span>
@@ -260,7 +260,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
               <button
                 type="button"
                 onClick={handleConfirmPhoto}
-                className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-600/25 transition-all flex items-center justify-center space-x-1.5 cursor-pointer"
+                className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black rounded-xl shadow-md transition-all flex items-center justify-center space-x-1.5 cursor-pointer"
               >
                 <Check className="w-4 h-4" />
                 <span>Usar Esta Foto</span>
@@ -273,7 +273,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
                 type="button"
                 onClick={toggleFacingMode}
                 title="Cambiar de cámara"
-                className="p-3 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 rounded-xl transition-all"
+                className="p-3 bg-white border-2 border-slate-300 hover:bg-slate-100 text-slate-800 rounded-xl transition-all cursor-pointer"
               >
                 <RefreshCw className="w-4 h-4" />
               </button>
@@ -283,7 +283,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
                 type="button"
                 onClick={takeSnapshot}
                 disabled={isLoadingCamera}
-                className="flex-1 py-3.5 bg-gradient-to-r from-sky-500 to-sky-600 hover:from-sky-400 hover:to-sky-500 active:scale-95 text-white font-bold text-sm rounded-xl shadow-xl shadow-sky-500/20 flex items-center justify-center space-x-2 transition-all cursor-pointer"
+                className="flex-1 py-3.5 bg-sky-600 hover:bg-sky-500 active:scale-95 text-white font-black text-sm rounded-xl shadow-md flex items-center justify-center space-x-2 transition-all cursor-pointer"
               >
                 <Camera className="w-5 h-5" />
                 <span>Capturar Foto</span>
@@ -294,7 +294,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
                 type="button"
                 onClick={() => fallbackFileInputRef.current?.click()}
                 title="Subir desde galería"
-                className="p-3 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 rounded-xl transition-all"
+                className="p-3 bg-white border-2 border-slate-300 hover:bg-slate-100 text-slate-800 rounded-xl transition-all cursor-pointer"
               >
                 <ImageIcon className="w-4 h-4" />
               </button>
@@ -303,7 +303,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl"
+              className="w-full py-3 bg-slate-200 hover:bg-slate-300 text-slate-900 text-xs font-bold rounded-xl cursor-pointer"
             >
               Cerrar
             </button>

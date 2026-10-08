@@ -437,6 +437,15 @@ export interface DailyShift {
   housingCostDeduction: number; // Costo de vivienda por persona descontado (ej: $8.000)
   housingCostExempt?: boolean;
   deductionsForMissingUnits: number;
+  wasteDeductionBreakdown?: {
+    toleratedUnits: number;
+    toleratedRate: number;
+    toleratedAmount: number;
+    excessUnits: number;
+    excessRate: number;
+    excessAmount: number;
+    totalDeduction: number;
+  };
   incentivesOrBonuses: number;
   finalPayoutAmount: number;
   payoutStatus: 'pendiente' | 'pagado' | 'retenido_revision';
@@ -461,7 +470,11 @@ export interface SystemConfig {
   housingCostPerPersonDaily: number; // Costo por persona por jornada (ej: 8000)
   defaultCommissionRate: number; // ej: 0.20 (20%)
   commissionTiers: CommissionTier[]; // Tramos configurables de recompensas / porcentaje de comisión
-  deductionRatePerMissingUnit: number; // ej: 1500
+  deductionRatePerMissingUnit: number; // ej: 1500 (tarifa base o de respaldo)
+  // Política de Mermas y Faltantes Injustificados (configurables por Administrador)
+  wasteToleranceThreshold?: number; // x cantidad máxima tolerada / justificada (ej: 3 tequeños)
+  wastePenaltyRateBelowOrEqual?: number; // $xxxxx: descuento por unidad si <= x (ej: $500 o $0 si justificada)
+  wastePenaltyRateAbove?: number; // $yyyyy: descuento por unidad si > x (ej: $2500 - precio combo)
   lowStockAlertThreshold: number;
   systemName: string;
   mercadoPagoConfig?: {

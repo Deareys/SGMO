@@ -64,6 +64,7 @@ import {
   INITIAL_BEACH_REPORTS
 } from '../mockData';
 import { calculateCommissionForSales } from '../utils/commissionUtils';
+import { calculateWasteDeduction } from '../core/domain/settlementRules';
 import { soundAlerts } from '../utils/soundAlerts';
 
 const STORAGE_KEY = 'SGMO_TEQUENOS_COSTA_V2';
@@ -815,7 +816,7 @@ class StorageService {
       let validated = 0;
       let pending = 0;
       this.state.sales
-        .filter((s) => s.shiftId === shift.id && s.paymentMethod === 'mercado_pago')
+        .filter((s) => s.shiftId === shift.id && (s.paymentMethod === 'mercado_pago' || s.paymentMethod === 'transferencia'))
         .forEach((s) => {
           if (s.validationStatus === 'validada') {
             validated += s.totalAmount;
@@ -919,9 +920,28 @@ class StorageService {
     shift.totalUnitsWaste = totalWaste;
     shift.totalUnitsDifference = totalDifferenceUnits;
 
-    // Cálculo de deducciones por faltante si existe política
-    const deductionRate = data.deductionMissingRatePerUnit || 0;
-    const deductions = totalDifferenceUnits > 0 ? totalDifferenceUnits * deductionRate : 0;
+    // Cálculo de deducciones por faltante / merma injustificada
+    const config = this.state.systemConfig;
+    let deductions = 0;
+    let wasteBreakdown: any = undefined;
+
+    if (totalDifferenceUnits > 0) {
+      if (config?.wasteToleranceThreshold !== undefined) {
+        wasteBreakdown = calculateWasteDeduction(
+          totalDifferenceUnits,
+          {
+            thresholdUnits: config.wasteToleranceThreshold,
+            rateBelowOrEqual: config.wastePenaltyRateBelowOrEqual ?? 500,
+            rateAbove: config.wastePenaltyRateAbove ?? 2500
+          },
+          data.deductionMissingRatePerUnit || 1500
+        );
+        deductions = wasteBreakdown.totalDeduction;
+      } else {
+        const deductionRate = data.deductionMissingRatePerUnit || config?.deductionRatePerMissingUnit || 1500;
+        deductions = totalDifferenceUnits * deductionRate;
+      }
+    }
     const bonus = data.bonusIncentive || 0;
 
     // Deducción de costo de vivienda por persona diaria (salvo exención)
@@ -937,6 +957,7 @@ class StorageService {
     );
 
     shift.deductionsForMissingUnits = deductions;
+    shift.wasteDeductionBreakdown = wasteBreakdown;
     shift.incentivesOrBonuses = bonus;
     shift.housingCostDeduction = housingDeduction;
     shift.housingCostExempt = isExempt;

@@ -58,7 +58,9 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
   
   // Stock devuelto contado
   const [returnedCounts, setReturnedCounts] = useState<Record<string, { count: number; waste: number }>>({});
-  const [deductionMissingRate, setDeductionMissingRate] = useState<number>(1500); // $1,500 precio venta o $300 costo
+  const [deductionMissingRate, setDeductionMissingRate] = useState<number>(
+    state.systemConfig?.wastePenaltyRateAbove ?? state.systemConfig?.deductionRatePerMissingUnit ?? 1500
+  );
   const [bonusIncentive, setBonusIncentive] = useState<number>(0);
   const [closingNotes, setClosingNotes] = useState<string>('');
 
@@ -576,9 +578,19 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
               </div>
 
               {selectedShift.deductionsForMissingUnits > 0 && (
-                <div className="flex justify-between items-center p-2.5 bg-rose-950/30 rounded-xl border border-rose-800/40 text-rose-300">
-                  <span>Deducción por Faltante de Unidades:</span>
-                  <span className="font-mono font-bold">-${selectedShift.deductionsForMissingUnits.toLocaleString()}</span>
+                <div className="p-2.5 bg-rose-950/30 rounded-xl border border-rose-800/40 text-rose-300 space-y-1">
+                  <div className="flex justify-between items-center">
+                    <span>Deducción por Merma / Faltante:</span>
+                    <span className="font-mono font-bold">-${selectedShift.deductionsForMissingUnits.toLocaleString()}</span>
+                  </div>
+                  {selectedShift.wasteDeductionBreakdown && (
+                    <div className="text-[11px] text-rose-300/80 flex flex-wrap gap-x-2 pt-1 border-t border-rose-800/30">
+                      <span>Tolerancia (≤{selectedShift.wasteDeductionBreakdown.toleratedUnits}u): ${selectedShift.wasteDeductionBreakdown.toleratedAmount.toLocaleString()}</span>
+                      {selectedShift.wasteDeductionBreakdown.excessUnits > 0 && (
+                        <span>• Excedente combo ({selectedShift.wasteDeductionBreakdown.excessUnits}u): ${selectedShift.wasteDeductionBreakdown.excessAmount.toLocaleString()}</span>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -830,7 +842,7 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
                 </div>
                 <div className="flex justify-between text-slate-300">
                   <span className="text-slate-400">Mercado Pago / Transferencia:</span>
-                  <span>${receiptShift.totalMpSales.toLocaleString()} (Validado: ${(receiptShift.mpValidatedAmount || receiptShift.totalMpSales).toLocaleString()})</span>
+                  <span>${receiptShift.totalMpSales.toLocaleString()} (Validado: ${(receiptShift.mpValidatedAmount || 0).toLocaleString()})</span>
                 </div>
               </div>
 
@@ -872,9 +884,19 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
                   </span>
                 </div>
                 {receiptShift.deductionsForMissingUnits > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Deducción Faltantes:</span>
-                    <span className="text-rose-400 font-bold">-${receiptShift.deductionsForMissingUnits.toLocaleString()}</span>
+                  <div className="space-y-0.5">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Deducción Merma / Faltantes:</span>
+                      <span className="text-rose-400 font-bold">-${receiptShift.deductionsForMissingUnits.toLocaleString()}</span>
+                    </div>
+                    {receiptShift.wasteDeductionBreakdown && (
+                      <div className="text-[10px] text-slate-400 flex justify-between px-1">
+                        <span>≤{receiptShift.wasteDeductionBreakdown.toleratedUnits}u: ${receiptShift.wasteDeductionBreakdown.toleratedAmount.toLocaleString()}</span>
+                        {receiptShift.wasteDeductionBreakdown.excessUnits > 0 && (
+                          <span>&gt;{receiptShift.wasteDeductionBreakdown.toleratedUnits}u (combo): ${receiptShift.wasteDeductionBreakdown.excessAmount.toLocaleString()}</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
                 {receiptShift.incentivesOrBonuses > 0 && (

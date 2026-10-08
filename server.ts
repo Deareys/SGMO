@@ -171,7 +171,9 @@ Analizá minuciosamente la imagen del comprobante y extraé los siguientes datos
     const amountDifference = Math.abs(extractedData.amount - (Number(saleAmount) || 0));
     const amountMatches = amountDifference < 1.0; // margen menor a $1
 
-    let validationStatus: 'validada' | 'pendiente_revision' | 'inconsistente' | 'sospechosa' = 'validada';
+    // Reglas de negocio y semáforo de validación OCR
+    // IMPORTANTE: OCR solo extrae texto de la imagen, NUNCA confirma acreditación de dinero en cuenta bancaria.
+    let validationStatus: 'validada' | 'pendiente_revision' | 'inconsistente' | 'sospechosa' = 'pendiente_revision';
     let mismatchReason: string | undefined = undefined;
 
     if (isDuplicate) {
@@ -186,11 +188,14 @@ Analizá minuciosamente la imagen del comprobante y extraé los siguientes datos
     } else if (extractedData.confidenceScore < 0.70) {
       validationStatus = 'pendiente_revision';
       mismatchReason = 'Lectura de baja nitidez. Requiere confirmación visual del coordinador.';
+    } else {
+      validationStatus = 'pendiente_revision';
+      mismatchReason = 'Comprobante escaneado. Pendiente de verificación y acreditación bancaria en Mercado Pago.';
     }
 
-    // Simulación de respuesta cruzada con API de Mercado Pago
-    const mpApiMatched = validationStatus === 'validada' || validationStatus === 'pendiente_revision';
-    const mpTransactionStatus = isDuplicate ? 'duplicate_flagged' : (mpApiMatched ? 'approved' : 'rejected');
+    // OCR NO es una consulta bancaria oficial: mpApiMatched siempre es false aquí
+    const mpApiMatched = false;
+    const mpTransactionStatus = isDuplicate ? 'duplicate_flagged' : 'pending';
 
     res.json({
       extractedData,
@@ -583,26 +588,22 @@ app.post('/api/mercadopago/verify-payment', async (req: Request, res: Response) 
       }
     }
 
-    // 4. Modo de Simulación y Validación Segura Heurística (cuando no hay token configurado o modo contingencia)
-    const isMockInvalid = cleanId.toLowerCase().includes('rechaz') || cleanId.toLowerCase().includes('fake') || cleanId.toLowerCase().includes('error');
-    const isApprovedMock = !isMockInvalid && digitsOnly.length >= 6;
-
+    // 4. Regla Financiera Obligatoria:
+    // AUSENCIA DE CONFIRMACIÓN POSITIVA DE MERCADO PAGO = PAGO NO CONFIRMADO
+    // Si no hay token en el servidor, si la API falló o si no devolvió HTTP 200 con status 'approved',
+    // NUNCA se aprueba la operación. Queda estrictamente en estado 'pendiente_acreditacion' con verified: false.
     res.json({
-      success: true,
-      verified: isApprovedMock,
-      status: isApprovedMock ? 'approved' : 'not_found',
+      success: false,
+      verified: false,
+      status: 'pendiente_acreditacion',
       operationId: cleanId,
-      amount: Number(expectedAmount) || 7500,
       expectedAmount: Number(expectedAmount),
-      amountMatches: true,
-      payerName: isApprovedMock ? 'Cliente Playa (Verificado)' : undefined,
-      paymentMethodId: 'account_money',
-      dateCreated: new Date().toISOString(),
+      amountMatches: false,
       isDuplicate: false,
-      isLiveApi: false,
-      message: isApprovedMock
-        ? `Operación #${cleanId} verificada correctamente (Modo Simulación Segura. Configure MERCADOPAGO_ACCESS_TOKEN para producción en vivo).`
-        : `Operación #${cleanId} no válida o formato incorrecto.`
+      isLiveApi: Boolean(mpAccessToken),
+      message: mpAccessToken
+        ? `No se pudo confirmar la acreditación de la operación #${cleanId} en la cuenta oficial de Mercado Pago. La venta queda en estado PENDIENTE DE REVISIÓN.`
+        : `Servidor sin credenciales de Mercado Pago configuradas. La operación #${cleanId} queda guardada en estado PENDIENTE DE REVISIÓN.`
     });
   } catch (error: any) {
     console.error('Error en /api/mercadopago/verify-payment:', error);
@@ -704,18 +705,19 @@ app.get('/api/mercadopago/webhooks', (req: Request, res: Response) => {
   });
 });
 
-// Endpoint legado mantenido para compatibilidad
+// Endpoint legado mantenido para compatibilidad (sin aprobación ficticia)
 app.post('/api/mercadopago/verify', (req: Request, res: Response) => {
   const { operationId, amount } = req.body;
-  const isApproved = !operationId.includes('FAKE') && !operationId.includes('DUP');
 
   res.json({
-    status: isApproved ? 'approved' : 'not_found',
+    status: 'pending',
+    verified: false,
     operationId,
     amount,
     currencyId: 'ARS',
     timestamp: new Date().toISOString(),
-    collectorId: 'TEQUENOS_COSTA_OFICIAL'
+    collectorId: 'TEQUENOS_COSTA_OFICIAL',
+    message: 'Operación pendiente de verificación bancaria.'
   });
 });
 
