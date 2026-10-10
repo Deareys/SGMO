@@ -5,6 +5,89 @@
 
 ---
 
+## [0.9.0] - 2026-10-10 (Fase 3: Autenticación, Autorización y Seguridad del Backend)
+
+### Añadido
+- **Módulo Criptográfico y Seguridad de PIN (`src/server/auth/cryptoUtils.ts`):**
+  - Implementación de `scrypt` con salt aleatorio individual para almacenamiento seguro de PINs (`hashPin`, `verifyPin`).
+  - Generación de tokens opacos criptográficos de 256 bits (`generateSessionToken`, `hashToken` con SHA-256).
+- **Gestión Centralizada de Sesiones (`src/server/auth/sessionManager.ts`):**
+  - `SessionManager`: Emisión, validación y revocación de sesiones vinculadas a usuarios y roles.
+  - Almacenamiento seguro persistente en base de datos PostgreSQL (`auth_sessions`) y en memoria segura como respaldo.
+  - Expiración automática configurada en 14 horas continuas (jornada de playa).
+- **Middlewares de Control de Acceso y RBAC (`src/server/auth/authMiddleware.ts`):**
+  - `authenticateToken`: Extracción y validación estricta de encabezados `Authorization: Bearer <token>` y `x-auth-token`.
+  - `requireRole`: Control de acceso por roles (`admin`, `coordinator`, `seller`, `factory_worker`).
+- **Protección contra Ataques de Fuerza Bruta (`src/server/auth/rateLimiter.ts`):**
+  - `pinRateLimiter`: Límite de 5 intentos fallidos consecutivos de PIN con bloqueo temporal de 15 minutos (HTTP 429).
+- **Endpoints de Autenticación (`src/server/auth/authRoutes.ts`):**
+  - `POST /api/auth/login`: Autenticación por PIN en backend con respuesta de token seguro.
+  - `POST /api/auth/logout`: Revocación inmediata de sesión.
+  - `GET /api/auth/me`: Consulta del perfil autenticado a partir del token de sesión.
+- **Migración DDL de Seguridad (`migrations/003_auth_sessions_security.sql`):**
+  - Tabla `auth_sessions` con índices de búsqueda rápida por hash de token y fecha de expiración.
+  - Columnas `failed_attempts`, `locked_until`, `last_login_at` y `pin_salt` en la tabla `users`.
+- **Script de Pruebas Automatizadas (`scripts/verify-auth-security.ts`):**
+  - Suite de 12 pruebas de seguridad y RBAC: rechazo anónimo 401, rechazo por rol 403, emisión de token, login seller/admin, logout y revocación.
+
+### Modificado
+- `server.ts`:
+  - Montado del enrutador de autenticación en `/api/auth`.
+  - Protección con `authenticateToken` y `requireRole` sobre endpoints sensibles: `/api/mercadopago/recent-payments`, `/api/mercadopago/verify-payment`, `/api/mercadopago/webhooks`, `/api/ai/*`.
+- `src/server/routes/dbRoutes.ts`:
+  - Aplicación de autorización basada en roles para `/users`, `/shifts`, `/sales`, `/shifts/:id/close`, `/shifts/:id/waste`, `/shifts/:id/restock` y `/migrate`.
+- `src/services/storageService.ts`:
+  - Método `loginWithPinAsync` que autentica contra `/api/auth/login` y almacena el token de sesión.
+  - Método `getAuthToken` y limpieza de tokens al ejecutar `logout()`.
+  - Sincronización de token Bearer en `flushOfflineQueue()`, `createUser()` y `updateUser()`.
+- `src/components/PinLoginScreen.tsx`:
+  - Actualizado para consumir el flujo asíncrono seguro del backend manteniendo feedback táctil instantáneo y alto contraste solar.
+- `src/adapters/persistence/HttpStorageAdapter.ts`:
+  - Encabezado `Authorization: Bearer <token>` adjunto en todas las peticiones fetch a la API.
+
+---
+
+## [0.8.0] - 2026-10-10 (Fase 2: Arquitectura de Persistencia Central en PostgreSQL y Adaptador Híbrido)
+
+### Añadido
+- **Esquema Relacional PostgreSQL (`migrations/`):**
+  - `migrations/001_initial_schema.sql`: DDL completo de 15 tablas relacionales (`users`, `operational_houses`, `selling_carts`, `product_varieties`, `daily_shifts`, `shift_stock_items`, `shift_waste_records`, `shift_restock_records`, `sales`, `commission_tiers`, `system_configs`, `operational_expenses`, `cart_incidents`, `audit_logs`, `mp_webhook_events`) con claves foráneas, restricciones de unicidad, índices y tipos exactos `NUMERIC(12, 2)` para moneda.
+  - `migrations/002_seed_initial_data.sql`: Semilla inicial reproducible de casas, variedades, carritos, usuarios y tramos de comisión.
+  - Tabla de control de versiones `schema_migrations`.
+- **Capa de Conexión y Repositorios Backend (`src/server/db/`):**
+  - `connection.ts`: Gestor de Pool `pg` con transacciones ACID (`withTransaction`), soporte SSL y reporte estricto de estado (`DATABASE CONFIGURED` vs `DATABASE NOT CONFIGURED`).
+  - `migrator.ts`: Ejecutor de migraciones secuenciales de base de datos.
+  - `UserRepository.ts`: Repositorio SQL para consulta y actualización de usuarios.
+  - `ShiftRepository.ts`: Repositorio transaccional para apertura, despacho y cierre conciliado de jornadas.
+  - `SaleRepository.ts`: Repositorio SQL con inserción individual y sincronización masiva idempotente (`syncBatch`).
+  - `StockRepository.ts`: Repositorio SQL para balances de inventario, mermas y reposiciones intermedias en playa.
+- **Rutas REST en Backend (`src/server/routes/dbRoutes.ts` y `server.ts`):**
+  - `GET /api/db/status`: Diagnóstico de conexión y proveedor de base de datos.
+  - `POST /api/db/migrate`: Ejecución de migraciones pendientes.
+  - `GET/POST/PUT /api/users`: CRUD de usuarios contra PostgreSQL.
+  - `GET/POST /api/shifts`, `PUT /api/shifts/:id/close`: Gestión de jornadas y cierre de turno.
+  - `GET/POST /api/sales`, `POST /api/sales/sync-batch`: Registro y sincronización de ventas.
+  - `POST /api/shifts/:id/waste`, `POST /api/shifts/:id/restock`: Mermas y reposiciones.
+- **Adaptadores de Infraestructura (`src/adapters/persistence/`):**
+  - `HttpStorageAdapter.ts`: Implementación de `IStorageRepository` que consume los endpoints REST de PostgreSQL.
+  - `HybridStorageAdapter.ts`: Coordinador reactivo que combina almacenamiento local y persistencia central según conectividad sin pérdida de datos.
+  - Inyección en `src/container.ts` para proveer acceso unificado.
+- **Script de Verificación y Auditoría (`scripts/verify-persistence.ts`):**
+  - Comprobación automática de los 10 puntos de persistencia (ventas, jornadas, stock, IDs únicos, FKs, idempotencia).
+- **Documentación Técnica:**
+  - `docs/DATABASE.md`: Modelo E-R, tablas, tipos, DDL, conexión y estrategia de sincronización.
+  - `docs/ARCHITECTURE.md`: Diagrama de flujo hexagonal y capas desacopladas.
+  - `docs/DECISIONS.md`: Registro formal de ADR-010.
+
+### Modificado
+- **Cola Offline (`src/services/storageService.ts`):**
+  - `flushOfflineQueue()` ahora envía las ventas encoladas a `POST /api/sales/sync-batch`.
+  - Si el servidor devuelve error o no está disponible, las ventas permanecen en la cola local sin eliminarse.
+- **Variables de Entorno (`.env.example`):**
+  - Documentación de la variable `DATABASE_URL` para PostgreSQL central.
+
+---
+
 ## [0.7.2] - 2026-10-05 (Blindaje Financiero y Eliminación de Aprobaciones Simuladas)
 
 ### Modificado

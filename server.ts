@@ -6,12 +6,18 @@
 import express, { Request, Response } from 'express';
 import path from 'path';
 import { GoogleGenAI, Type } from '@google/genai';
+import { dbRouter } from './src/server/routes/dbRoutes';
+import { authRouter } from './src/server/auth/authRoutes';
+import { authenticateToken, requireRole } from './src/server/auth/authMiddleware';
 
 const app = express();
 const PORT = 3000;
 
 // Parser JSON con límite amplio para imágenes base64 de comprobantes
 app.use(express.json({ limit: '25mb' }));
+
+// Rutas de Autenticación y Control de Sesión
+app.use('/api/auth', authRouter);
 
 // Lazy inicialización del cliente Gemini
 let aiClient: GoogleGenAI | null = null;
@@ -66,7 +72,7 @@ async function generateContentWithFallback(ai: GoogleGenAI, requestOptions: any)
   throw lastError;
 }
 
-// 1. Health check
+// 1. Health check & Base de Datos
 app.get('/api/health', (req: Request, res: Response) => {
   res.json({
     status: 'ok',
@@ -75,8 +81,12 @@ app.get('/api/health', (req: Request, res: Response) => {
   });
 });
 
+// Rutas de Persistencia Centralizada (PostgreSQL)
+app.use('/api', dbRouter);
+app.use('/api/db', dbRouter);
+
 // 2. Validación Asistida con IA de Comprobantes de Transferencia (Mercado Pago OCR)
-app.post('/api/ai/validate-voucher', async (req: Request, res: Response) => {
+app.post('/api/ai/validate-voucher', authenticateToken, async (req: Request, res: Response) => {
   try {
     const {
       imageBase64,
@@ -216,7 +226,7 @@ Analizá minuciosamente la imagen del comprobante y extraé los siguientes datos
 });
 
 // 3. Recomendación Predictiva de Stock con IA para Coordinadores
-app.post('/api/ai/recommend-stock', async (req: Request, res: Response) => {
+app.post('/api/ai/recommend-stock', authenticateToken, requireRole('admin', 'coordinator'), async (req: Request, res: Response) => {
   try {
     const {
       zoneName,
@@ -407,7 +417,7 @@ app.post('/api/mercadopago/create-preference', async (req: Request, res: Respons
 });
 
 // Consultar últimos pagos recibidos en la cuenta de Mercado Pago
-app.get('/api/mercadopago/recent-payments', async (req: Request, res: Response) => {
+app.get('/api/mercadopago/recent-payments', authenticateToken, requireRole('admin', 'coordinator'), async (req: Request, res: Response) => {
   try {
     const mpAccessToken = process.env.MERCADOPAGO_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN;
     if (!mpAccessToken) {
@@ -448,7 +458,7 @@ app.get('/api/mercadopago/recent-payments', async (req: Request, res: Response) 
   }
 });
 
-app.post('/api/mercadopago/verify-payment', async (req: Request, res: Response) => {
+app.post('/api/mercadopago/verify-payment', authenticateToken, async (req: Request, res: Response) => {
   try {
     const { operationId, expectedAmount = 0, existingOperationIds = [] } = req.body;
 
@@ -697,7 +707,7 @@ app.post('/api/mercadopago/webhook', handleMercadoPagoWebhook);
 app.post('/api/webhooks/mercadopago', handleMercadoPagoWebhook);
 
 // Consultar el registro de Webhooks recibidos para depuración y trazabilidad
-app.get('/api/mercadopago/webhooks', (req: Request, res: Response) => {
+app.get('/api/mercadopago/webhooks', authenticateToken, requireRole('admin'), (req: Request, res: Response) => {
   res.json({
     success: true,
     totalReceived: receivedWebhooks.length,

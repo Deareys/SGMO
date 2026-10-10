@@ -8,9 +8,9 @@ export type UserRole = 'admin' | 'coordinator' | 'seller' | 'factory_worker';
 export interface UserProfile {
   id: string;
   name: string;
-  email: string;
   role: UserRole;
   phone: string;
+  email?: string;
   pin?: string; // Código PIN para inicio de sesión seguro
   avatarUrl?: string;
   assignedHouseId?: string; // Para coordinadores, vendedores y residentes
@@ -20,6 +20,22 @@ export interface UserProfile {
   isActive: boolean;
   notes?: string;
   permissions?: string[];
+}
+
+export interface AuthSession {
+  token: string;
+  expiresAt: string;
+  user: UserProfile;
+}
+
+export interface AuthLoginResponse {
+  success: boolean;
+  token?: string;
+  expiresAt?: string;
+  user?: UserProfile;
+  error?: string;
+  message?: string;
+  remainingAttempts?: number;
 }
 
 // 1. Materias Primas, Insumos y Categorías

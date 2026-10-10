@@ -1,243 +1,247 @@
-# DATABASE.md — Modelo de Datos y Esquema de Persistencia
+# DATABASE.md — Modelo de Datos y Esquema de Persistencia Central (PostgreSQL)
 
 > **Sistema:** SGMO — Tequeños Costa  
-> **Versión:** 0.6.0  
-> **Estado Actual:** Serialización en `localStorage` (Clave `SGMO_APP_STATE`)  
-> **Estado Objetivo:** Base de Datos Relacional PostgreSQL / Cloud SQL
+> **Versión:** 0.8.0 (Fase 2: Persistencia Central Relacional)  
+> **Motor de Base de Datos:** PostgreSQL (Compatible con Cloud SQL, Neon, Supabase y PostgreSQL nativo)  
+> **Estado de Conexión:** Dual / Híbrido (`DATABASE CONFIGURED` cuando existe `DATABASE_URL`; fallback local en `localStorage` ante contingencias de red o ausencia de credenciales).
 
 ---
 
-## 1. ESQUEMA DE DATOS ACTUAL (`src/types/index.ts`)
+## 1. ARQUITECTURA DE PERSISTENCIA REAL
 
-En el sistema actual, el estado global se almacena en memoria y se persiste en `window.localStorage` dentro de la clave `SGMO_APP_STATE`.
-
-### 1.1 Entidades Principales
+La persistencia del sistema está desacoplada mediante la **Arquitectura Hexagonal**:
 
 ```
-+---------------------------------------------------------------------------------+
-|                                 DIAGRAMA E-R (LÓGICO)                           |
-+---------------------------------------------------------------------------------+
-
-     [BaseOperativa] 1 ──── N [Cart] 1 ──── N [Shift] 1 ──── N [Sale]
-                                                │
-                                                ├──── N [ShiftWasteRecord]
-                                                ├──── N [ShiftRestockRecord]
-                                                └──── 1 [ShiftReconciliation]
-
-     [User] (sellerId, coordinatorId) ─── ASIGNADO A ───> [Shift]
-
-     [Variety] 1 ──── N [SaleItem]
-         │
-         └──── N [RecipeItem] ──── N [RawMaterial] ──── N [Supplier]
-
-     [CommissionTier] (Reglas de cálculo global)
-     [OperatingCost] (Costos fijos y variables)
-```
-
----
-
-## 2. ESPECIFICACIÓN DETALLADA DE ENTIDADES
-
-### 2.1 `User` (Usuarios y Personal)
-- `id: string` (PK, ej: `'usr-1'`)
-- `name: string` (Nombre y apellido del empleado)
-- `role: 'seller' | 'coordinator' | 'admin' | 'kitchen'`
-- `pin: string` (Código numérico de 4 dígitos para login rápido en playa)
-- `assignedCartId?: string` (FK opcional a `Cart`)
-- `phone?: string`
-- `active: boolean`
-
-### 2.2 `Cart` (Carritos de Playa)
-- `id: string` (PK, ej: `'cart-1'`)
-- `code: string` (Identificador físico, ej: `'C-01'`)
-- `name: string` (Nombre de fantasía, ej: `'El Dorado'`)
-- `baseId: string` (FK a `BaseOperativa`, ej: `'base-sta-teresita'`)
-- `assignedSellerId?: string` (FK opcional a `User`)
-- `status: 'available' | 'assigned' | 'in_route' | 'maintenance'`
-- `gasTankLevel: number` (Porcentaje de gas restante en la garrafa, 0-100)
-- `inventory: Record<string, number>` (Mapa de variedadId -> stock actual de unidades en carrito)
-- `location?: string` (Playa actual, ej: `'Calle 32 - Santa Teresita'`)
-
-### 2.3 `Variety` (Variedades de Producto)
-- `id: string` (PK, ej: `'var-queso'`)
-- `name: string` (Nombre comercial, ej: `'Tequeño de Queso Llanero'`)
-- `price: number` (Precio unitario de venta al público en ARS)
-- `cost: number` (Costo unitario de fabricación en ARS)
-- `color: string` (Código hex para la UI, ej: `'#3B82F6'`)
-- `isAvailable: boolean`
-
-### 2.4 `Shift` (Jornada de Venta del Vendedor)
-- `id: string` (PK, ej: `'shift-20261004-usr-1'`)
-- `cartId: string` (FK a `Cart`)
-- `sellerId: string` (FK a `User`)
-- `coordinatorId: string` (FK a `User` que despachó)
-- `startTime: string` (ISO timestamp de salida a playa)
-- `endTime?: string` (ISO timestamp de regreso y cierre)
-- `status: 'open' | 'closed'`
-- `initialStock: Record<string, number>` (Unidades entregadas por variedad al salir)
-- `currentStock: Record<string, number>` (Stock restante estimado en tiempo real)
-- `finalStock?: Record<string, number>` (Unidades físicas devueltas a la base al cerrar)
-- `initialGasLevel: number` (Gas al inicio del turno)
-- `finalGasLevel?: number` (Gas al cierre)
-
-### 2.5 `Sale` (Transacción de Venta)
-- `id: string` (PK, ej: `'sale-1728000000000'`)
-- `shiftId: string` (FK a `Shift`)
-- `sellerId: string` (FK a `User`)
-- `timestamp: string` (ISO timestamp)
-- `varietyId: string` (FK a `Variety`)
-- `quantity: number` (Unidades equivalentes vendidas, ej: 1, 3, 6, 12)
-- `unitPrice: number` (Precio unitario aplicado)
-- `totalAmount: number` (Total cobrado en ARS)
-- `comboType: 'unidad' | 'combo3' | 'combo6' | 'combo12'`
-- `paymentMethod: 'cash' | 'mercadopago' | 'transfer'`
-- `voucherUrl?: string` (DataURL base64 o URL remota de la captura de pantalla del comprobante)
-- `voucherOcrData?: VoucherOCRData` (Datos extraídos por Gemini OCR: operationId, amount, date)
-- `paymentStatus: 'pending' | 'verified' | 'rejected'`
-- `location: string` (Sector de playa o bajada registrada)
-- `isOffline?: boolean` (Flag indicador de venta realizada sin conexión)
-
-### 2.6 `ShiftWasteRecord` (Mermas del Turno)
-- `id: string` (PK)
-- `shiftId: string` (FK a `Shift`)
-- `varietyId: string` (FK a `Variety`)
-- `quantity: number` (Cantidad de unidades rotas, quemadas o caídas)
-- `reason: 'quemado' | 'roto' | 'vencido' | 'caida_arena' | 'otro'`
-- `timestamp: string` (ISO)
-- `authorizedBy: string` (FK a `User` coordinador)
-
-### 2.7 `ShiftRestockRecord` (Reposiciones Intermedias en Playa)
-- `id: string` (PK)
-- `shiftId: string` (FK a `Shift`)
-- `timestamp: string` (ISO)
-- `items: Record<string, number>` (Unidades adicionales entregadas en la playa)
-- `dispatchedBy: string` (FK a `User` coordinador en moto o cuatriciclo)
-
-### 2.8 `CommissionTier` (Escalafón Dinámico de Comisiones)
-- `id: string` (PK)
-- `name: string` (ej: `'Tramo Inicial (10%)'`, `'Tramo Medio (20%)'`, `'Tramo Estrella (30%)'`)
-- `minSalesAmount: number` (Piso de facturación del tramo en ARS)
-- `maxSalesAmount: number` (Techo del tramo en ARS; `Infinity` para el tramo superior)
-- `percentage: number` (Porcentaje aplicable, ej: 10, 20, 30)
-- `active: boolean`
-
----
-
-## 3. ESQUEMA DE BASE DE DATOS OBJETIVO (POSTGRESQL / CLOUD SQL)
-
-Para llevar este modelo a un motor relacional en la nube, se propone el siguiente esquema DDL:
-
-```sql
--- Habilitar extensión UUID
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
--- 1. TABLA DE USUARIOS
-CREATE TABLE users (
-    id VARCHAR(64) PRIMARY KEY,
-    name VARCHAR(120) NOT NULL,
-    role VARCHAR(20) NOT NULL CHECK (role IN ('seller', 'coordinator', 'admin', 'kitchen')),
-    pin_hash VARCHAR(255) NOT NULL, -- Hasheado con bcrypt, NO texto plano
-    phone VARCHAR(30),
-    active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- 2. TABLA DE BASES OPERATIVAS
-CREATE TABLE bases_operativas (
-    id VARCHAR(64) PRIMARY KEY,
-    name VARCHAR(120) NOT NULL,
-    city VARCHAR(80) NOT NULL,
-    address TEXT,
-    active BOOLEAN DEFAULT TRUE
-);
-
--- 3. TABLA DE CARRITOS
-CREATE TABLE carts (
-    id VARCHAR(64) PRIMARY KEY,
-    code VARCHAR(20) UNIQUE NOT NULL,
-    name VARCHAR(80) NOT NULL,
-    base_id VARCHAR(64) REFERENCES bases_operativas(id),
-    status VARCHAR(20) DEFAULT 'available' CHECK (status IN ('available', 'assigned', 'in_route', 'maintenance')),
-    gas_tank_level NUMERIC(5,2) DEFAULT 100.0,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- 4. TABLA DE VARIEDADES
-CREATE TABLE varieties (
-    id VARCHAR(64) PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    price NUMERIC(10,2) NOT NULL,
-    cost NUMERIC(10,2) NOT NULL,
-    color VARCHAR(20) DEFAULT '#3B82F6',
-    is_available BOOLEAN DEFAULT TRUE
-);
-
--- 5. TABLA DE JORNADAS / TURNOS (SHIFTS)
-CREATE TABLE shifts (
-    id VARCHAR(64) PRIMARY KEY,
-    cart_id VARCHAR(64) NOT NULL REFERENCES carts(id),
-    seller_id VARCHAR(64) NOT NULL REFERENCES users(id),
-    coordinator_id VARCHAR(64) NOT NULL REFERENCES users(id),
-    start_time TIMESTAMP WITH TIME ZONE NOT NULL,
-    end_time TIMESTAMP WITH TIME ZONE,
-    status VARCHAR(20) DEFAULT 'open' CHECK (status IN ('open', 'closed')),
-    initial_gas_level NUMERIC(5,2) DEFAULT 100.0,
-    final_gas_level NUMERIC(5,2),
-    housing_deduction NUMERIC(10,2) DEFAULT 8000.00,
-    missing_unit_penalty NUMERIC(10,2) DEFAULT 1500.00,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- 6. TABLA DE STOCK INICIAL Y FINAL POR JORNADA
-CREATE TABLE shift_inventory (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    shift_id VARCHAR(64) NOT NULL REFERENCES shifts(id) ON DELETE CASCADE,
-    variety_id VARCHAR(64) NOT NULL REFERENCES varieties(id),
-    initial_stock INT NOT NULL DEFAULT 0,
-    returned_stock INT,
-    CONSTRAINT uq_shift_variety UNIQUE (shift_id, variety_id)
-);
-
--- 7. TABLA DE TRANSACCIONES DE VENTA
-CREATE TABLE sales (
-    id VARCHAR(64) PRIMARY KEY,
-    shift_id VARCHAR(64) NOT NULL REFERENCES shifts(id),
-    seller_id VARCHAR(64) NOT NULL REFERENCES users(id),
-    variety_id VARCHAR(64) NOT NULL REFERENCES varieties(id),
-    quantity INT NOT NULL CHECK (quantity > 0),
-    unit_price NUMERIC(10,2) NOT NULL,
-    total_amount NUMERIC(10,2) NOT NULL,
-    combo_type VARCHAR(20) NOT NULL CHECK (combo_type IN ('unidad', 'combo3', 'combo6', 'combo12')),
-    payment_method VARCHAR(20) NOT NULL CHECK (payment_method IN ('cash', 'mercadopago', 'transfer')),
-    payment_status VARCHAR(20) DEFAULT 'pending' CHECK (payment_status IN ('pending', 'verified', 'rejected')),
-    mp_operation_id VARCHAR(80),
-    voucher_image_url TEXT,
-    location VARCHAR(120),
-    is_offline BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_sales_shift ON sales(shift_id);
-CREATE INDEX idx_sales_mp_op ON sales(mp_operation_id);
-
--- 8. TABLA DE AUDITORÍA DE MERCADO PAGO / WEBHOOKS
-CREATE TABLE mp_webhook_events (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    topic VARCHAR(50) NOT NULL,
-    resource_id VARCHAR(100) NOT NULL,
-    payload JSONB NOT NULL,
-    processed BOOLEAN DEFAULT FALSE,
-    received_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
++-----------------------------------------------------------------------------------+
+|                              CAPA DE PRESENTACIÓN / REACT                         |
+|   Terminal de Venta, Cierre de Jornada, Configuración, Vistas Operativas          |
++-----------------------------------------------------------------------------------+
+                                          │
+                                          ▼
++-----------------------------------------------------------------------------------+
+|                        CASOS DE USO / PUERTO IStorageRepository                   |
++-----------------------------------------------------------------------------------+
+                                          │
+                  ┌───────────────────────┴────────────────────────┐
+                  ▼                                                ▼
++------------------------------------+           +----------------------------------+
+|        LocalStorageAdapter         |           |        HttpStorageAdapter        |
+|  - Almacena en window.localStorage |           |  - Consulta REST a /api/db/*     |
+|  - Modo offline 100% garantizado   |           |  - Persistencia multi-cliente    |
++------------------------------------+           +----------------------------------+
+                  ▲                                                ▲
+                  └───────────────────────┬────────────────────────┘
+                                          │
+                                          ▼
+                         +----------------------------------+
+                         |       HybridStorageAdapter       |
+                         |  - Detecta estado central        |
+                         |  - Respaldo local inmutable      |
+                         |  - Sincronización sin pérdidas   |
+                         +----------------------------------+
+                                          │
+                            (Llamadas HTTP REST a Express)
+                                          │
+                                          ▼
++-----------------------------------------------------------------------------------+
+|                         BACKEND EXPRESS (server.ts)                               |
+|   /api/db/status  /api/db/migrate  /api/users  /api/shifts  /api/sales/sync-batch |
++-----------------------------------------------------------------------------------+
+                                          │
+                                          ▼
++-----------------------------------------------------------------------------------+
+|                          CAPA DE ACCESO A DATOS (pg)                              |
+|   Pool de conexiones, Transacciones ACID (withTransaction), Repositorios          |
+|   (UserRepository, ShiftRepository, SaleRepository, StockRepository)              |
++-----------------------------------------------------------------------------------+
+                                          │
+                                          ▼
++-----------------------------------------------------------------------------------+
+|                          MOTOR POSTGRESQL (Nube / Local)                          |
+|   Tablas relacionales, Constraints, Índices, Moneda NUMERIC(12,2)                 |
++-----------------------------------------------------------------------------------+
 ```
 
 ---
 
-## 4. RIESGOS DE PERSISTENCIA Y RECOMENDACIONES
+## 2. ESQUEMA DE TABLAS RELACIONALES
 
-1. **Pérdida de datos por limpieza de caché:**
-   - En navegadores móviles iOS (Safari), el almacenamiento local de PWAs que no se abren en 7 días puede ser purgado automáticamente por WebKit.
-   - **Mitigación:** Almacenamiento primario en PostgreSQL con réplica de solo lectura offline en IndexedDB mediante Dexie.js o SQLite WASM.
-2. **Concurrencia de Vendedores:**
-   - Actualmente dos carritos no pueden compartir ventas ni consolidarse en el dashboard del coordinador si están en diferentes dispositivos físicos.
-   - **Mitigación:** Implementar WebSocket (Socket.io) o polling cada 15 segundos hacia el backend en el panel de coordinación.
+Todas las entidades están modeladas en `migrations/001_initial_schema.sql` respetando los contratos de dominio de `src/types.ts`:
+
+### 2.1 Tabla de Control de Versiones: `schema_migrations`
+- `version VARCHAR(64) PRIMARY KEY`: Nombre o identificador único de la migración (ej: `'001_initial_schema'`).
+- `applied_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP`: Momento de ejecución.
+- `description TEXT`: Detalle descriptivo del cambio.
+
+### 2.2 Bases Operativas y Viviendas: `operational_houses`
+- `id VARCHAR(64) PRIMARY KEY`: Identificador único (ej: `'HOUSE-NORTE'`).
+- `name VARCHAR(120) NOT NULL`: Nombre de la base operativa.
+- `address TEXT NOT NULL`: Dirección física en la Costa Atlántica.
+- `freezer_capacity_units INT NOT NULL DEFAULT 2000`: Capacidad máxima de almacenamiento de tequeños congelados.
+- `fixed_cost_daily NUMERIC(12, 2) NOT NULL DEFAULT 0.00`: Costo operativo diario de la vivienda/base.
+- `consumables_stock JSONB NOT NULL`: Stock de garrafas de gas, conos, servilletas y salsas.
+- `is_active BOOLEAN NOT NULL DEFAULT TRUE`: Soft delete.
+- `created_at TIMESTAMPTZ`, `updated_at TIMESTAMPTZ`.
+
+### 2.3 Usuarios y Personal: `users`
+- `id VARCHAR(64) PRIMARY KEY`: Identificador único (ej: `'USR-VEND-01'`).
+- `name VARCHAR(120) NOT NULL`: Nombre completo.
+- `email VARCHAR(160)`: Correo electrónico.
+- `role VARCHAR(32) NOT NULL`: Rol del sistema (`'admin'`, `'coordinator'`, `'seller'`, `'factory_worker'`).
+- `phone VARCHAR(40)`: Teléfono de contacto.
+- `pin_hash VARCHAR(255)`: Código PIN para autenticación rápida en playa.
+- `pin_salt VARCHAR(64)`: Sal para hasheo seguro en fases posteriores.
+- `assigned_house_id VARCHAR(64) REFERENCES operational_houses(id)`: Vivienda o base asignada.
+- `commission_rate NUMERIC(5, 4) NOT NULL DEFAULT 0.2000`: Porcentaje de comisión estándar (0.20 = 20%).
+- `housing_cost_exempt BOOLEAN NOT NULL DEFAULT FALSE`: Excepción de costo de vivienda.
+- `housing_cost_override NUMERIC(12, 2)`: Costo de vivienda personalizado.
+- `is_active BOOLEAN NOT NULL DEFAULT TRUE`: Estado de actividad.
+- `permissions JSONB`: Array de permisos específicos.
+
+### 2.4 Flota de Carritos: `selling_carts`
+- `id VARCHAR(64) PRIMARY KEY`: Identificador único (ej: `'CART-01'`).
+- `code VARCHAR(64) UNIQUE NOT NULL`: Identificador visible (ej: `'Carrito 01 — Costa Dorada'`).
+- `model VARCHAR(100)`: Modelo de carro y tipo de quemador.
+- `house_id VARCHAR(64) REFERENCES operational_houses(id)`: Base a la que pertenece.
+- `status VARCHAR(32) NOT NULL CHECK ('operativo', 'en_revision', 'en_reparacion', 'fuera_de_servicio')`.
+- `current_seller_id VARCHAR(64) REFERENCES users(id)`: Vendedor asignado actualmente.
+- `gas_level_percent NUMERIC(5, 2) NOT NULL DEFAULT 100.00`: Porcentaje de carga de gas.
+- `supplies_level JSONB`: Niveles de insumos (servilletas, conos, bandejas, salsas).
+- `last_maintenance_date DATE`, `total_days_in_use INT`.
+- `is_active BOOLEAN NOT NULL DEFAULT TRUE`.
+
+### 2.5 Variedades de Tequeños y Productos: `product_varieties`
+- `id VARCHAR(64) PRIMARY KEY`: Identificador único (ej: `'VAR-CLASICO'`).
+- `name VARCHAR(120) NOT NULL`: Nombre comercial.
+- `category VARCHAR(32) NOT NULL CHECK ('tequeno', 'aderezo', 'otro')`.
+- `description TEXT`: Descripción del producto e ingredientes.
+- `is_available BOOLEAN NOT NULL DEFAULT TRUE`: Disponibilidad operativa.
+- `is_active BOOLEAN NOT NULL DEFAULT TRUE`: Soft delete.
+- `base_price_individual NUMERIC(12, 2) NOT NULL`: Precio de venta individual en ARS.
+- `combo_prices JSONB NOT NULL`: Mapa de precios por combo (`{"combo3": 3500, "combo6": 6500, "combo12": 12000}`).
+- `custom_combos JSONB`: Promociones personalizadas.
+
+### 2.6 Escalafón de Comisiones Progresivas: `commission_tiers`
+- `id VARCHAR(64) PRIMARY KEY`: Identificador del tramo (ej: `'TIER-01'`).
+- `name VARCHAR(120) NOT NULL`: Nombre (ej: `'Tramo Base (Hasta $110.000)'`).
+- `min_sales NUMERIC(12, 2) NOT NULL`: Piso de facturación del tramo.
+- `max_sales NUMERIC(12, 2)`: Techo de facturación (NULL = sin límite).
+- `rate NUMERIC(5, 4) NOT NULL`: Porcentaje aplicable (0.10, 0.20, 0.30).
+- `is_active BOOLEAN NOT NULL DEFAULT TRUE`: Activo/inactivo.
+- `sort_order INT NOT NULL DEFAULT 0`: Orden de evaluación.
+
+### 2.7 Jornadas Diarias de Venta: `daily_shifts`
+- `id VARCHAR(64) PRIMARY KEY`: Identificador único de jornada (ej: `'SHIFT-20261010-01'`).
+- `date DATE NOT NULL`: Fecha del turno.
+- `house_id VARCHAR(64) REFERENCES operational_houses(id)`, `house_name VARCHAR(120)`.
+- `coordinator_id VARCHAR(64) REFERENCES users(id)`, `coordinator_name VARCHAR(120)`.
+- `seller_id VARCHAR(64) NOT NULL REFERENCES users(id)`, `seller_name VARCHAR(120)`.
+- `cart_id VARCHAR(64) NOT NULL REFERENCES selling_carts(id)`, `cart_code VARCHAR(64)`.
+- `zone_id VARCHAR(64)`, `zone_name VARCHAR(120)`.
+- `status VARCHAR(32) NOT NULL CHECK ('planificada', 'en_curso', 'esperando_cierre', 'conciliada', 'liquidada')`.
+- `start_time TIMESTAMPTZ NOT NULL`, `end_time TIMESTAMPTZ`.
+- `total_gross_sales NUMERIC(12, 2)`, `total_cash_sales NUMERIC(12, 2)`, `total_mp_sales NUMERIC(12, 2)`.
+- `cash_expected NUMERIC(12, 2)`, `cash_declared NUMERIC(12, 2)`, `cash_difference NUMERIC(12, 2)`.
+- `mp_validated_amount NUMERIC(12, 2)`, `mp_pending_or_suspicious_amount NUMERIC(12, 2)`.
+- `total_units_delivered INT`, `total_units_restocked INT`, `total_units_sold INT`, `total_units_returned INT`, `total_units_waste INT`, `total_units_difference INT`.
+- `commission_rate NUMERIC(5, 4)`, `applied_commission_tier_id VARCHAR(64)`, `gross_commission NUMERIC(12, 2)`.
+- `housing_cost_deduction NUMERIC(12, 2)`, `deductions_for_missing_units NUMERIC(12, 2)`.
+- `waste_deduction_breakdown JSONB`: Desglose exacto de merma tolerada vs. merma excedente combo.
+- `final_payout_amount NUMERIC(12, 2) NOT NULL`: Salario final neto a pagar.
+- `payout_status VARCHAR(32) NOT NULL CHECK ('pendiente', 'pagado', 'retenido_revision')`.
+- `coordinator_signature TEXT`: Firma digitalizada del coordinador.
+
+### 2.8 Stock por Jornada: `shift_stock_items`
+- `id VARCHAR(64) PRIMARY KEY`.
+- `shift_id VARCHAR(64) NOT NULL REFERENCES daily_shifts(id) ON DELETE CASCADE`.
+- `variety_id VARCHAR(64) NOT NULL REFERENCES product_varieties(id)`.
+- `variety_name VARCHAR(120) NOT NULL`.
+- `delivered_units INT NOT NULL DEFAULT 0`: Entregados a la mañana.
+- `resupplied_units INT NOT NULL DEFAULT 0`: Repuestos en la arena.
+- `sold_units INT NOT NULL DEFAULT 0`: Vendidos según registro.
+- `returned_units INT NOT NULL DEFAULT 0`: Sobrantes físicos devueltos.
+- `waste_units INT NOT NULL DEFAULT 0`: Mermas registradas.
+- `difference_units INT NOT NULL DEFAULT 0`: Balance físico estricto.
+- `CONSTRAINT uq_shift_stock_item UNIQUE (shift_id, variety_id)`.
+
+### 2.9 Transacciones de Venta: `sales`
+- `id VARCHAR(64) PRIMARY KEY`: UUID o identificador de venta generado en cliente.
+- `shift_id VARCHAR(64) NOT NULL REFERENCES daily_shifts(id) ON DELETE RESTRICT`.
+- `seller_id VARCHAR(64) NOT NULL REFERENCES users(id)`.
+- `seller_name VARCHAR(120) NOT NULL`.
+- `timestamp TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP`.
+- `item_type VARCHAR(32) NOT NULL CHECK ('unidad', 'combo3', 'combo6', 'combo12', 'adicional')`.
+- `variety_id VARCHAR(64) NOT NULL REFERENCES product_varieties(id)`.
+- `variety_name VARCHAR(120) NOT NULL`.
+- `quantity_units_equivalent INT NOT NULL CHECK (quantity_units_equivalent > 0)`.
+- `total_amount NUMERIC(12, 2) NOT NULL CHECK (total_amount >= 0)`.
+- `payment_method VARCHAR(32) NOT NULL CHECK ('efectivo', 'mercado_pago', 'transferencia')`.
+- `location_name VARCHAR(120)`, `beach_sector VARCHAR(120)`.
+- `voucher_photo_url TEXT`, `voucher_extracted_data JSONB`.
+- `validation_status VARCHAR(32) NOT NULL CHECK ('validada', 'pendiente_revision', 'inconsistente', 'sospechosa')`.
+- `mp_api_verification JSONB`: Registro de respuesta oficial de API Mercado Pago (amount, transactionId, etc.).
+- `gps_location JSONB`: Coordenadas geográficas lat/lng.
+- `is_offline_created BOOLEAN NOT NULL DEFAULT FALSE`.
+
+### 2.10 Tablas de Soporte y Auditoría
+- `shift_waste_records`: Registro individual de mermas con motivo, unidades y hora.
+- `shift_restock_records`: Registro de entregas intermedias en la playa por coordinadores en moto.
+- `system_configs`: Parámetros operativos globales (tolerancia de mermas, tarifas, alias MP).
+- `operational_expenses`: Gastos de flete, garrafas, reparaciones y alquiler.
+- `cart_incidents`: Registro de desperfectos mecánicos en carritos.
+- `audit_logs`: Trazabilidad inmutable de cambios con usuario, acción, entidad y valor previo/nuevo.
+- `mp_webhook_events`: Registro de todas las notificaciones IPN recibidas desde Mercado Pago.
+
+---
+
+## 3. MIGRACIONES Y REPRODUCIBILIDAD
+
+El sistema de migraciones reside en `/migrations` y es ejecutado por `src/server/db/migrator.ts`:
+
+1. `migrations/001_initial_schema.sql`: Estructura completa DDL de tablas, índices y restricciones.
+2. `migrations/002_seed_initial_data.sql`: Datos semilla reproducibles (casas, variedades, usuarios y tramos de comisión).
+
+Para ejecutar las migraciones automáticamente:
+- **Vía API:** `POST /api/db/migrate`
+- **Vía script de verificación:** `npx tsx scripts/verify-persistence.ts`
+
+---
+
+## 4. CONEXIÓN Y VARIABLES DE ENTORNO
+
+La conexión a PostgreSQL se configura exclusivamente mediante variables de entorno en el servidor:
+
+```bash
+# Formato estándar de conexión
+DATABASE_URL="postgresql://usuario:password@host:5432/sgmo_tequenos?sslmode=require"
+
+# O mediante parámetros individuales
+PGHOST="localhost"
+PGPORT="5432"
+PGDATABASE="sgmo_tequenos"
+PGUSER="postgres"
+PGPASSWORD="secret_password"
+```
+
+Si estas variables no están presentes, el backend responde en `GET /api/db/status`:
+```json
+{
+  "status": "DATABASE NOT CONFIGURED",
+  "configured": false,
+  "provider": "Ninguno (Requiere DATABASE_URL en variables de entorno)",
+  "message": "PostgreSQL no está configurado. La aplicación opera con persistencia local en el navegador del dispositivo."
+}
+```
+Y el sistema continúa operando mediante `LocalStorageAdapter` sin interrupciones.
+
+---
+
+## 5. ESTRATEGIA OFFLINE Y SINCRONIZACIÓN
+
+1. **Generación de IDs en Cliente:**
+   - Toda venta genera un ID único con prefijo de tiempo y random (`crypto.randomUUID()` o `sale-timestamp-rand`).
+   - Esto garantiza que al sincronizar contra PostgreSQL no existan colisiones de claves primarias.
+2. **Idempotencia en Lote (`POST /api/sales/sync-batch`):**
+   - El endpoint de sincronización utiliza `ON CONFLICT (id)` o comprobación de existencia para evitar duplicar ventas si la misma transacción se retransmite.
+3. **Resguardo de la Cola Offline:**
+   - `flushOfflineQueue()` en `storageService.ts` no purga la cola si el servidor no responde o devuelve 503; los datos locales permanecen intactos hasta recibir confirmación HTTP 200.

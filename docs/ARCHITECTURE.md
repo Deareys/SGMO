@@ -1,201 +1,116 @@
 # ARCHITECTURE.md — Arquitectura de Software del Sistema SGMO
 
 > **Sistema:** SGMO — Tequeños Costa  
-> **Versión:** 0.6.0  
-> **Rol del Documento:** Especificación técnica integral de la arquitectura actual, cuellos de botella y arquitectura objetivo.
+> **Versión:** 0.8.0  
+> **Patrón Arquitectónico:** Arquitectura Hexagonal (Puertos y Adaptadores) + Monolito Modular con Persistencia Híbrida (PostgreSQL Central + LocalStorage Offline)
 
 ---
 
 ## 1. VISIÓN GENERAL
 
-**SGMO (Sistema de Gestión y Monitoreo de Operación)** es una aplicación web concebida para administrar la producción en fábrica, despacho a carritos, venta ambulante en playas de la Costa Atlántica, control de averías, arqueo de caja y liquidación salarial con comisiones por tramos de vendedores ambulantes de tequeños.
+**SGMO (Sistema de Gestión y Monitoreo de Operación)** es la plataforma operacional de **Tequeños Costa SRL**, diseñada para controlar de punta a punta la operación estival de venta ambulante de comida en las playas de la Costa Atlántica (Santa Teresita, Mar del Tuyú, Costa del Este, Las Toninas y San Bernardo).
+
+El sistema coordina:
+1. **Fábrica y Cocina:** Recetas, insumos, órdenes de producción y rendimientos.
+2. **Bases Operativas:** Traslados centrales, stock en freezer y garrafas de gas.
+3. **Despacho Matutino:** Asignación de carritos y entrega de stock inicial.
+4. **Terminal de Venta Móvil:** Venta táctil optimizada para luz solar con combos y métodos de pago (efectivo, Mercado Pago y transferencia).
+5. **Auditoría Financiera y Anti-Fraude:** Verificación de transferencias Mercado Pago con regla estricta: *"Ausencia de confirmación positiva = Pago no confirmado"*.
+6. **Arqueo y Cierre de Jornada:** Conteo de sobrantes, balance físico de unidades, registro de mermas y deducciones por faltantes injustificados.
+7. **Liquidación Salarial:** Comisiones escalonadas dinámicas, deducción de vivienda y emisión inmutable de comprobantes PDF.
 
 ---
 
-## 2. ARQUITECTURA ACTUAL (AS-IS)
+## 2. ARQUITECTURA HEXAGONAL IMPLEMENTADA
 
-Actualmente, el sistema está estructurado como una **Single Page Application (SPA)** de React 19 empaquetada con Vite 6 y estilizada con Tailwind CSS v4, complementada por un **servidor backend Express 4.21** en `server.ts`.
-
-### 2.1 Diagrama de Bloques Actual
+El flujo de control y las dependencias respetan el principio de inversión de dependencias:
 
 ```
-+-----------------------------------------------------------------------------------+
-|                            CLIENTE: BROWSER / PWA                                 |
-|                                                                                   |
-|  [Vistas de Negocio - React 19]                                                   |
-|   ├── SellerTerminalView.tsx        (Terminal móvil de venta, tema solar claro)   |
-|   ├── ReconciliationClosingView.tsx (Arqueo, diferencias, mermas, PDF jsPDF)      |
-|   ├── PlanningDispatchView.tsx      (Asignación de carritos y stock matutino)     |
-|   ├── FactoryProductionView.tsx     (Recetas, lotes y órdenes en cocina)          |
-|   ├── FleetMaintenanceView.tsx      (Garrafas de gas, insumos y averías)          |
-|   └── CostsProfitabilityView.tsx    (Costos fijos, comisiones y márgenes)         |
-|                                                                                   |
-|  [Capa de Estado y Persistencia Cliente]                                          |
-|   └── src/services/storageService.ts (Patrón Observable Singleton)                |
-|        └── Window localStorage ('SGMO_APP_STATE')                                 |
-|                                                                                   |
-|  [Capa de Integración Cliente]                                                    |
-|   └── src/services/aiValidationService.ts                                         |
-|        ├── fetch('/api/ai/validate-voucher')                                      |
-|        ├── fetch('/api/mercadopago/verify-payment')                               |
-|        └── Fallback Mock Local (si falla la red o el servidor)                    |
-+-----------------------------------------------------------------------------------+
-                                          │
-                         Llamadas HTTP REST (JSON)
-                                          ▼
-+-----------------------------------------------------------------------------------+
-|                        SERVIDOR BACKEND (server.ts)                               |
-|                         Node.js + Express en Puerto 3000                           |
-|                                                                                   |
-|  [Endpoints de Integración Externa]                                               |
-|   ├── POST /api/ai/validate-voucher    ──> Google Gemini API (@google/genai)      |
-|   ├── POST /api/ai/recommend-stock     ──> Google Gemini API (Análisis clima)     |
-|   ├── GET  /api/mercadopago/status     ──> Diagnóstico de credenciales MP         |
-|   ├── POST /api/mercadopago/create-pref ─> SDK Mercado Pago (Checkout Pro)        |
-|   ├── POST /api/mercadopago/verify-pay ──> API REST Mercado Pago (/v1/payments)   |
-|   └── POST /api/mercadopago/webhook    ──> Receptor IPN Mercado Pago              |
-|                                                                                   |
-|  [Persistencia en Servidor]                                                       |
-|   └── Array volátil en RAM: `receivedWebhooks = []`                               |
-|   └── ¡NO HAY BASE DE DATOS CENTRALIZADA EN EL SERVIDOR!                          |
-+-----------------------------------------------------------------------------------+
+[ FRONTEND / PRESENTACIÓN ]
+  Vistas React (SellerTerminalView, ReconciliationClosingView, AdminConfigView, etc.)
+            │
+            ▼
+[ CASOS DE USO / DOMINIO ]
+  RecordSaleUseCase, CalculateSettlementUseCase, CloseShiftUseCase, ValidateVoucherUseCase
+  Fórmulas puras: commissionRules.ts, inventoryRules.ts, settlementRules.ts
+            │
+            ▼
+[ PUERTOS DE ABSTRACCIÓN (INTERFACES) ]
+  IStorageRepository, IPaymentGateway, IVoucherAnalyzer, IPdfGenerator, ISoundNotifier
+            │
+            ▼
+[ ADAPTADORES DE INFRAESTRUCTURA ]
+  ┌─────────────────────────────────────────────────────────────┐
+  │ IStorageRepository:                                         │
+  │   - LocalStorageAdapter (Persistencia local offline)        │
+  │   - HttpStorageAdapter  (Cliente HTTP hacia PostgreSQL)     │
+  │   - HybridStorageAdapter (Coordinador local/central)        │
+  │ IPaymentGateway:   MercadoPagoAdapter                       │
+  │ IVoucherAnalyzer:  GeminiOcrAdapter                         │
+  │ IPdfGenerator:     JsPdfAdapter                             │
+  │ ISoundNotifier:    WebAudioAdapter                          │
+  └─────────────────────────────────────────────────────────────┘
+            │
+            ▼
+[ BACKEND EXPRESS (server.ts) ]
+  /api/health
+  /api/ai/validate-voucher (Google Gemini OCR)
+  /api/mercadopago/verify-payment (API Oficial de Mercado Pago)
+  /api/db/status, /api/db/migrate
+  /api/users, /api/shifts, /api/sales, /api/sales/sync-batch
+            │
+            ▼
+[ ACCESO A DATOS Y REPOSITORIOS (src/server/db/) ]
+  Pool de conexiones pg, withTransaction() (Transacciones ACID)
+  UserRepository, ShiftRepository, SaleRepository, StockRepository
+            │
+            ▼
+[ MOTOR RELACIONAL: POSTGRESQL ]
+  Esquema formal: users, operational_houses, selling_carts, product_varieties,
+  daily_shifts, shift_stock_items, shift_waste_records, sales, commission_tiers...
 ```
 
 ---
 
-## 3. COMPONENTES Y RESPONSABILIDADES
+## 3. COMPONENTES CLAVE
 
-### 3.1 Frontend (`/src`)
-- **`App.tsx`:** Componente raíz que maneja el ciclo de autenticación, selección de rol, navegación superior (`NavigationHeader`) y montaje condicional de la vista activa.
-- **`src/components/SellerTerminalView.tsx`:** Vista principal para vendedores en playa. Diseñada en tema solar claro de alto contraste para visibilidad bajo sol directo. Dividida en 4 submódulos:
-  1. *Ventas:* Selector rápido de combos, variedad, sector costero y botón táctil gigante.
-  2. *Resumen:* Balance en tiempo real, desglose de comisiones, arqueo de stock en carrito.
-  3. *Radar:* Condiciones climáticas, afluencia y avisos operativos.
-  4. *Comprobantes:* Galería de vouchers procesados.
-- **`src/components/ReconciliationClosingView.tsx`:** Panel del coordinador para el arqueo vespertino. Compara unidades vendidas contra sobrantes devueltos, calcula mermas y genera el PDF de liquidación.
-- **`src/components/PlanningDispatchView.tsx`:** Entrega inicial de carritos a los vendedores antes de salir a la playa.
-- **`src/components/FactoryProductionView.tsx`:** Control de masa, queso y armado en la fábrica central.
-- **`src/components/FleetMaintenanceView.tsx`:** Taller de carritos, pesaje de garrafas de gas y repuestos.
-- **`src/components/CostsProfitabilityView.tsx`:** Configuración de precios, comisiones escalonadas y costos fijos.
+### 3.1 Núcleo de Dominio (`src/core/domain/`)
+- **Reglas Puras:** Fórmulas matemáticas de cálculo de comisiones progresivas (`commissionRules.ts`), balance físico de inventario (`inventoryRules.ts`) y liquidación salarial con deducciones por faltantes y vivienda (`settlementRules.ts`).
+- **Independencia Total:** El dominio no importa React, ni librerías de terceros, ni detalles de red.
 
-### 3.2 Capa de Almacenamiento (`src/services/storageService.ts`)
-- Implementa una arquitectura reactiva mediante el patrón Observer (`listeners: Set<() => void>`).
-- Todas las operaciones CRUD (`recordSale`, `closeShift`, `recordWaste`, `updateProductPrice`, etc.) modifican un objeto monolítico en memoria y lo serializan en `localStorage.getItem('SGMO_APP_STATE')`.
+### 3.2 Puertos (`src/core/ports/`)
+- Contratos TypeScript que definen qué operaciones requiere el sistema sin acoplarse a cómo se resuelven tecnológicamente:
+  - `IStorageRepository`: Persistencia y lectura de usuarios, turnos, stock y ventas.
+  - `IPaymentGateway`: Verificación oficial con pasarelas de pago.
+  - `IVoucherAnalyzer`: OCR y detección de anomalías visuales en capturas de pantalla.
+  - `IPdfGenerator`: Generación de liquidaciones firmadas.
+  - `ISoundNotifier`: Notificaciones sonoras y vibración háptica para playa.
 
-### 3.3 Backend (`server.ts`)
-- Configurado como servidor Express con middleware `cors()` y `express.json({ limit: '15mb' })`.
-- En entorno de desarrollo (`NODE_ENV !== 'production'`), monta los middlewares de Vite (`vite.middlewares`).
-- En entorno de producción, sirve los estáticos de `dist/`.
-- Aloja los proxies seguros hacia las APIs de Google Gemini y Mercado Pago evitando exponer `GEMINI_API_KEY` y `MERCADOPAGO_ACCESS_TOKEN` en el bundle del navegador.
+### 3.3 Adaptadores (`src/adapters/`)
+- Implementaciones técnicas concretas.
+- Para almacenamiento se cuenta con:
+  - `LocalStorageAdapter`: Persistencia en `localStorage` del dispositivo.
+  - `HttpStorageAdapter`: Consumo de la API REST del backend hacia PostgreSQL.
+  - `HybridStorageAdapter`: Adaptador que combina ambas capas: garantiza funcionalidad cuando el dispositivo está sin red y sincroniza con PostgreSQL cuando hay conexión activa y credenciales configuradas.
 
----
+### 3.4 Contenedor IoC (`src/container.ts`)
+- Registra las dependencias e inyecta los adaptadores en los casos de uso.
+- Permite alternar la infraestructura sin modificar los componentes visuales.
 
-## 4. ANÁLISIS DE CUELLOS DE BOTELLA Y FALLAS DE ARQUITECTURA
-
-### 4.1 Inexistencia de Base de Datos Compartida
-- **Problema:** Toda la base de datos reside en el `localStorage` del dispositivo local.
-- **Consecuencia Operativa:** Si el Vendedor A registra una venta en su teléfono celular, el Coordinador en la base central no puede verla en su computadora, porque no viaja a una base de datos centralizada. Cada dispositivo es una "isla" aislada.
-- **Consecuencia de Datos:** Si el vendedor limpia el historial del navegador o borra datos del sitio, pierde todo el registro del día y su historial de ventas.
-
-### 4.2 Desconexión en Vercel (Por qué falla en producción)
-- **Problema:** En el archivo `package.json`, el comando de ejecución es `tsx server.ts`. Vercel es una plataforma de hosting estático orientada a funciones Serverless (`/api/*.ts` individuales). Al hacer deploy directo en Vercel sin archivo `vercel.json` ni migración de rutas a Serverless Functions:
-  1. El servidor `server.ts` **nunca se inicia**.
-  2. Las rutas `/api/mercadopago/*` y `/api/ai/*` devuelven error 404 o retornan el `index.html` estático de la SPA.
-  3. El frontend activa su mecanismo de contingencia (`aiValidationService.ts`), haciendo creer al usuario que la app "funciona", pero en realidad está simulando respuestas mock de forma local.
-
-### 4.3 Almacenamiento en Memoria de Webhooks de Mercado Pago
-- **Problema:** En `server.ts`, los webhooks de pago se guardan en la variable:
-  ```typescript
-  const receivedWebhooks: any[] = [];
-  ```
-- **Consecuencia:** Ante cualquier reinicio del servidor o escalado de instancias, los eventos de pago recibidos se pierden permanentemente.
-
-### 4.4 Autenticación y Autorización Client-Side
-- **Problema:** Los usuarios y sus PINs residen en texto plano en `localStorage.getItem('SGMO_APP_STATE')`.
-- **Consecuencia:** Cualquier usuario con acceso a las DevTools del navegador puede inspeccionar los PINs de todos los coordinadores y administradores, o cambiar su propio rol en tiempo de ejecución a `admin` modificando la variable de estado.
+### 3.5 Backend Modular (`server.ts` + `src/server/`)
+- `server.ts`: Servidor Express centralizado en puerto 3000.
+- `src/server/db/connection.ts`: Pool de conexiones `pg` con transacciones ACID.
+- `src/server/db/migrator.ts`: Ejecutor de migraciones secuenciales (`001_initial_schema.sql`, `002_seed_initial_data.sql`).
+- `src/server/db/repositories/`: Repositorios SQL especializados por entidad.
+- `src/server/routes/dbRoutes.ts`: Router REST con rutas `/api/db/*`, `/api/users`, `/api/shifts`, `/api/sales`, etc.
 
 ---
 
-## 5. ARQUITECTURA OBJETIVO (TO-BE)
+## 4. BLINDAJE FINANCIERO Y AUDITORÍA MERCADO PAGO
 
-Para evolucionar este prototipo a un sistema empresarial de alta disponibilidad para la temporada de verano:
+Se mantiene inalterable la regla financiera:
+> **Ausencia de confirmación positiva de Mercado Pago = Pago no confirmado**
 
-```
-+─────────────────────────────────────────────────────────────+
-|                     CLIENTES (PWA)                          |
-|   Vendedores (Móvil)   |   Coordinador / Admin (Desktop)    |
-+──────────────────────────────┬──────────────────────────────+
-                               │ HTTPS / WSS
-                               ▼
-+─────────────────────────────────────────────────────────────+
-|                    GATEWAY / API SERVER                     |
-|         Node.js Express / NestJS o Vercel Serverless        |
-|                                                             |
-|  - Autenticación con JWT / Refresh Tokens en HttpOnly       |
-|  - Validación de Esquemas con Zod / Joi                     |
-|  - Control de Acceso Basado en Roles (RBAC en Servidor)     |
-|  - Endpoints Mercado Pago (Checkout Pro + IPN Webhooks)     |
-|  - Integración Gemini 2.4 (OCR + Visión Computacional)      |
-+──────────────┬──────────────────────────────┬───────────────+
-               │                              │
-               ▼                              ▼
-+──────────────────────────────+ +────────────────────────────+
-|   BASE DE DATOS RELACIONAL   | |    COLA Y CACHÉ (REDIS)    |
-|   PostgreSQL / Cloud SQL     | |  - Cola de eventos IPN MP  |
-|  - Tablas transaccionales    | |  - Verificación duplicados |
-|  - Constraints de integridad | |  - Rate limiting           |
-+──────────────────────────────+ +────────────────────────────+
-```
-
-### 5.1 Fases Recomendadas de Migración
-1. **Fase 1 (Inmediata):** Configurar `vercel.json` o desplegar en contenedor (Google Cloud Run / Railway / Render) para que `server.ts` se ejecute 24/7 y las rutas `/api/*` respondan con credenciales de entorno.
-2. **Fase 2 (Corto Plazo):** Provisionar Base de Datos relacional en la nube (PostgreSQL con Drizzle ORM o Cloud SQL) para centralizar ventas, stock y arqueos.
-3. **Fase 3 (Medio Plazo):** Reemplazar autenticación mock por Auth segura con JWT y contraseñas hasheadas (bcrypt).
-4. **Fase 4 (Operación Playa):** Implementar sincronización robusta offline con IndexedDB + cola de salida (Outbox Pattern) y resolución de conflictos por timestamp.
-
----
-
-## 6. IMPLEMENTACIÓN: ARQUITECTURA HEXAGONAL (MONOLITO MODULAR)
-
-A partir de la versión 0.7.0, el proyecto adopta la **Arquitectura Hexagonal (Puertos y Adaptadores)** estructurada como un **Monolito Modular**:
-
-```
-src/
-├── core/                               <─── EL HEXÁGONO (NÚCLEO PURO E INDEPENDIENTE)
-│   ├── domain/                         # Entidades, tipos y reglas matemáticas puras
-│   │   ├── types.ts                    # Re-exporta los tipos centrales del dominio
-│   │   ├── commissionRules.ts          # Fórmulas de tramos de comisión (10%, 20%, 30%)
-│   │   ├── inventoryRules.ts           # Equivalencias de combos y balance físico
-│   │   └── settlementRules.ts          # Liquidación final ($8000 vivienda, $1500 tequeño)
-│   ├── ports/                          # Contratos e Interfaces puras (Puertos)
-│   │   ├── IStorageRepository.ts       # Puerto de persistencia y estado
-│   │   ├── IPaymentGateway.ts          # Puerto de cobros (Mercado Pago, Sandbox)
-│   │   ├── IVoucherAnalyzer.ts         # Puerto de análisis de comprobantes OCR
-│   │   ├── IPdfGenerator.ts            # Puerto de emisión de liquidaciones
-│   │   └── ISoundNotifier.ts           # Puerto de sonido y háptica
-│   └── use-cases/                      # Casos de uso de la aplicación
-│       ├── RecordSaleUseCase.ts        # Registrar venta con validación de stock
-│       ├── CalculateSettlementUseCase.ts # Liquidación analítica de jornada
-│       ├── CloseShiftUseCase.ts        # Cierre operativo y emisión de PDF
-│       └── ValidateVoucherUseCase.ts   # OCR y verificación de doble gasto
-│
-├── adapters/                           <─── LOS ADAPTADORES (INFRAESTRUCTURA Y EXTERNOS)
-│   ├── persistence/
-│   │   └── LocalStorageAdapter.ts      # Implementa IStorageRepository con LocalStorage
-│   ├── payments/
-│   │   └── MercadoPagoAdapter.ts       # Implementa IPaymentGateway hacia /api/mercadopago
-│   ├── ai/
-│   │   └── GeminiOcrAdapter.ts         # Implementa IVoucherAnalyzer hacia /api/ai
-│   ├── pdf/
-│   │   └── JsPdfAdapter.ts             # Implementa IPdfGenerator con jsPDF
-│   └── notifications/
-│       └── WebAudioAdapter.ts          # Implementa ISoundNotifier con Web Audio y vibración
-│
-├── presentation/                       <─── CAPA DE PRESENTACIÓN (REACT)
-│   ├── components/                     # Vistas táctiles en tema solar claro
-│   └── hooks/
-│       └── useCore.ts                  # Hook React para acceder a Casos de Uso
-│
-└── container.ts                        <─── CONTENEDOR DE INYECCIÓN DE DEPENDENCIAS (IoC)
-```
-
+1. Las consultas a `/api/mercadopago/verify-payment` requieren token oficial y respuesta HTTP 200 con `status === 'approved'`.
+2. Ante ausencia de token, fallas de red, timeout o errores 404/500, el backend retorna estrictamente `verified: false` y `status: 'pendiente_acreditacion'`.
+3. Ningún análisis OCR ni simulación contingente puede transformar una operación en aprobada.

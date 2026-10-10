@@ -3,6 +3,17 @@
  * Servicio Cliente para Validación IA de Comprobantes y Asesor de Stock
  */
 
+import { storageService } from './storageService';
+
+function getAuthHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const token = storageService.getAuthToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 export interface MercadoPagoVerificationResponse {
   success: boolean;
   verified: boolean;
@@ -28,9 +39,7 @@ export async function verifyMercadoPagoPayment(params: {
   try {
     const response = await fetch('/api/mercadopago/verify-payment', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: getAuthHeaders(),
       body: JSON.stringify(params)
     });
 
@@ -161,7 +170,9 @@ export async function getMercadoPagoRecentPayments(): Promise<{
   message?: string;
 }> {
   try {
-    const response = await fetch('/api/mercadopago/recent-payments');
+    const response = await fetch('/api/mercadopago/recent-payments', {
+      headers: getAuthHeaders()
+    });
     if (!response.ok) {
       return { success: false, total: 0, payments: [], message: `HTTP ${response.status}` };
     }
@@ -351,9 +362,7 @@ export async function analyzeVoucherWithAI(params: {
   try {
     const response = await fetch('/api/ai/validate-voucher', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: getAuthHeaders(),
       body: JSON.stringify(params)
     });
 
@@ -380,9 +389,7 @@ export async function getStockRecommendationWithAI(params: {
   try {
     const response = await fetch('/api/ai/recommend-stock', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: getAuthHeaders(),
       body: JSON.stringify(params)
     });
 

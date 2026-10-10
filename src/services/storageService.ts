@@ -69,6 +69,8 @@ import { soundAlerts } from '../utils/soundAlerts';
 
 const STORAGE_KEY = 'SGMO_TEQUENOS_COSTA_V2';
 const OFFLINE_QUEUE_KEY = 'SGMO_OFFLINE_SALES_QUEUE';
+const AUTH_TOKEN_KEY = 'SGMO_AUTH_TOKEN';
+const AUTH_USER_KEY = 'SGMO_AUTH_USER';
 
 export interface AppState {
   currentUser: UserProfile | null;
@@ -262,6 +264,55 @@ class StorageService {
   }
 
   // --- Inicio y Cierre de Sesión por PIN Personal ---
+  public getAuthToken(): string | null {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem(AUTH_TOKEN_KEY);
+    }
+    return null;
+  }
+
+  public async loginWithPinAsync(pin: string): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
+    if (!pin || pin.length !== 4) {
+      return { success: false, error: 'El PIN debe contener exactamente 4 dígitos.' };
+    }
+
+    // 1. Intentar autenticar contra el backend central
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin })
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success && data.user) {
+        if (typeof window !== 'undefined' && data.token) {
+          localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(data.user));
+        }
+
+        this.state.currentUser = data.user;
+        if (data.user.assignedHouseId) {
+          this.state.selectedHouseId = data.user.assignedHouseId;
+        }
+
+        this.addAuditLog('LOGIN_USUARIO', 'usuarios', data.user.id, `Inicio de sesión exitoso de ${data.user.name} (${data.user.role}) verificado en backend`);
+        this.saveState();
+        return { success: true, user: data.user };
+      } else if (response.status === 429) {
+        return { success: false, error: data.message || 'Demasiados intentos fallidos. Acceso bloqueado temporalmente.' };
+      } else if (response.status === 401) {
+        return { success: false, error: data.message || 'PIN incorrecto o cuenta inactiva. Acceso denegado.' };
+      }
+    } catch (networkError) {
+      console.warn('Backend inalcanzable para autenticación, procediendo con validación local protegida:', networkError);
+    }
+
+    // 2. Modo contingencia sin conexión (Offline)
+    return this.loginWithPin(pin);
+  }
+
   public loginWithPin(pin: string): { success: boolean; user?: UserProfile; error?: string } {
     if (!pin || pin.length !== 4) {
       return { success: false, error: 'El PIN debe contener exactamente 4 dígitos.' };
@@ -282,6 +333,22 @@ class StorageService {
   }
 
   public logout(): void {
+    const token = this.getAuthToken();
+    if (token) {
+      fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      }).catch(() => {});
+    }
+
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(AUTH_TOKEN_KEY);
+      localStorage.removeItem(AUTH_USER_KEY);
+    }
+
     if (this.state.currentUser) {
       this.addAuditLog('LOGOUT_USUARIO', 'usuarios', this.state.currentUser.id, `Cierre de sesión de ${this.state.currentUser.name}`);
     }
@@ -772,19 +839,38 @@ class StorageService {
     }
   }
 
-  public flushOfflineQueue(): void {
+  public async flushOfflineQueue(): Promise<void> {
     if (typeof window === 'undefined') return;
     try {
       const queue = JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || '[]');
       if (queue.length > 0) {
-        console.log(`Sincronizando ${queue.length} ventas locales pendientes con el servidor...`);
-        localStorage.removeItem(OFFLINE_QUEUE_KEY);
-        this.addAuditLog(
-          'SINCRONIZACION_OFFLINE',
-          'venta',
-          'SYNC_BATCH',
-          `Se sincronizaron automáticamente ${queue.length} ventas offline realizadas en la playa.`
-        );
+        console.log(`Sincronizando ${queue.length} ventas locales pendientes con el servidor central...`);
+        try {
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          const token = this.getAuthToken();
+          if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+          }
+
+          const res = await fetch('/api/sales/sync-batch', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ sales: queue })
+          });
+          if (res.ok) {
+            localStorage.removeItem(OFFLINE_QUEUE_KEY);
+            this.addAuditLog(
+              'SINCRONIZACION_OFFLINE',
+              'venta',
+              'SYNC_BATCH',
+              `Se sincronizaron automáticamente ${queue.length} ventas offline con la base de datos central.`
+            );
+          } else {
+            console.warn('El servidor no pudo procesar el lote offline (posible base no configurada), conservando datos locales.');
+          }
+        } catch (netErr) {
+          console.warn('Sin conexión para vaciar cola offline; conservando datos en almacenamiento local.');
+        }
       }
     } catch (e) {
       console.error('Error sincronizando cola offline', e);
@@ -1336,6 +1422,20 @@ class StorageService {
     this.state.users = [...this.state.users, newUser];
     this.addAuditLog('CREAR_USUARIO', 'usuarios', id, `Creación de usuario: ${newUser.name} con rol ${newUser.role}`);
     this.saveState();
+
+    // Sincronizar con el backend si hay token
+    const token = this.getAuthToken();
+    if (token) {
+      fetch('/api/users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(newUser)
+      }).catch((err) => console.warn('Sync POST /api/users error:', err));
+    }
+
     return newUser;
   }
 
@@ -1355,6 +1455,19 @@ class StorageService {
       this.state.currentUser = { ...user };
     }
     this.saveState();
+
+    // Sincronizar con el backend si hay token
+    const token = this.getAuthToken();
+    if (token) {
+      fetch(`/api/users/${userId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(data)
+      }).catch((err) => console.warn('Sync PUT /api/users error:', err));
+    }
   }
 
   public toggleUserActive(userId: string): void {

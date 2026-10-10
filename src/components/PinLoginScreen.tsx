@@ -29,14 +29,14 @@ export const PinLoginScreen: React.FC<PinLoginScreenProps> = ({ onLoginSuccess }
   const [isShaking, setIsShaking] = useState<boolean>(false);
   const [loginSuccessUser, setLoginSuccessUser] = useState<UserProfile | null>(null);
 
-  const handleValidatePin = useCallback((pinToValidate: string) => {
+  const handleValidatePin = useCallback(async (pinToValidate: string) => {
     if (pinToValidate.length !== 4) return;
 
     setIsAuthenticating(true);
     setErrorMsg(null);
 
-    setTimeout(() => {
-      const result = storageService.loginWithPin(pinToValidate);
+    try {
+      const result = await storageService.loginWithPinAsync(pinToValidate);
       if (result.success && result.user) {
         setLoginSuccessUser(result.user);
         setTimeout(() => {
@@ -49,7 +49,13 @@ export const PinLoginScreen: React.FC<PinLoginScreenProps> = ({ onLoginSuccess }
         setTimeout(() => setIsShaking(false), 500);
         setPin('');
       }
-    }, 250);
+    } catch (err: any) {
+      setIsAuthenticating(false);
+      setErrorMsg(err.message || 'Error al validar credenciales');
+      setIsShaking(true);
+      setTimeout(() => setIsShaking(false), 500);
+      setPin('');
+    }
   }, [onLoginSuccess]);
 
   const handleKeyPress = (digit: string) => {

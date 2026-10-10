@@ -8,6 +8,8 @@
 
 import {
   localStorageAdapter,
+  httpStorageAdapter,
+  hybridStorageAdapter,
   mercadoPagoAdapter,
   geminiOcrAdapter,
   jsPdfAdapter,
@@ -23,7 +25,9 @@ import {
 
 export class AppContainer {
   // Adaptadores (Infraestructura)
-  readonly storageRepository = localStorageAdapter;
+  readonly storageRepository = hybridStorageAdapter;
+  readonly localStorageRepository = localStorageAdapter;
+  readonly httpStorageRepository = httpStorageAdapter;
   readonly paymentGateway = mercadoPagoAdapter;
   readonly voucherAnalyzer = geminiOcrAdapter;
   readonly pdfGenerator = jsPdfAdapter;

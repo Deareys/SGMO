@@ -15,6 +15,9 @@
 - [ADR-005: Fallback Mock Contingente para Validaciones Externas](#adr-005-fallback-mock-contingente-para-validaciones-externas)
 - [ADR-006: Autenticación Rápida con PIN de 4 Dígitos](#adr-006-autenticación-rápida-con-pin-de-4-dígitos)
 - [ADR-007: Plan de Evolución Post-Auditoría (Qué cambiaríamos ahora)](#adr-007-plan-de-evolución-post-auditoría-qué-cambiaríamos-ahora)
+- [ADR-008: Adopción de Arquitectura Hexagonal (Monolito Modular)](#adr-008-adopción-de-arquitectura-hexagonal-monolito-modular)
+- [ADR-009: Política Escalonada de Descuento por Merma y Faltantes Injustificados](#adr-009-política-escalonada-de-descuento-por-merma-y-faltantes-injustificados)
+- [ADR-010: Persistencia Central en PostgreSQL y Estrategia de Migración Progresiva Híbrida](#adr-010-persistencia-central-en-postgresql-y-estrategia-de-migración-progresiva-híbrida)
 
 ---
 
@@ -142,5 +145,25 @@ Teniendo en cuenta el informe del ingeniero auditor, las decisiones que cambiar�
   - Control financiero estricto: evita que las pérdidas por mercadería regalada recaigan sobre la fábrica.
   - Flexibilidad para el Administrador: puede modificar el umbral y los valores desde el panel de control sin tocar código.
   - Trazabilidad y transparencia: el desglose de unidades toleradas vs. excedente combo se detalla en la pantalla de conciliación y en el comprobante oficial en PDF.
+
+---
+
+### ADR-010: Persistencia Central en PostgreSQL y Estrategia de Migración Progresiva Híbrida
+
+- **Estado:** Aceptado e Implementado (Fase 2).
+- **Fecha:** Octubre 2026.
+- **Contexto:** La auditoría técnica identificó que la persistencia mono-dispositivo en `localStorage` impedía la sincronización de ventas entre los carritos de los vendedores y el panel del coordinador, exponiendo los datos a pérdidas accidentales por borrado de caché del navegador. Se requiere migrar hacia PostgreSQL sin romper la funcionalidad offline existente ni reescribir abruptamente el sistema.
+- **Decisión:**
+  1. Diseñar el esquema relacional completo en PostgreSQL con tipos monetarios exactos (`NUMERIC(12, 2)`), integridad referencial estricta (FKs) y tablas versionadas mediante `schema_migrations`.
+  2. Implementar repositorios de backend con transacciones ACID (`withTransaction`) para turnos, stock y ventas (`UserRepository`, `ShiftRepository`, `SaleRepository`, `StockRepository`).
+  3. Crear un router REST en `server.ts` (`/api/db/*`, `/api/users`, `/api/shifts`, `/api/sales`, `/api/sales/sync-batch`).
+  4. Mantener `LocalStorageAdapter` intacto e introducir `HttpStorageAdapter` y `HybridStorageAdapter` implementando el mismo puerto `IStorageRepository`.
+  5. Exponer el estado de conexión real (`DATABASE CONFIGURED` / `DATABASE NOT CONFIGURED`) mediante `GET /api/db/status` sin generar conexiones ni aprobaciones ficticias.
+  6. Actualizar `flushOfflineQueue()` para enviar lotes de ventas a `/api/sales/sync-batch` conservando los datos en almacenamiento local ante fallos de conexión.
+- **Consecuencias:**
+  - Cero regresiones: la aplicación sigue funcionando de manera idéntica tanto si PostgreSQL está activo como si se opera en modo local offline.
+  - Preparado para múltiples dispositivos: en cuanto se inyecte `DATABASE_URL`, el backend persiste turnos y ventas centralizadamente.
+  - Datos protegidos: ninguna operación destructiva sobre `localStorage`.
+
 
 
