@@ -18,6 +18,7 @@
 - [ADR-008: Adopción de Arquitectura Hexagonal (Monolito Modular)](#adr-008-adopción-de-arquitectura-hexagonal-monolito-modular)
 - [ADR-009: Política Escalonada de Descuento por Merma y Faltantes Injustificados](#adr-009-política-escalonada-de-descuento-por-merma-y-faltantes-injustificados)
 - [ADR-010: Persistencia Central en PostgreSQL y Estrategia de Migración Progresiva Híbrida](#adr-010-persistencia-central-en-postgresql-y-estrategia-de-migración-progresiva-híbrida)
+- [ADR-011: Integridad Económica de Ventas, Precios Oficiales y Rechazo Atómico de Lotes Offline](#adr-011-integridad-económica-de-ventas-precios-oficiales-y-rechazo-atómico-de-lotes-offline)
 
 ---
 
@@ -164,6 +165,35 @@ Teniendo en cuenta el informe del ingeniero auditor, las decisiones que cambiar�
   - Cero regresiones: la aplicación sigue funcionando de manera idéntica tanto si PostgreSQL está activo como si se opera en modo local offline.
   - Preparado para múltiples dispositivos: en cuanto se inyecte `DATABASE_URL`, el backend persiste turnos y ventas centralizadamente.
   - Datos protegidos: ninguna operación destructiva sobre `localStorage`.
+
+---
+
+### ADR-011: Integridad Económica de Ventas, Precios Oficiales y Rechazo Atómico de Lotes Offline
+
+- **Estado:** Aceptado e Implementado (Fase 3.2).
+- **Fecha:** Octubre 2026.
+- **Contexto:** En la Fase 3.1 se implementó autenticación por sesión/token y RBAC para aislar recursos entre roles. Sin embargo, persistía la vulnerabilidad de que el backend confiaba ciegamente en los valores numéricos de `totalAmount`, `quantityUnitsEquivalent` y precios enviados por el cliente en `POST /sales` y `POST /sales/sync-batch`. Un cliente manipulado o fraudulento podía enviar importes arbitrarios (ej: $100 por un combo de $7.500) o registrar unidades inconsistentes con el tipo de combo (ej: 5 unidades en un combo de 6). Asimismo, `resolveShift()` podía consultar datos semilla de contingencia incluso si la base central PostgreSQL fallaba transitoriamente.
+- **Decisión:**
+  1. **Política Estricta para `resolveShift()`**:
+     - Si PostgreSQL está configurado (`isDbConfigured()`), se consulta única y exclusivamente la base central (`ShiftRepository.getById()`).
+     - Si la consulta a PostgreSQL arroja un error, bajo ninguna circunstancia se recurre a `INITIAL_SHIFTS`: se propaga el error y se devuelve HTTP 503 `SERVICE_UNAVAILABLE`.
+     - Si la jornada no existe en PostgreSQL, se devuelve HTTP 404.
+     - Los datos de contingencia (`INITIAL_SHIFTS`) se utilizan exclusivamente cuando el sistema opera en modo sin base de datos central configurada.
+  2. **Validación Exhaustiva de Integridad y Precios Oficiales (`salesValidation.ts`)**:
+     - Validación de tipo de ítem (`unidad`, `combo3`, `combo6`, `combo12`, `adicional`) contra catálogo.
+     - Validación de congruencia de unidades equivalentes: deben ser múltiplos exactos del paquete seleccionado.
+     - Verificación de existencia y estado activo de la variedad de producto en el catálogo oficial centralizado (o catálogo contingente si no hay DB).
+     - Validación estricta del importe total (`totalAmount`) contra los precios oficiales autorizados para la variedad y los combos promocionales estándar de playa ($1.500 / $4.000 / $7.500 / $14.000), rechazando importes manipulados con HTTP 400 `INVALID_SALE_PRICE`.
+     - Validación de medios de pago soportados (`efectivo`, `mercado_pago`, `transferencia`).
+  3. **Política de Rechazo Atómico en Lotes de Sincronización Offline (`POST /sales/sync-batch`)**:
+     - Antes de persistir cualquier registro del lote en base de datos, se valida la totalidad de los ítems secuencialmente.
+     - Si tan solo una venta del lote contiene importes adulterados, datos incompatibles o pertenece a otro vendedor/jornada, se **rechaza el lote completo de forma atómica** devolviendo HTTP 400/403 con el índice exacto del ítem corrupto y el motivo de rechazo.
+     - **Justificación de Dominio:** En un sistema de venta ambulante con arqueo y balance de caja, admitir escrituras parciales de un lote corrompido generaría desfasajes en el recuento físico de mercadería del carrito y en la recaudación de efectivo, dificultando la auditoría forense del vendedor. El rechazo atómico preserva la integridad del estado central y alerta inmediatamente sobre la inconsistencia.
+- **Consecuencias:**
+  - Cierre definitivo de vectores de fraude por manipulación de precios en el cliente.
+  - Blindaje completo del cálculo económico en el backend sin depender de la UI de React.
+  - Trazabilidad y consistencia garantizadas tanto en operaciones individuales como en sincronización de lotes offline.
+
 
 
 

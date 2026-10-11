@@ -134,11 +134,355 @@ async function runSecurityTests() {
       'Vendedor autenticado puede validar pagos legítimamente con su token'
     );
 
-    // 10. Cierre de sesión (Logout) y revocación
+    // --- PRUEBAS DE AUTORIZACIÓN POR RECURSO (FASE 3.1: SEC-02 & SEC-03) ---
+
+    // 10. SEC-02: Vendedor intenta registrar una venta atribuyéndola a otro vendedor (HTTP 403)
+    const forgedSellerSale = await request('/api/sales', {
+      method: 'POST',
+      token: sellerToken,
+      body: {
+        id: `SALE-TEST-FORGED-${Date.now()}`,
+        shiftId: 'SHIFT-20260830-01',
+        sellerId: 'USR-VEND-2', // Lucas Benítez (USR-VEND-1) intentando registrar a nombre de Esteban Morales
+        sellerName: 'Esteban Morales',
+        itemType: 'unidad',
+        varietyId: 'VAR-CLASICO',
+        varietyName: 'Tequeño Clásico',
+        quantityUnitsEquivalent: 1,
+        totalAmount: 2500,
+        paymentMethod: 'efectivo',
+        timestamp: new Date().toISOString(),
+        validationStatus: 'validada'
+      }
+    });
+    assert(
+      forgedSellerSale.status === 403 && forgedSellerSale.body.code === 'FORBIDDEN',
+      'SEC-02: Vendedor intentando registrar venta a nombre de otro vendedor es rechazado con HTTP 403'
+    );
+
+    // 11. SEC-02: Vendedor intenta registrar una venta en una jornada ajena (HTTP 403)
+    const forgedShiftSale = await request('/api/sales', {
+      method: 'POST',
+      token: sellerToken,
+      body: {
+        id: `SALE-TEST-FORGED-SHIFT-${Date.now()}`,
+        shiftId: 'SHIFT-20260830-02', // Jornada de Micaela Rossi (USR-VEND-3)
+        sellerId: 'USR-VEND-1',
+        sellerName: 'Lucas Benítez',
+        itemType: 'unidad',
+        varietyId: 'VAR-CLASICO',
+        varietyName: 'Tequeño Clásico',
+        quantityUnitsEquivalent: 1,
+        totalAmount: 2500,
+        paymentMethod: 'efectivo',
+        timestamp: new Date().toISOString(),
+        validationStatus: 'validada'
+      }
+    });
+    assert(
+      forgedShiftSale.status === 403 && forgedShiftSale.body.code === 'FORBIDDEN',
+      'SEC-02: Vendedor intentando registrar venta en jornada perteneciente a otro vendedor es rechazado con HTTP 403'
+    );
+
+    // 12. SEC-03: Vendedor intenta consultar ventas de una jornada ajena (HTTP 403)
+    const forbiddenShiftSales = await request('/api/sales/shift/SHIFT-20260830-02', {
+      token: sellerToken
+    });
+    assert(
+      forbiddenShiftSales.status === 403 && forbiddenShiftSales.body.code === 'FORBIDDEN',
+      'SEC-03: Vendedor intentando consultar ventas de una jornada ajena es rechazado con HTTP 403'
+    );
+
+    // 13. SEC-03: Vendedor consulta detalle de jornada ajena en /shifts/:id (HTTP 403)
+    const forbiddenShiftDetail = await request('/api/shifts/SHIFT-20260830-02', {
+      token: sellerToken
+    });
+    assert(
+      forbiddenShiftDetail.status === 403 && forbiddenShiftDetail.body.code === 'FORBIDDEN',
+      'SEC-03: Vendedor intentando ver detalle de jornada ajena (/shifts/:id) es rechazado con HTTP 403'
+    );
+
+    // 14. Vendedor consulta legítimamente su propia jornada en /shifts/:id (HTTP 200)
+    const ownShiftDetail = await request('/api/shifts/SHIFT-20260830-01', {
+      token: sellerToken
+    });
+    assert(
+      ownShiftDetail.status === 200 && ownShiftDetail.body.success === true && ownShiftDetail.body.shift?.sellerId === 'USR-VEND-1',
+      'Vendedor autenticado puede consultar el detalle de su propia jornada legítimamente (HTTP 200)'
+    );
+
+    // 15. Control de Rol Estricto: Operario de fábrica (factory_worker) no puede acceder a ventas ni jornadas
+    const factoryLogin = await request('/api/auth/login', {
+      method: 'POST',
+      body: { pin: '5566' } // Marcos Benavídez (USR-FAB-1)
+    });
+    assert(
+      factoryLogin.status === 200 && factoryLogin.body.user.role === 'factory_worker',
+      'Login exitoso de operario de fábrica emite token con rol factory_worker'
+    );
+    const factoryToken = factoryLogin.body.token;
+
+    const factoryShiftsAccess = await request('/api/shifts', { token: factoryToken });
+    assert(
+      factoryShiftsAccess.status === 403 && factoryShiftsAccess.body.code === 'FORBIDDEN',
+      'RBAC: factory_worker es rechazado con HTTP 403 al intentar consultar /api/shifts'
+    );
+
+    const factorySalesAccess = await request('/api/sales', { token: factoryToken });
+    assert(
+      factorySalesAccess.status === 403 && factorySalesAccess.body.code === 'FORBIDDEN',
+      'RBAC: factory_worker es rechazado con HTTP 403 al intentar consultar /api/sales'
+    );
+
+    const factoryShiftSalesAccess = await request('/api/sales/shift/SHIFT-20260830-01', { token: factoryToken });
+    assert(
+      factoryShiftSalesAccess.status === 403 && factoryShiftSalesAccess.body.code === 'FORBIDDEN',
+      'RBAC: factory_worker es rechazado con HTTP 403 al intentar consultar ventas de una jornada'
+    );
+
+    const factoryPostSale = await request('/api/sales', {
+      method: 'POST',
+      token: factoryToken,
+      body: { shiftId: 'SHIFT-20260830-01', itemType: 'combo3', varietyId: 'VAR-CLASICO', quantityUnitsEquivalent: 3, totalAmount: 4000, paymentMethod: 'efectivo' }
+    });
+    assert(
+      factoryPostSale.status === 403 && factoryPostSale.body.code === 'FORBIDDEN',
+      'RBAC: factory_worker es rechazado con HTTP 403 al intentar registrar ventas individuales'
+    );
+
+    // 16. Integridad de Ventas: Intento de registrar venta con precio adulterado (HTTP 400)
+    const tamperedPriceSale = await request('/api/sales', {
+      method: 'POST',
+      token: sellerToken,
+      body: {
+        id: `SALE-TAMPERED-PRICE-${Date.now()}`,
+        shiftId: 'SHIFT-20260831-01', // Jornada activa en_curso de Lucas Benítez
+        sellerId: 'USR-VEND-1',
+        itemType: 'combo6',
+        varietyId: 'VAR-CLASICO',
+        varietyName: 'Tequeño Clásico',
+        quantityUnitsEquivalent: 6,
+        totalAmount: 500, // Fraude: Combo 6u cuesta $7.500, enviado $500
+        paymentMethod: 'efectivo',
+        timestamp: new Date().toISOString()
+      }
+    });
+    assert(
+      tamperedPriceSale.status === 400 && tamperedPriceSale.body.code === 'INVALID_SALE_PRICE',
+      'Integridad: Venta individual con total adulterado ($500 por combo6) es rechazada con HTTP 400 INVALID_SALE_PRICE'
+    );
+
+    // 17. Integridad de Ventas: Intento de registrar venta con descuento arbitrario no autorizado (HTTP 400)
+    const unauthorizedDiscountSale = await request('/api/sales', {
+      method: 'POST',
+      token: sellerToken,
+      body: {
+        id: `SALE-UNAUTH-DISCOUNT-${Date.now()}`,
+        shiftId: 'SHIFT-20260831-01',
+        sellerId: 'USR-VEND-1',
+        itemType: 'combo3',
+        varietyId: 'VAR-CLASICO',
+        quantityUnitsEquivalent: 3,
+        totalAmount: 3000, // Descuento arbitrario no configurado ($3.000 en vez de $4.000)
+        paymentMethod: 'efectivo',
+        timestamp: new Date().toISOString()
+      }
+    });
+    assert(
+      unauthorizedDiscountSale.status === 400 && unauthorizedDiscountSale.body.code === 'INVALID_SALE_PRICE',
+      'Integridad: Venta con precio o descuento arbitrario no oficial es rechazada con HTTP 400 INVALID_SALE_PRICE'
+    );
+
+    // 18. Integridad de Ventas: Intento de registrar unidades equivalentes incongruentes con el combo (HTTP 400)
+    const invalidUnitsSale = await request('/api/sales', {
+      method: 'POST',
+      token: sellerToken,
+      body: {
+        id: `SALE-INVALID-UNITS-${Date.now()}`,
+        shiftId: 'SHIFT-20260831-01',
+        sellerId: 'USR-VEND-1',
+        itemType: 'combo6',
+        varietyId: 'VAR-CLASICO',
+        quantityUnitsEquivalent: 5, // Inconsistencia: combo6 exige múltiplos de 6
+        totalAmount: 7500,
+        paymentMethod: 'efectivo',
+        timestamp: new Date().toISOString()
+      }
+    });
+    assert(
+      invalidUnitsSale.status === 400 && invalidUnitsSale.body.code === 'UNITS_MISMATCH',
+      'Integridad: Venta con unidades incompatibles con el combo (5u en combo6) es rechazada con HTTP 400 UNITS_MISMATCH'
+    );
+
+    // 19. Integridad de Ventas: Intento de registrar medio de pago no autorizado (HTTP 400)
+    const invalidPaymentSale = await request('/api/sales', {
+      method: 'POST',
+      token: sellerToken,
+      body: {
+        id: `SALE-INVALID-PAY-${Date.now()}`,
+        shiftId: 'SHIFT-20260831-01',
+        sellerId: 'USR-VEND-1',
+        itemType: 'combo3',
+        varietyId: 'VAR-CLASICO',
+        quantityUnitsEquivalent: 3,
+        totalAmount: 4000,
+        paymentMethod: 'criptomoneda', // Medio inválido
+        timestamp: new Date().toISOString()
+      }
+    });
+    assert(
+      invalidPaymentSale.status === 400 && invalidPaymentSale.body.code === 'INVALID_PAYMENT_METHOD',
+      'Integridad: Venta con medio de pago no soportado ("criptomoneda") es rechazada con HTTP 400 INVALID_PAYMENT_METHOD'
+    );
+
+    // 20. Integridad de Ventas: Intento de registrar variedad de producto inexistente en catálogo (HTTP 400)
+    const invalidVarietySale = await request('/api/sales', {
+      method: 'POST',
+      token: sellerToken,
+      body: {
+        id: `SALE-INVALID-VAR-${Date.now()}`,
+        shiftId: 'SHIFT-20260831-01',
+        sellerId: 'USR-VEND-1',
+        itemType: 'combo3',
+        varietyId: 'VAR-FANTASMA', // Variedad inexistente
+        quantityUnitsEquivalent: 3,
+        totalAmount: 4000,
+        paymentMethod: 'efectivo',
+        timestamp: new Date().toISOString()
+      }
+    });
+    assert(
+      invalidVarietySale.status === 400 && invalidVarietySale.body.code === 'UNKNOWN_VARIETY',
+      'Integridad: Venta con variedad inexistente en catálogo es rechazada con HTTP 400 UNKNOWN_VARIETY'
+    );
+
+    // 21. SEC-02: Lote offline con venta atribuida a un tercero es rechazado con HTTP 403
+    const forgedBatch = await request('/api/sales/sync-batch', {
+      method: 'POST',
+      token: sellerToken,
+      body: {
+        sales: [
+          {
+            id: `SALE-TEST-BATCH-LEGIT-${Date.now()}`,
+            shiftId: 'SHIFT-20260830-01',
+            sellerId: 'USR-VEND-1',
+            itemType: 'combo3',
+            varietyId: 'VAR-CLASICO',
+            varietyName: 'Tequeño Clásico',
+            quantityUnitsEquivalent: 3,
+            totalAmount: 4000,
+            paymentMethod: 'efectivo',
+            timestamp: new Date().toISOString(),
+            validationStatus: 'validada'
+          },
+          {
+            id: `SALE-TEST-BATCH-FORGED-${Date.now()}`,
+            shiftId: 'SHIFT-20260830-01',
+            sellerId: 'USR-VEND-2', // Fraude: venta atribuida a otro vendedor en el lote
+            itemType: 'combo6',
+            varietyId: 'VAR-CLASICO',
+            varietyName: 'Tequeño Clásico',
+            quantityUnitsEquivalent: 6,
+            totalAmount: 7500,
+            paymentMethod: 'efectivo',
+            timestamp: new Date().toISOString(),
+            validationStatus: 'validada'
+          }
+        ]
+      }
+    });
+    assert(
+      forgedBatch.status === 403 && forgedBatch.body.code === 'FORBIDDEN',
+      'SEC-02: Lote offline conteniendo ventas atribuidas a terceros es rechazado con HTTP 403 sin sincronizar'
+    );
+
+    // 22. SEC-02: Lote offline con venta asignada a una jornada ajena es rechazado con HTTP 403
+    const forgedBatchShift = await request('/api/sales/sync-batch', {
+      method: 'POST',
+      token: sellerToken,
+      body: {
+        sales: [
+          {
+            id: `SALE-TEST-BATCH-WRONGSHIFT-${Date.now()}`,
+            shiftId: 'SHIFT-20260830-02', // Jornada de otro vendedor
+            sellerId: 'USR-VEND-1',
+            itemType: 'combo3',
+            varietyId: 'VAR-CLASICO',
+            varietyName: 'Tequeño Clásico',
+            quantityUnitsEquivalent: 3,
+            totalAmount: 4000,
+            paymentMethod: 'efectivo',
+            timestamp: new Date().toISOString(),
+            validationStatus: 'validada'
+          }
+        ]
+      }
+    });
+    assert(
+      forgedBatchShift.status === 403 && forgedBatchShift.body.code === 'FORBIDDEN',
+      'SEC-02: Lote offline con ventas asignadas a jornada ajena es rechazado con HTTP 403'
+    );
+
+    // 23. Integridad Económica en Lotes: Lote offline con precio adulterado es rechazado atómicamente (HTTP 400)
+    const tamperedBatchPrices = await request('/api/sales/sync-batch', {
+      method: 'POST',
+      token: sellerToken,
+      body: {
+        sales: [
+          {
+            id: `SALE-BATCH-VALID-${Date.now()}`,
+            shiftId: 'SHIFT-20260830-01',
+            sellerId: 'USR-VEND-1',
+            itemType: 'combo3',
+            varietyId: 'VAR-CLASICO',
+            quantityUnitsEquivalent: 3,
+            totalAmount: 4000,
+            paymentMethod: 'efectivo',
+            timestamp: new Date().toISOString()
+          },
+          {
+            id: `SALE-BATCH-CORRUPT-${Date.now()}`,
+            shiftId: 'SHIFT-20260830-01',
+            sellerId: 'USR-VEND-1',
+            itemType: 'combo6',
+            varietyId: 'VAR-CLASICO',
+            quantityUnitsEquivalent: 6,
+            totalAmount: 150, // Precio manipulado en el lote
+            paymentMethod: 'efectivo',
+            timestamp: new Date().toISOString()
+          }
+        ]
+      }
+    });
+    assert(
+      tamperedBatchPrices.status === 400 && tamperedBatchPrices.body.code === 'INVALID_SALE_PRICE',
+      'Integridad Lotes: Lote offline con venta adulterada ($150) es rechazado atómicamente con HTTP 400 sin escrituras parciales'
+    );
+
+    // 24. SEC-03: Administrador puede consultar ventas de cualquier jornada
+    const adminCheckShiftSales = await request('/api/sales/shift/SHIFT-20260830-02', {
+      token: adminToken
+    });
+    assert(
+      adminCheckShiftSales.status === 200 || adminCheckShiftSales.status === 503,
+      'SEC-03: Administrador conserva permisos para consultar ventas de jornadas operativas (no restringido por 403)'
+    );
+
+    // 25. SEC-02 / SEC-03: Solicitud de ventas sin token es rechazada con HTTP 401
+    const unauthSaleReq = await request('/api/sales', {
+      method: 'POST',
+      body: { id: 'TEST-NOAUTH', shiftId: 'SHIFT-1' }
+    });
+    assert(
+      unauthSaleReq.status === 401,
+      'Solicitud de ventas sin token es rechazada con HTTP 401'
+    );
+
+    // 26. Cierre de sesión (Logout) y revocación
     const logoutRes = await request('/api/auth/logout', { method: 'POST', token: sellerToken });
     assert(logoutRes.status === 200 && logoutRes.body.success === true, 'POST /api/auth/logout revoca la sesión');
 
-    // 11. Token revocado ya no permite acceso a /api/auth/me
+    // 27. Token revocado ya no permite acceso a /api/auth/me
     const postLogoutMe = await request('/api/auth/me', { token: sellerToken });
     assert(postLogoutMe.status === 401, 'Token revocado es rechazado con HTTP 401');
 

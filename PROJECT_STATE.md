@@ -95,6 +95,8 @@ El proyecto ha completado exitosamente:
 | **Vaciado Seguro de Cola Offline** | Completa | `flushOfflineQueue()` sincroniza por lote mediante `POST /api/sales/sync-batch` sin borrar ventas locales si hay fallos. |
 | **Radar de Playas y Clima** | Completa | Reportes de marea y afluencia turística. |
 | **Gestión de Fábrica y Lotes** | Completa | Recetas, órdenes de producción, materias primas, proveedores. |
+| **Autenticación y RBAC (Fase 3.1)** | Completa | Sesiones con Bearer token, revocación en memoria, control de acceso por rol (`admin`, `coordinator`, `seller`, `factory_worker`), aislamiento SEC-02/SEC-03. |
+| **Integridad de Ventas y Precios (Fase 3.2)** | Completa | Validación en backend de catálogo, unidades de combos, precios oficiales de playa, medio de pago y rechazo atómico de lotes offline (`salesValidation.ts`). |
 
 ---
 
@@ -108,6 +110,6 @@ El proyecto ha completado exitosamente:
 ---
 
 ## 5. ASPECTOS PENDIENTES PARA FASES POSTERIORES
-- `[FASE 3]` Autenticación segura en backend (hashing de PINs con bcrypt, emisión de JWT/sesión HTTP-only).
+- `[FASE 3 - COMPLETADA]` Autenticación segura en backend, RBAC estricto, aislamiento de recursos e integridad económica de ventas (Fase 3.1 + Fase 3.2).
 - `[FASE 4]` Offline definitivo (IndexedDB mediante Dexie.js o SQLite WASM, Service Worker y PWA instalable con manifest).
 - `[FASE 5]` Despliegue en contenedor persistente (Google Cloud Run / Railway / VPS) con PostgreSQL gestionado (Cloud SQL / Neon / Supabase).
