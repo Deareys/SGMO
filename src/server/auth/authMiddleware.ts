@@ -21,7 +21,7 @@ declare global {
  */
 export function extractToken(req: Request): string | null {
   const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
+  if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
     return authHeader.substring(7).trim();
   }
   const customHeader = req.headers['x-auth-token'];
@@ -46,7 +46,17 @@ export async function authenticateToken(req: Request, res: Response, next: NextF
     return;
   }
 
-  const session = await sessionManager.validateToken(token);
+  let session: SessionData | null;
+  try {
+    session = await sessionManager.validateToken(token);
+  } catch {
+    res.status(503).json({
+      success: false,
+      code: 'SERVICE_UNAVAILABLE',
+      message: 'El servicio de autenticación no está disponible. Intentá nuevamente.'
+    });
+    return;
+  }
   if (!session) {
     res.status(401).json({
       success: false,

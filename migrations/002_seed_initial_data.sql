@@ -24,7 +24,8 @@ ON CONFLICT (id) DO UPDATE SET
     base_price_individual = EXCLUDED.base_price_individual,
     combo_prices = EXCLUDED.combo_prices;
 
--- 3. Usuarios Iniciales (Sin credenciales predeterminadas en texto plano)
+-- 3. Usuarios iniciales sin credenciales: requieren aprovisionamiento seguro posterior.
+-- Reejecutar la semilla nunca cambia roles, credenciales ni acceso de cuentas existentes.
 INSERT INTO users (id, name, email, role, phone, pin_hash, assigned_house_id, commission_rate, housing_cost_exempt, is_active)
 VALUES
     ('USR-ADMIN-01', 'Sebastián Queipo', 'admin@tequenos.costa.ar', 'admin', '+54 9 11 4050-6070', NULL, 'HOUSE-NORTE', 0.2000, TRUE, TRUE),
@@ -33,9 +34,7 @@ VALUES
     ('USR-VEND-01', 'Lucas Pereyra', 'lucas.p@gmail.com', 'seller', '+54 9 11 3456-7890', NULL, 'HOUSE-NORTE', 0.2000, FALSE, TRUE),
     ('USR-VEND-02', 'Camila Benítez', 'camila.b@gmail.com', 'seller', '+54 9 11 9876-5432', NULL, 'HOUSE-NORTE', 0.2000, FALSE, TRUE),
     ('USR-VEND-03', 'Mateo Rossi', 'mateo.rossi@gmail.com', 'seller', '+54 9 11 2345-6789', NULL, 'HOUSE-SUR', 0.2000, FALSE, TRUE)
-ON CONFLICT (id) DO UPDATE SET
-    name = EXCLUDED.name,
-    role = EXCLUDED.role;
+ON CONFLICT (id) DO NOTHING;
 
 -- 4. Carritos
 INSERT INTO selling_carts (id, code, model, house_id, status, current_seller_id, gas_level_percent, is_active)

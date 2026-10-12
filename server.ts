@@ -9,12 +9,21 @@ import { GoogleGenAI, Type } from '@google/genai';
 import { dbRouter } from './src/server/routes/dbRoutes';
 import { authRouter } from './src/server/auth/authRoutes';
 import { authenticateToken, requireRole } from './src/server/auth/authMiddleware';
+import { isIsolatedDemoEnabled } from './src/server/auth/authPolicy';
 
 const app = express();
 const PORT = 3000;
 
 // Parser JSON con límite amplio para imágenes base64 de comprobantes
+// Credenciales no necesitan el límite amplio utilizado por las imágenes OCR.
+app.use('/api/auth', express.json({ limit: '4kb' }));
 app.use(express.json({ limit: '25mb' }));
+app.use((error: any, _req: Request, res: Response, next: express.NextFunction) => {
+  if (error?.type === 'entity.too.large' || error?.type === 'entity.parse.failed') {
+    return res.status(error.type === 'entity.too.large' ? 413 : 400).json({ success: false, message: 'Solicitud inválida.' });
+  }
+  next(error);
+});
 
 // Rutas de Autenticación y Control de Sesión
 app.use('/api/auth', authRouter);
@@ -748,8 +757,9 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`SGMO Server corriendo en http://0.0.0.0:${PORT}`);
+  const host = isIsolatedDemoEnabled() ? '127.0.0.1' : '0.0.0.0';
+  app.listen(PORT, host, () => {
+    console.log(`SGMO Server corriendo en http://${host}:${PORT}`);
   });
 }
 

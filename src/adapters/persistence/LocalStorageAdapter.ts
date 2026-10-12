@@ -41,8 +41,8 @@ export class LocalStorageAdapter implements IStorageRepository {
     return this.service.getState().users;
   }
 
-  updateUser(id: string, updates: Partial<UserProfile>): void {
-    this.service.updateUser(id, updates);
+  updateUser(id: string, updates: Partial<UserProfile>): Promise<void> {
+    return this.service.updateUser(id, updates);
   }
 
   getCarts(): SellingCart[] {

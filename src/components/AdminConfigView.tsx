@@ -1214,9 +1214,13 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
                     </button>
                     {u.id !== state.currentUser?.id && (
                       <button
-                        onClick={() => {
-                          storageService.toggleUserActive(u.id);
-                          notifySuccess(`Usuario ${u.name} modificado`);
+                        onClick={async () => {
+                          try {
+                            await storageService.toggleUserActive(u.id);
+                            notifySuccess(`Usuario ${u.name} modificado`);
+                          } catch (error) {
+                            alert(error instanceof Error ? error.message : 'No se pudo confirmar el cambio.');
+                          }
                         }}
                         className={`flex items-center space-x-1 ${
                           u.isActive !== false ? 'text-rose-400 hover:text-rose-300' : 'text-emerald-400 hover:text-emerald-300'
@@ -1337,12 +1341,12 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
             setIsCreatingUser(false);
             setEditingUser(null);
           }}
-          onSave={(userData) => {
+          onSave={async (userData) => {
             if (editingUser) {
-              storageService.updateUser(editingUser.id, userData);
+              await storageService.updateUser(editingUser.id, userData);
               notifySuccess(`Perfil de ${editingUser.name} actualizado`);
             } else {
-              storageService.createUser(userData as any);
+              await storageService.createUser(userData as any);
               notifySuccess('Nuevo usuario creado con éxito');
             }
             setIsCreatingUser(false);
@@ -1990,10 +1994,12 @@ interface UserModalProps {
   user: UserProfile | null;
   houses: OperationalHouse[];
   onClose: () => void;
-  onSave: (data: Partial<UserProfile>) => void;
+  onSave: (data: Partial<UserProfile> & { password?: string }) => Promise<void>;
 }
 
 const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) => {
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [showPin, setShowPin] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
@@ -2002,7 +2008,7 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) 
     email: user?.email || '',
     phone: user?.phone || '',
     role: user?.role || ('seller' as UserRole),
-    pin: user?.pin || '',
+    pin: '',
     password: '',
     assignedHouseId: user?.assignedHouseId || houses[0]?.id || '',
     commissionRate: user?.commissionRate || 0.20,
@@ -2017,14 +2023,16 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) 
           <h3 className="text-base font-bold text-white">
             {user ? `Editar a ${user.name}` : 'Nuevo Usuario / Personal'}
           </h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-white">
+          <button onClick={onClose}
+              disabled={isSaving} className="text-slate-400 hover:text-white">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <form
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
+            if (isSaving) return;
             if (!formData.userCode.trim()) {
               alert('El código de usuario es obligatorio (ej: VEND-05, COORD-03, ADM-02).');
               return;
@@ -2040,14 +2048,26 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) 
                 return;
               }
             }
-            onSave({
-              ...formData,
-              userCode: formData.userCode.trim().toUpperCase(),
-              commissionRate: Number(formData.commissionRate)
-            });
+            const { pin, password, ...profile } = formData;
+            setIsSaving(true);
+            setSaveError(null);
+            try {
+              await onSave({
+                ...profile,
+                ...(formData.role === 'admin' && password ? { password } : {}),
+                ...(formData.role !== 'admin' && pin ? { pin } : {}),
+                userCode: formData.userCode.trim().toUpperCase(),
+                commissionRate: Number(formData.commissionRate)
+              });
+            } catch (error) {
+              setSaveError(error instanceof Error ? error.message : 'No se pudo guardar el usuario.');
+            } finally {
+              setIsSaving(false);
+            }
           }}
           className="space-y-3 text-xs"
         >
+          {saveError && <p role="alert" className="text-red-300">{saveError}</p>}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-slate-300 font-semibold mb-1">Nombre Completo</label>
@@ -2205,15 +2225,17 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) 
             <button
               type="button"
               onClick={onClose}
+              disabled={isSaving}
               className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg"
             >
               Cancelar
             </button>
             <button
               type="submit"
+              disabled={isSaving}
               className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg"
             >
-              Guardar Usuario
+              {isSaving ? 'Guardando…' : 'Guardar Usuario'}
             </button>
           </div>
         </form>

@@ -104,12 +104,21 @@ export interface AppState {
 
 type Listener = (state: AppState) => void;
 
-class StorageService {
+/** Credenciales de entrada transitorias: nunca forman parte del perfil/cache. */
+export type UserCredentialInput = Partial<UserProfile> & { password?: string };
+
+export class StorageService {
   private state: AppState;
   private listeners: Set<Listener> = new Set();
 
   constructor() {
     this.state = this.loadInitialState();
+    // No restaurar identidad desde un perfil manipulable; conservar el bearer
+    // existente para la sincronización pendiente, sujeto a validación del servidor.
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(AUTH_USER_KEY);
+      this.saveState(); // Elimina credenciales heredadas sin borrar ventas/stock.
+    }
     
     // Escuchar eventos de red en navegador
     if (typeof window !== 'undefined') {
@@ -125,14 +134,11 @@ class StorageService {
         try {
           const parsed = JSON.parse(stored);
           
-          // Sincronizar PINs específicos de cada usuario para pruebas
-          const syncedUsers = (parsed.users || INITIAL_USERS).map((u: any) => {
-            const initialMatch = INITIAL_USERS.find((iu) => iu.id === u.id);
-            if (initialMatch && (!u.pin || (u.pin === '1234' && initialMatch.pin !== '1234'))) {
-              return { ...u, pin: initialMatch.pin };
-            }
-            return u;
-          });
+          // Los perfiles locales contienen metadatos; nunca son fuente de
+          // autenticación ni deben conservar credenciales del prototipo anterior.
+          const syncedUsers = (parsed.users || INITIAL_USERS).map((user: UserProfile) =>
+            this.withoutCredentials(user)
+          );
 
           // Asegurar que las jornadas activas de todos los vendedores estén disponibles
           const storedShifts = parsed.shifts || [];
@@ -200,7 +206,7 @@ class StorageService {
             availableSeasons: parsed.availableSeasons || ['Temporada 2026-2027', 'Temporada 2027-2028', 'Temporada 2028-2029']
           };
         } catch (e) {
-          console.error('Error parseando almacenamiento local, cargando semillas iniciales', e);
+          console.error('No se pudo interpretar el almacenamiento local.');
         }
       }
     }
@@ -236,7 +242,23 @@ class StorageService {
     };
   }
 
+  /** Retira credenciales de perfiles/cache; permite enviarlas solo como entrada HTTP. */
+  private withoutCredentials<Profile extends Partial<UserProfile>>(profile: Profile): Profile {
+    const safeProfile = { ...profile };
+    for (const credentialField of [
+      'pin', 'password', 'pinHash', 'pinSalt', 'passwordHash', 'passwordSalt',
+      'pin_hash', 'pin_salt', 'password_hash', 'password_salt'
+    ]) {
+      delete (safeProfile as Record<string, unknown>)[credentialField];
+    }
+    return safeProfile;
+  }
+
   private saveState(): void {
+    this.state.users = this.state.users.map((user) => this.withoutCredentials(user));
+    if (this.state.currentUser) {
+      this.state.currentUser = this.withoutCredentials(this.state.currentUser);
+    }
     if (typeof window !== 'undefined') {
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
@@ -281,99 +303,53 @@ class StorageService {
       return { success: false, error: 'El PIN personal debe contener exactamente 8 dígitos numéricos.' };
     }
 
-    // 1. Intentar autenticar contra el backend central
-    try {
-      const bodyPayload = { userCode: userCode.trim(), pin: cleanPin };
-
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyPayload)
-      });
-
-      const data = await response.json();
-
-      if (response.ok && data.success && data.user) {
-        if (typeof window !== 'undefined' && data.token) {
-          localStorage.setItem(AUTH_TOKEN_KEY, data.token);
-          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(data.user));
-        }
-
-        this.state.currentUser = data.user;
-        if (data.user.assignedHouseId) {
-          this.state.selectedHouseId = data.user.assignedHouseId;
-        }
-
-        this.addAuditLog('LOGIN_USUARIO', 'usuarios', data.user.id, `Inicio de sesión exitoso de ${data.user.name} (${data.user.role}) verificado en backend`);
-        this.saveState();
-        return { success: true, user: data.user };
-      } else if (response.status === 429) {
-        return { success: false, error: data.message || 'Demasiados intentos fallidos. Acceso bloqueado temporalmente.' };
-      } else if (response.status === 401) {
-        return { success: false, error: data.message || 'PIN incorrecto o cuenta no aprovisionada.' };
-      } else if (!response.ok) {
-        return { success: false, error: data.message || 'Error al validar credenciales en el servidor.' };
-      }
-    } catch (networkError) {
-      console.warn('Backend inalcanzable para autenticación, procediendo con contingencia local:', networkError);
-    }
-
-    // 2. Modo contingencia sin conexión (Offline)
-    return this.loginWithPin(cleanPin, userCode);
+    return this.authenticateWithServer({ userCode: userCode.trim(), pin: cleanPin });
   }
 
   public async loginAsAdminAsync(identifier: string, password: string): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
-    if (!identifier || !password) {
+    if (!identifier?.trim() || !password) {
       return { success: false, error: 'Debe ingresar identificador y contraseña.' };
     }
+    return this.authenticateWithServer({ identifier: identifier.trim(), password });
+  }
 
+  /**
+   * Solo una respuesta central con perfil y token habilita una sesión nueva.
+   * Caídas de red, HTML de hosting estático, respuestas incompletas o errores
+   * del servidor se rechazan; la venta offline de sesiones activas no cambia.
+   */
+  private async authenticateWithServer(credentials: { userCode: string; pin: string } | { identifier: string; password: string }): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier, password })
+        body: JSON.stringify(credentials)
       });
-
-      const data = await response.json();
-
-      if (response.ok && data.success && data.user) {
-        if (typeof window !== 'undefined' && data.token) {
-          localStorage.setItem(AUTH_TOKEN_KEY, data.token);
-          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(data.user));
-        }
-
-        this.state.currentUser = data.user;
-        this.addAuditLog('LOGIN_USUARIO', 'usuarios', data.user.id, `Inicio de sesión exitoso de Administrador ${data.user.name} verificado en backend`);
-        this.saveState();
-        return { success: true, user: data.user };
-      } else if (response.status === 429) {
-        return { success: false, error: data.message || 'Demasiados intentos fallidos. Acceso bloqueado temporalmente.' };
-      } else if (response.status === 401) {
-        return { success: false, error: data.message || 'Credenciales de administrador incorrectas.' };
+      const result = await response.json();
+      if (!response.ok) {
+        return { success: false, error: result.message || 'No se pudo validar el acceso en el servidor.' };
       }
-    } catch (networkError) {
-      console.warn('Backend inalcanzable para autenticación admin:', networkError);
-    }
+      if (result.success !== true || !result.user?.id ||
+          typeof result.token !== 'string' || !result.token.trim()) {
+        return { success: false, error: 'El servidor no confirmó una sesión válida.' };
+      }
 
-    // Contingencia local admin
-    const cleanId = identifier.trim().toLowerCase();
-    const admin = this.state.users.find(
-      (u) =>
-        u.role === 'admin' &&
-        u.isActive !== false &&
-        (u.id.toLowerCase() === cleanId ||
-          u.email?.toLowerCase() === cleanId ||
-          (u.userCode && u.userCode.toLowerCase() === cleanId))
-    );
-
-    if (admin) {
-      this.state.currentUser = admin;
-      this.addAuditLog('LOGIN_USUARIO', 'usuarios', admin.id, `Inicio de sesión offline de Administrador ${admin.name}`);
+      const safeUser = this.withoutCredentials(result.user as UserProfile);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(AUTH_TOKEN_KEY, result.token);
+        localStorage.setItem(AUTH_USER_KEY, JSON.stringify(safeUser));
+      }
+      this.state.currentUser = safeUser;
+      if (safeUser.assignedHouseId) {
+        this.state.selectedHouseId = safeUser.assignedHouseId;
+      }
+      this.addAuditLog('LOGIN_USUARIO', 'usuarios', safeUser.id, `Inicio de sesión de ${safeUser.name} (${safeUser.role}) verificado en backend`);
       this.saveState();
-      return { success: true, user: admin };
+      return { success: true, user: safeUser };
+    } catch {
+      // No registrar respuestas o errores que puedan incluir datos de entrada.
+      return { success: false, error: 'No se pudo conectar con el servidor. Para iniciar sesión necesitás conexión.' };
     }
-
-    return { success: false, error: 'Credenciales de administrador incorrectas o no sincronizadas.' };
   }
 
   public setCurrentUser(user: UserProfile | null): void {
@@ -381,42 +357,22 @@ class StorageService {
       this.logout();
       return;
     }
-    this.state.currentUser = user;
+    // Este adaptador puede refrescar la identidad existente, pero no autenticar
+    // una cuenta ni elevar su rol desde un perfil/cache local.
+    const authenticatedUser = this.state.currentUser;
+    if (!authenticatedUser || authenticatedUser.id !== user.id || authenticatedUser.role !== user.role) {
+      return;
+    }
+    this.state.currentUser = this.withoutCredentials(user);
     if (user.assignedHouseId) {
       this.state.selectedHouseId = user.assignedHouseId;
     }
     this.saveState();
   }
 
-  public loginWithPin(pin: string, userCode: string): { success: boolean; user?: UserProfile; error?: string } {
-    if (!userCode || !userCode.trim()) {
-      return { success: false, error: 'Debe especificar el código de usuario (userCode) o identificador de cuenta.' };
-    }
-
-    const cleanPin = (pin || '').trim();
-    if (!/^\d{8}$/.test(cleanPin)) {
-      return { success: false, error: 'El PIN debe contener exactamente 8 dígitos numéricos.' };
-    }
-
-    const cleanCode = userCode.trim().toLowerCase();
-    const user = this.state.users.find(
-      (u) =>
-        u.isActive !== false &&
-        ((u.userCode && u.userCode.toLowerCase() === cleanCode) || u.id.toLowerCase() === cleanCode) &&
-        u.pin === cleanPin
-    );
-
-    if (!user) {
-      return { success: false, error: 'Código de usuario o PIN incorrecto.' };
-    }
-
-    this.state.currentUser = user;
-    if (user.assignedHouseId) {
-      this.state.selectedHouseId = user.assignedHouseId;
-    }
-    this.addAuditLog('LOGIN_USUARIO', 'usuarios', user.id, `Inicio de sesión exitoso de ${user.name} (${user.role}) mediante PIN`);
-    this.saveState();
-    return { success: true, user };
+  /** @deprecated La autenticación requiere loginWithPinAsync y servidor disponible. */
+  public loginWithPin(_pin: string, _userCode: string): { success: boolean; user?: UserProfile; error?: string } {
+    return { success: false, error: 'El inicio de sesión local está deshabilitado. Usá la autenticación central con conexión.' };
   }
 
   public logout(): void {
@@ -1503,71 +1459,65 @@ class StorageService {
   }
 
   // --- 10. Gestión de Usuarios ---
-  public createUser(userData: Omit<UserProfile, 'id'>): UserProfile {
-    const id = `USR-${Date.now()}`;
-    const newUser: UserProfile = { ...userData, id, isActive: true };
+  /** Crea en el servidor antes de publicar el perfil local; falla cerrado sin sesión admin. */
+  public async createUser(userData: Omit<UserProfile, 'id'> & { password?: string }): Promise<UserProfile> {
+    const id = `USR-${crypto.randomUUID()}`;
+    const newUser = await this.persistUserChange('/api/users', 'POST', { ...userData, id });
     this.state.users = [...this.state.users, newUser];
-    this.addAuditLog('CREAR_USUARIO', 'usuarios', id, `Creación de usuario: ${newUser.name} con rol ${newUser.role}`);
+    this.addAuditLog('CREAR_USUARIO', 'usuarios', newUser.id, `Creación de usuario: ${newUser.name} con rol ${newUser.role} confirmada en backend`);
     this.saveState();
-
-    // Sincronizar con el backend si hay token
-    const token = this.getAuthToken();
-    if (token) {
-      fetch('/api/users', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(newUser)
-      }).catch((err) => console.warn('Sync POST /api/users error:', err));
-    }
-
     return newUser;
   }
 
-  public updateUser(userId: string, data: Partial<UserProfile>): void {
-    const user = this.state.users.find((u) => u.id === userId);
-    if (!user) return;
-    const oldRole = user.role;
-    Object.assign(user, data);
-    this.addAuditLog(
-      'ACTUALIZAR_USUARIO',
-      'usuarios',
-      userId,
-      `Modificación de perfil de ${user.name}. Rol: ${user.role} (anterior: ${oldRole})`
-    );
-    // Si se editó el usuario activo actual, reflejar cambios
-    if (this.state.currentUser && this.state.currentUser.id === userId) {
-      this.state.currentUser = { ...user };
-    }
-    this.saveState();
-
-    // Sincronizar con el backend si hay token
-    const token = this.getAuthToken();
-    if (token) {
-      fetch(`/api/users/${userId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(data)
-      }).catch((err) => console.warn('Sync PUT /api/users error:', err));
+  /** Una actualización rechazada no modifica el perfil, rol ni credenciales locales. */
+  public async updateUser(userId: string, updates: UserCredentialInput): Promise<void> {
+    const previousUser = this.state.users.find((user) => user.id === userId);
+    if (!previousUser) throw new Error('No se encontró el perfil a modificar.');
+    const updatedUser = await this.persistUserChange(`/api/users/${encodeURIComponent(userId)}`, 'PUT', updates);
+    if (updatedUser.id !== userId) throw new Error('El servidor no confirmó el perfil solicitado.');
+    this.state.users = this.state.users.map((user) => user.id === userId ? updatedUser : user);
+    this.addAuditLog('ACTUALIZAR_USUARIO', 'usuarios', userId,
+      `Modificación de perfil de ${updatedUser.name}. Rol: ${updatedUser.role} (anterior: ${previousUser.role}) confirmada en backend`);
+    // Cambiar las credenciales/rol de la sesión activa requiere autenticación
+    // central nueva; no adoptar un rol nuevo desde metadatos locales.
+    if (this.state.currentUser?.id === userId) {
+      this.logout();
+    } else {
+      this.saveState();
     }
   }
 
-  public toggleUserActive(userId: string): void {
-    const user = this.state.users.find((u) => u.id === userId);
-    if (!user) return;
-    user.isActive = !user.isActive;
-    this.addAuditLog(
-      'ESTADO_USUARIO',
-      'usuarios',
-      userId,
-      `Usuario ${user.name} marcado como ${user.isActive ? 'activo' : 'inactivo'}`
-    );
-    this.saveState();
+  /** PIN/password solo viajan en esta petición, jamás al caché o registro de auditoría. */
+  private async persistUserChange(url: string, method: 'POST' | 'PUT', input: UserCredentialInput): Promise<UserProfile> {
+    const token = this.getAuthToken();
+    if (this.state.currentUser?.role !== 'admin' || !token) {
+      throw new Error('Se requiere una sesión de administrador validada por el servidor.');
+    }
+    let response: Response;
+    let result: { success?: boolean; user?: UserProfile; error?: string; message?: string };
+    try {
+      response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(input)
+      });
+      result = await response.json();
+    } catch {
+      throw new Error('No se pudo conectar con el servidor. El perfil no se guardó.');
+    }
+    if (!response.ok || result.success !== true) {
+      throw new Error(result.error || result.message || 'El servidor rechazó la modificación del perfil.');
+    }
+    if (!result.user?.id) {
+      throw new Error('El servidor no confirmó un perfil actualizado.');
+    }
+    return this.withoutCredentials(result.user);
+  }
+
+  public async toggleUserActive(userId: string): Promise<void> {
+    const user = this.state.users.find((profile) => profile.id === userId);
+    if (!user) throw new Error('No se encontró el perfil a modificar.');
+    await this.updateUser(userId, { isActive: !user.isActive });
   }
 
   // --- 11. Configuración General Exclusiva de Administrador ---

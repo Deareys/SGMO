@@ -98,11 +98,9 @@ export class HybridStorageAdapter implements IStorageRepository {
     return this.local.getUsers();
   }
 
-  updateUser(id: string, updates: Partial<UserProfile>): void {
-    this.local.updateUser(id, updates);
-    if (this.dbConfigured) {
-      this.remote.updateUser(id, updates);
-    }
+  updateUser(id: string, updates: Partial<UserProfile>): Promise<void> {
+    // No duplicar el alta/restablecimiento de credenciales a través de dos adaptadores.
+    return this.local.updateUser(id, updates);
   }
 
   getCarts(): SellingCart[] {

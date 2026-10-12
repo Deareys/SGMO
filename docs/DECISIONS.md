@@ -6,6 +6,10 @@
 
 ---
 
+## Estado actual (12 de octubre de 2026)
+
+ADR-013 sustituye los contratos antiguos de autenticación y sus contingencias. Los estados históricos no certifican producción. Consultar `AUTHENTICATION.md`, `HITO_1_2_1_INFORME.md` y `POSTGRES_AUTH_TESTS.md` antes de continuar.
+
 ## ÍNDICE DE DECISIONES
 
 - [ADR-001: Persistencia Rápida en LocalStorage para Fase Prototipo](#adr-001-persistencia-rápida-en-localstorage-para-fase-prototipo)
@@ -234,3 +238,17 @@ Teniendo en cuenta el informe del ingeniero auditor, las decisiones que cambiar�
 
 
 
+
+### ADR-013: Autenticación central cerrada ante fallos y aprovisionamiento explícito
+
+- **Estado:** Implementado localmente; validación de producción pendiente.
+- **Fecha:** 12 de octubre de 2026.
+- **Contexto:** La suite histórica aprobaba 41 casos aunque el frontend aceptaba administrador offline sin verificar contraseña, comparaba PIN en texto plano y las sesiones centrales recurrían a memoria. Bootstrap protegía solo cuentas ya provisionadas.
+- **Decisión:** Trabajador `{ userCode, pin }`, administrador `{ identifier, password }`, sin aliases alternativos. Nuevas sesiones solo mediante backend. Base configurada exige persistencia y validación centrales, sin fallback. Demo explícita usa credenciales suministradas por entorno, sin PG y bind loopback. Login verifica cuenta, registra intento y emite sesión en una sola transacción con lock de tabla antes de fila. El orden común con altas/reset evita ciclos de locks con bootstrap. Este último requiere secreto siempre y se usa una sola vez para un admin activo inicial.
+- **Consecuencias:** Se pierde el acceso nuevo sin red deliberadamente; la venta offline de una sesión ya activa sigue disponible. 005 exige restablecer PINs previos porque no puede deducirse su longitud desde scrypt. Los cambios de credencial/rol/inactividad revocan sesiones atómicamente. Gestión de usuarios devuelve confirmación central antes de actualizar caché. Los archivos de respaldo se excluyen de TypeScript y entregas.
+- **Compatibilidad:** Sustituye ADR-006 y la transición insegura de ADR-012. No se reescribe la arquitectura ni las reglas económicas. La consolidación de handlers duplicados de login y cliente fue necesaria para cerrar todas las contingencias inseguras con un mismo contrato. El puerto `updateUser` ahora es asíncrono para propagar fallos; sus adaptadores realizan una única escritura.
+- **Pendientes:** Cookies HttpOnly/CSRF/CORS (Hito 1.3), control por origen compartido y proxies confiables, PostgreSQL real/múltiples instancias, recuperación administrativa por infraestructura y reanudación offline tras recarga. No se modificó TLS de conexión en este hito: revisar `rejectUnauthorized:false` antes de producción.
+
+### Registro de entrega — 12 de octubre de 2026
+
+Sebas confirmó autorización permanente al modelo principal de Codex para guardar mediante commits/push cuando lo requiera el trabajo. Se exceptúa de forma explícita AGENTS sección 15 para operaciones del principal en ramas de trabajo. Los enlaces locales/ZIP no fueron accesibles al usuario; GitHub pasa a ser el canal de continuidad. Se prepara publicación de `codex/hito-1-2-1-verificacion` y un PR borrador hacia main con las correcciones y documentación. No se solicitan permisos repetidos para guardar esta entrega. No se realizan migraciones remotas ni integración automática en main. Studio debe importar la rama correcta: el proyecto anterior en main carece de estas reparaciones.

@@ -5,6 +5,18 @@
 
 ---
 
+## [Unreleased] - 2026-10-12 (Hito 1.2.1 y evidencia SQL de 1.2.2)
+
+- Eliminados login local por PIN en texto plano y acceso administrador sin contraseña ante errores de backend.
+- Contrato estricto trabajador código/PIN8 y administrador identificador/contraseña; perfil público sin secretos.
+- Sesiones centrales sin fallback; login/emisión, aprovisionamiento y revocación transaccionales.
+- Bootstrap inicial exige secreto de infraestructura y una cuenta admin activa no provisionada; no sirve para reset público.
+- Demo opt-in con credenciales efímeras por entorno y bind loopback, deshabilitada con cualquier configuración de base.
+- Migración 004 corregida y 005 para instalaciones existentes; PINs previos necesitan restablecimiento seguro. No aplicada a Neon.
+- Gestión de usuarios confirma backend antes de actualizar caché y notificar éxito; adaptadores ya no duplican escrituras.
+- Pruebas nuevas, suite histórica reproducible y runner SQL local/WASM; limitaciones y continuidad documentadas en docs.
+- Añadido package-lock npm sin cambiar rangos de dependencias; `npm ci` ahora reproducible.
+
 ## [0.9.3] - 2026-10-11 (Hito 1.2: Modernización de Autenticación y Credenciales)
 
 ### Añadido
