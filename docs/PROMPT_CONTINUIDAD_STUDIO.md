@@ -13,6 +13,8 @@ Continúas SGMO — Tequeños Costa, con React + TypeScript + Express + PostgreS
 Repositorio: https://github.com/Deareys/SGMO
 Rama: codex/hito-1-2-1-verificacion
 Fuentes: https://github.com/Deareys/SGMO/tree/codex/hito-1-2-1-verificacion
+Código publicado y verificado: 7a855afd531ef5ab4815f0c64ece414f1c91e0b2
+Pull request en borrador: https://github.com/Deareys/SGMO/pull/1
 Base original: 43971a03719734ef11c3042b0c745162b4874174
 
 Mientras el PR no se haya integrado, main no contiene las reparaciones. No trabajes sobre una copia anterior ni reconstruyas las correcciones a partir de este resumen. Si la integración de Studio no permite importar esa rama, informa el bloqueo concreto antes de editar. Si tu entorno no contiene .git, dilo sin inventar commits: verifica los archivos reales importados y conserva un respaldo recuperable.

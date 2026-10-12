@@ -2,7 +2,7 @@
 
 Fecha: 12 de octubre de 2026.
 Base inspeccionada: `43971a03719734ef11c3042b0c745162b4874174`.
-Rama local de trabajo: `codex/hito-1-2-1-verificacion`.
+Rama de entrega publicada: `codex/hito-1-2-1-verificacion`. Código verificado en `7a855afd531ef5ab4815f0c64ece414f1c91e0b2`; PR borrador https://github.com/Deareys/SGMO/pull/1.
 Estado actualizado: correcciones locales del Hito 1.2.1 implementadas y evidencia SQL WASM de 1.2.2 disponible. Consultar HITO_1_2_1_INFORME.md, AUTHENTICATION.md y POSTGRES_AUTH_TESTS.md para resultados/limitaciones. El inventario siguiente conserva los hallazgos iniciales como historial, no describe los mecanismos actuales.
 
 ## Autorización y límites
