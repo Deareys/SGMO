@@ -5,7 +5,31 @@
 
 ---
 
-## [0.9.0] - 2026-10-10 (Fase 3: Autenticación, Autorización y Seguridad del Backend)
+## [0.9.3] - 2026-10-11 (Hito 1.2: Modernización de Autenticación y Credenciales)
+
+### Añadido
+- **Validación Criptográfica y Antipatrones (`src/server/auth/cryptoUtils.ts`):**
+  - `validateWorkerPin`: Validación de PIN de exactamente 8 dígitos numéricos con rechazo estricto de secuencias ascendentes/descendentes, dígitos repetidos (00000000, 11111111), repeticiones periódicas (12121212, 12341234, 11223344) y lista negra de patrones comunes.
+  - `validateAdminPassword`: Validación de contraseñas de Administrador con longitud mínima de 14 caracteres y requisito de mayúsculas, minúsculas y caracteres numéricos o símbolos.
+  - `hashPassword` y `verifyPassword`: Almacenamiento seguro y verificación en tiempo constante (`timingSafeEqual`) de contraseñas con función `scrypt` y salt criptográfica individual de 16 bytes.
+- **Endpoint de Validación de Credenciales (`src/server/auth/authRoutes.ts`):**
+  - `POST /api/auth/validate-credential`: Permite verificar anticipadamente la fortaleza de PINs y contraseñas en backend.
+- **Migración DDL 004 (`migrations/004_auth_credentials_modernization.sql`):**
+  - Incorporación de `user_code` único, `password_hash`, `password_salt` y `credential_type` en tabla `users`.
+  - Índice optimizado `idx_users_user_code`.
+  - Sembrado y actualización de credenciales iniciales modernizadas para personal de playa, base, fábrica y administración.
+- **Pantalla de Inicio de Sesión Dual (`src/components/PinLoginScreen.tsx`):**
+  - Modo Trabajador: Selector individual de personal, visualizador de 8 puntos de PIN con diseño Solar de Alto Contraste y teclado táctil amplio (52px).
+  - Modo Administrador: Formulario seguro con identificador y contraseña de alta entropía.
+
+### Modificado
+- `src/types.ts`: Incorporación de `userCode` y `hasPassword` en la interfaz `UserProfile`.
+- `src/server/db/repositories/UserRepository.ts`: Soporte para `userCode`, autenticación por contraseñas scrypt de admin y PINs de 8 dígitos con salt individual, y métodos de búsqueda por identificador múltiple.
+- `src/server/auth/authRoutes.ts`: `POST /api/auth/login` extendido para autenticar trabajadores por código individual + PIN de 8 dígitos y administradores por contraseña, preservando compatibilidad retrocompatible.
+- `src/server/routes/dbRoutes.ts`: Protección y validación en `POST /users` y `PUT /users/:id` contra contraseñas débiles, PINs repetitivos/secuenciales y códigos duplicados.
+- `src/services/storageService.ts`: Métodos `loginWithPinAsync`, `loginAsAdminAsync` y `loginWithPin` actualizados para credenciales de 8 dígitos y contraseñas.
+- `src/components/AdminConfigView.tsx`: Modal de gestión de usuarios actualizado con campo obligatorio `userCode`, validación de contraseña de admin (≥14 caracteres) y PIN de trabajador (8 dígitos).
+- `scripts/verify-auth-security.ts`: 9 nuevas pruebas de validación de credenciales del Hito 1.2 (totalizando 36 pruebas automáticas de seguridad).
 
 ### Añadido
 - **Módulo Criptográfico y Seguridad de PIN (`src/server/auth/cryptoUtils.ts`):**

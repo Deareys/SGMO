@@ -15,6 +15,7 @@ import {
   validateSaleIntegrity
 } from '../db';
 import { authenticateToken, requireRole } from '../auth/authMiddleware';
+import { validateWorkerPin, validateAdminPassword } from '../auth/cryptoUtils';
 import { INITIAL_SHIFTS, INITIAL_SALES } from '../../mockData';
 
 export const dbRouter = Router();
@@ -94,6 +95,48 @@ dbRouter.get('/users', authenticateToken, requireRole('admin', 'coordinator'), r
 // POST /users: Sólo admin puede crear usuarios
 dbRouter.post('/users', authenticateToken, requireRole('admin'), requireDb, async (req: Request, res: Response) => {
   try {
+    const { role, pin, password, userCode } = req.body;
+
+    // Validación de código de usuario único
+    if (userCode) {
+      const existingUserCode = await userRepository.getByUserCode(userCode);
+      if (existingUserCode) {
+        return res.status(400).json({
+          success: false,
+          code: 'DUPLICATE_USER_CODE',
+          error: `El código de usuario '${userCode}' ya se encuentra asignado a otro trabajador.`
+        });
+      }
+    }
+
+    // Validación de credencial según rol
+    if (role === 'admin') {
+      if (password) {
+        const val = validateAdminPassword(password);
+        if (!val.isValid) {
+          return res.status(400).json({
+            success: false,
+            code: 'WEAK_ADMIN_PASSWORD',
+            error: val.error
+          });
+        }
+      }
+    } else {
+      if (pin) {
+        const pinClean = pin.toString().trim();
+        if (pinClean.length === 8) {
+          const val = validateWorkerPin(pinClean);
+          if (!val.isValid) {
+            return res.status(400).json({
+              success: false,
+              code: 'INVALID_WORKER_PIN',
+              error: val.error
+            });
+          }
+        }
+      }
+    }
+
     const created = await userRepository.create(req.body);
     res.status(201).json({ success: true, user: created });
   } catch (error: any) {
@@ -104,6 +147,46 @@ dbRouter.post('/users', authenticateToken, requireRole('admin'), requireDb, asyn
 // PUT /users/:id: Sólo admin puede modificar usuarios
 dbRouter.put('/users/:id', authenticateToken, requireRole('admin'), requireDb, async (req: Request, res: Response) => {
   try {
+    const { role, pin, password, userCode } = req.body;
+
+    // Validación de código de usuario único
+    if (userCode) {
+      const existingUser = await userRepository.getByUserCode(userCode);
+      if (existingUser && existingUser.id !== req.params.id) {
+        return res.status(400).json({
+          success: false,
+          code: 'DUPLICATE_USER_CODE',
+          error: `El código de usuario '${userCode}' ya se encuentra asignado a otro trabajador.`
+        });
+      }
+    }
+
+    // Validación de credencial según rol
+    if (password) {
+      const val = validateAdminPassword(password);
+      if (!val.isValid) {
+        return res.status(400).json({
+          success: false,
+          code: 'WEAK_ADMIN_PASSWORD',
+          error: val.error
+        });
+      }
+    }
+
+    if (pin) {
+      const pinClean = pin.toString().trim();
+      if (pinClean.length === 8) {
+        const val = validateWorkerPin(pinClean);
+        if (!val.isValid) {
+          return res.status(400).json({
+            success: false,
+            code: 'INVALID_WORKER_PIN',
+            error: val.error
+          });
+        }
+      }
+    }
+
     await userRepository.update(req.params.id, req.body);
     res.json({ success: true, message: 'Usuario actualizado' });
   } catch (error: any) {

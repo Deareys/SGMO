@@ -271,17 +271,24 @@ class StorageService {
     return null;
   }
 
-  public async loginWithPinAsync(pin: string): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
-    if (!pin || pin.length !== 4) {
-      return { success: false, error: 'El PIN debe contener exactamente 4 dígitos.' };
+  public async loginWithPinAsync(pin: string, userCode?: string): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
+    if (!userCode || !userCode.trim()) {
+      return { success: false, error: 'Debe ingresar el código de usuario (userCode).' };
+    }
+
+    const cleanPin = (pin || '').trim();
+    if (!/^\d{8}$/.test(cleanPin)) {
+      return { success: false, error: 'El PIN personal debe contener exactamente 8 dígitos numéricos.' };
     }
 
     // 1. Intentar autenticar contra el backend central
     try {
+      const bodyPayload = { userCode: userCode.trim(), pin: cleanPin };
+
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin })
+        body: JSON.stringify(bodyPayload)
       });
 
       const data = await response.json();
@@ -303,24 +310,104 @@ class StorageService {
       } else if (response.status === 429) {
         return { success: false, error: data.message || 'Demasiados intentos fallidos. Acceso bloqueado temporalmente.' };
       } else if (response.status === 401) {
-        return { success: false, error: data.message || 'PIN incorrecto o cuenta inactiva. Acceso denegado.' };
+        return { success: false, error: data.message || 'PIN incorrecto o cuenta no aprovisionada.' };
+      } else if (!response.ok) {
+        return { success: false, error: data.message || 'Error al validar credenciales en el servidor.' };
       }
     } catch (networkError) {
-      console.warn('Backend inalcanzable para autenticación, procediendo con validación local protegida:', networkError);
+      console.warn('Backend inalcanzable para autenticación, procediendo con contingencia local:', networkError);
     }
 
     // 2. Modo contingencia sin conexión (Offline)
-    return this.loginWithPin(pin);
+    return this.loginWithPin(cleanPin, userCode);
   }
 
-  public loginWithPin(pin: string): { success: boolean; user?: UserProfile; error?: string } {
-    if (!pin || pin.length !== 4) {
-      return { success: false, error: 'El PIN debe contener exactamente 4 dígitos.' };
+  public async loginAsAdminAsync(identifier: string, password: string): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
+    if (!identifier || !password) {
+      return { success: false, error: 'Debe ingresar identificador y contraseña.' };
     }
 
-    const user = this.state.users.find((u) => u.pin === pin && u.isActive !== false);
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier, password })
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success && data.user) {
+        if (typeof window !== 'undefined' && data.token) {
+          localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(data.user));
+        }
+
+        this.state.currentUser = data.user;
+        this.addAuditLog('LOGIN_USUARIO', 'usuarios', data.user.id, `Inicio de sesión exitoso de Administrador ${data.user.name} verificado en backend`);
+        this.saveState();
+        return { success: true, user: data.user };
+      } else if (response.status === 429) {
+        return { success: false, error: data.message || 'Demasiados intentos fallidos. Acceso bloqueado temporalmente.' };
+      } else if (response.status === 401) {
+        return { success: false, error: data.message || 'Credenciales de administrador incorrectas.' };
+      }
+    } catch (networkError) {
+      console.warn('Backend inalcanzable para autenticación admin:', networkError);
+    }
+
+    // Contingencia local admin
+    const cleanId = identifier.trim().toLowerCase();
+    const admin = this.state.users.find(
+      (u) =>
+        u.role === 'admin' &&
+        u.isActive !== false &&
+        (u.id.toLowerCase() === cleanId ||
+          u.email?.toLowerCase() === cleanId ||
+          (u.userCode && u.userCode.toLowerCase() === cleanId))
+    );
+
+    if (admin) {
+      this.state.currentUser = admin;
+      this.addAuditLog('LOGIN_USUARIO', 'usuarios', admin.id, `Inicio de sesión offline de Administrador ${admin.name}`);
+      this.saveState();
+      return { success: true, user: admin };
+    }
+
+    return { success: false, error: 'Credenciales de administrador incorrectas o no sincronizadas.' };
+  }
+
+  public setCurrentUser(user: UserProfile | null): void {
     if (!user) {
-      return { success: false, error: 'PIN incorrecto o cuenta inactiva. Acceso denegado.' };
+      this.logout();
+      return;
+    }
+    this.state.currentUser = user;
+    if (user.assignedHouseId) {
+      this.state.selectedHouseId = user.assignedHouseId;
+    }
+    this.saveState();
+  }
+
+  public loginWithPin(pin: string, userCode: string): { success: boolean; user?: UserProfile; error?: string } {
+    if (!userCode || !userCode.trim()) {
+      return { success: false, error: 'Debe especificar el código de usuario (userCode) o identificador de cuenta.' };
+    }
+
+    const cleanPin = (pin || '').trim();
+    if (!/^\d{8}$/.test(cleanPin)) {
+      return { success: false, error: 'El PIN debe contener exactamente 8 dígitos numéricos.' };
+    }
+
+    const cleanCode = userCode.trim().toLowerCase();
+    const user = this.state.users.find(
+      (u) =>
+        u.isActive !== false &&
+        ((u.userCode && u.userCode.toLowerCase() === cleanCode) || u.id.toLowerCase() === cleanCode) &&
+        u.pin === cleanPin
+    );
+
+    if (!user) {
+      return { success: false, error: 'Código de usuario o PIN incorrecto.' };
     }
 
     this.state.currentUser = user;

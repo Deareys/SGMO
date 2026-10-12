@@ -1995,12 +1995,15 @@ interface UserModalProps {
 
 const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) => {
   const [showPin, setShowPin] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
     name: user?.name || '',
+    userCode: user?.userCode || '',
     email: user?.email || '',
     phone: user?.phone || '',
     role: user?.role || ('seller' as UserRole),
-    pin: user?.pin || String(Math.floor(1000 + Math.random() * 9000)),
+    pin: user?.pin || '',
+    password: '',
     assignedHouseId: user?.assignedHouseId || houses[0]?.id || '',
     commissionRate: user?.commissionRate || 0.20,
     housingCostExempt: !!user?.housingCostExempt,
@@ -2022,27 +2025,52 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) 
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (formData.pin.length !== 4) {
-              alert('El PIN debe tener exactamente 4 dígitos numéricos.');
+            if (!formData.userCode.trim()) {
+              alert('El código de usuario es obligatorio (ej: VEND-05, COORD-03, ADM-02).');
               return;
+            }
+            if (formData.role === 'admin') {
+              if (!user && (!formData.password || formData.password.length < 14)) {
+                alert('La contraseña de Administrador debe tener al menos 14 caracteres con mayúsculas, minúsculas y números o símbolos.');
+                return;
+              }
+            } else {
+              if (formData.pin && formData.pin.length !== 8) {
+                alert('El PIN personal del trabajador debe contener exactamente 8 dígitos numéricos.');
+                return;
+              }
             }
             onSave({
               ...formData,
+              userCode: formData.userCode.trim().toUpperCase(),
               commissionRate: Number(formData.commissionRate)
             });
           }}
           className="space-y-3 text-xs"
         >
-          <div>
-            <label className="block text-slate-300 font-semibold mb-1">Nombre Completo</label>
-            <input
-              type="text"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white"
-              placeholder="Ej: Marcos Benavídez"
-              required
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-slate-300 font-semibold mb-1">Nombre Completo</label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white"
+                placeholder="Ej: Marcos Benavídez"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-slate-300 font-semibold mb-1">Código Único</label>
+              <input
+                type="text"
+                value={formData.userCode}
+                onChange={(e) => setFormData({ ...formData, userCode: e.target.value.toUpperCase() })}
+                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono"
+                placeholder="Ej: VEND-05"
+                required
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -2084,26 +2112,51 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) 
             </div>
 
             <div>
-              <label className="block text-slate-300 font-semibold mb-1">PIN Personal (4 dígitos)</label>
-              <div className="relative">
-                <input
-                  type={showPin ? 'text' : 'password'}
-                  maxLength={4}
-                  value={formData.pin}
-                  onChange={(e) => setFormData({ ...formData, pin: e.target.value.replace(/\D/g, '').slice(0, 4) })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-center font-mono tracking-widest pr-8"
-                  placeholder="••••"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPin(!showPin)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
-                  title={showPin ? 'Ocultar PIN' : 'Ver PIN'}
-                >
-                  {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
+              {formData.role === 'admin' ? (
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Contraseña (≥14 chars)</label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={formData.password}
+                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono text-xs pr-8"
+                      placeholder={user ? '(Sin cambios)' : 'Mínimo 14 caracteres'}
+                      required={!user}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">PIN Personal (8 dígitos)</label>
+                  <div className="relative">
+                    <input
+                      type={showPin ? 'text' : 'password'}
+                      maxLength={8}
+                      value={formData.pin}
+                      onChange={(e) => setFormData({ ...formData, pin: e.target.value.replace(/\D/g, '').slice(0, 8) })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-center font-mono tracking-widest pr-8"
+                      placeholder="••••••••"
+                      required={!user}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPin(!showPin)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+                      title={showPin ? 'Ocultar PIN' : 'Ver PIN'}
+                    >
+                      {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

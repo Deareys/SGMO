@@ -13,11 +13,13 @@
   - Opciones técnicas:
     - *Opción A:* Agregar archivo `vercel.json` con `rewrites` hacia un handler Serverless Node.js.
     - *Opción B (Recomendada):* Desplegar el backend Express en Google Cloud Run o Railway para tener un proceso Node.js continuo que soporte Webhooks de Mercado Pago 24/7 sin límites de tiempo de ejecución.
-- [ ] **Cifrado de Credenciales y PINs:**
-  - Hashear todos los PINs de usuario con `bcrypt` (mínimo 10 rounds de salt).
-  - Eliminar los PINs en texto plano de cualquier almacenamiento local en el navegador.
-- [ ] **Autenticación Segura con JWT / Cookies HttpOnly:**
-  - Crear endpoint `POST /api/auth/login` y middleware de autenticación para endpoints protegidos en el backend.
+- [x] **Cifrado de Credenciales y PINs (Completado en Hito 1.2):**
+  - Implementado `scrypt` con salt criptográfico individual de 16 bytes para PINs de 8 dígitos de trabajadores y contraseñas (≥14 caracteres) de administradores.
+  - Rechazo estricto de PINs repetitivos, secuenciales y predecibles en backend.
+  - Eliminación de exposición de hashes y contraseñas en DTOs públicos de la API.
+- [x] **Autenticación Segura con Tokens de Sesión y RBAC (Completado en Fase 3 y Hito 1.2):**
+  - Endpoints `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me` y `POST /api/auth/validate-credential`.
+  - Sesiones criptográficas opacas de 256 bits almacenadas en PostgreSQL / memoria, con expiración automática y rate limiting contra fuerza bruta.
 - [ ] **Evitar Confusión con Fallbacks Simulados:**
   - Marcar de forma muy visible en la UI (`badge` rojo parpadeante) cuando una validación de comprobante fue simulada por falta de conexión, impidiendo que se confirme una venta como "aprobada por banco" si no hubo respuesta real de la API.
 

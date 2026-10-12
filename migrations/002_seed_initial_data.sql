@@ -24,15 +24,15 @@ ON CONFLICT (id) DO UPDATE SET
     base_price_individual = EXCLUDED.base_price_individual,
     combo_prices = EXCLUDED.combo_prices;
 
--- 3. Usuarios Iniciales
+-- 3. Usuarios Iniciales (Sin credenciales predeterminadas en texto plano)
 INSERT INTO users (id, name, email, role, phone, pin_hash, assigned_house_id, commission_rate, housing_cost_exempt, is_active)
 VALUES
-    ('USR-ADMIN-01', 'Sebastián Queipo', 'admin@tequenos.costa.ar', 'admin', '+54 9 11 4050-6070', '9999', 'HOUSE-NORTE', 0.2000, TRUE, TRUE),
-    ('USR-COORD-01', 'Martín Rodríguez', 'martin.coord@tequenos.costa.ar', 'coordinator', '+54 9 2246 51-2345', '2024', 'HOUSE-NORTE', 0.2000, TRUE, TRUE),
-    ('USR-COORD-02', 'Florencia Gómez', 'flor.coord@tequenos.costa.ar', 'coordinator', '+54 9 2246 51-6789', '2025', 'HOUSE-SUR', 0.2000, TRUE, TRUE),
-    ('USR-VEND-01', 'Lucas Pereyra', 'lucas.p@gmail.com', 'seller', '+54 9 11 3456-7890', '1234', 'HOUSE-NORTE', 0.2000, FALSE, TRUE),
-    ('USR-VEND-02', 'Camila Benítez', 'camila.b@gmail.com', 'seller', '+54 9 11 9876-5432', '5678', 'HOUSE-NORTE', 0.2000, FALSE, TRUE),
-    ('USR-VEND-03', 'Mateo Rossi', 'mateo.rossi@gmail.com', 'seller', '+54 9 11 2345-6789', '4321', 'HOUSE-SUR', 0.2000, FALSE, TRUE)
+    ('USR-ADMIN-01', 'Sebastián Queipo', 'admin@tequenos.costa.ar', 'admin', '+54 9 11 4050-6070', NULL, 'HOUSE-NORTE', 0.2000, TRUE, TRUE),
+    ('USR-COORD-01', 'Martín Rodríguez', 'martin.coord@tequenos.costa.ar', 'coordinator', '+54 9 2246 51-2345', NULL, 'HOUSE-NORTE', 0.2000, TRUE, TRUE),
+    ('USR-COORD-02', 'Florencia Gómez', 'flor.coord@tequenos.costa.ar', 'coordinator', '+54 9 2246 51-6789', NULL, 'HOUSE-SUR', 0.2000, TRUE, TRUE),
+    ('USR-VEND-01', 'Lucas Pereyra', 'lucas.p@gmail.com', 'seller', '+54 9 11 3456-7890', NULL, 'HOUSE-NORTE', 0.2000, FALSE, TRUE),
+    ('USR-VEND-02', 'Camila Benítez', 'camila.b@gmail.com', 'seller', '+54 9 11 9876-5432', NULL, 'HOUSE-NORTE', 0.2000, FALSE, TRUE),
+    ('USR-VEND-03', 'Mateo Rossi', 'mateo.rossi@gmail.com', 'seller', '+54 9 11 2345-6789', NULL, 'HOUSE-SUR', 0.2000, FALSE, TRUE)
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
     role = EXCLUDED.role;

@@ -3,5 +3,6 @@ node_modules/
 coverage/
 .DS_Store
 *.log
+.backup_*
 .env*
 !.env.example

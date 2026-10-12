@@ -34,11 +34,7 @@ export class LocalStorageAdapter implements IStorageRepository {
   }
 
   setCurrentUser(user: UserProfile | null): void {
-    if (!user) {
-      this.service.logout();
-    } else {
-      this.service.loginWithPin(user.pin || '');
-    }
+    this.service.setCurrentUser(user);
   }
 
   getUsers(): UserProfile[] {

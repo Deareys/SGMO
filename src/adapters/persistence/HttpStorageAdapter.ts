@@ -68,11 +68,7 @@ export class HttpStorageAdapter implements IStorageRepository {
   }
 
   setCurrentUser(user: UserProfile | null): void {
-    if (!user) {
-      this.localFallback.logout();
-    } else {
-      this.localFallback.loginWithPin(user.pin || '');
-    }
+    this.localFallback.setCurrentUser(user);
   }
 
   getUsers(): UserProfile[] {

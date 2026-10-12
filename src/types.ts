@@ -7,11 +7,14 @@ export type UserRole = 'admin' | 'coordinator' | 'seller' | 'factory_worker';
 
 export interface UserProfile {
   id: string;
+  userCode?: string; // Código de usuario único y estable (ej: 'VEND-01', 'COORD-01', 'FAB-01', 'ADM-01')
   name: string;
   role: UserRole;
   phone: string;
   email?: string;
-  pin?: string; // Código PIN para inicio de sesión seguro
+  pin?: string; // Solo en operaciones de entrada/establecimiento de credencial
+  hasPassword?: boolean; // Indica si el administrador posee contraseña configurada
+  isProvisioned?: boolean; // Indica si la cuenta tiene credenciales seguras aprovisionadas
   avatarUrl?: string;
   assignedHouseId?: string; // Para coordinadores, vendedores y residentes
   commissionRate: number; // Porcentaje de comisión estándar (ej: 0.20 = 20%)
@@ -20,6 +23,11 @@ export interface UserProfile {
   isActive: boolean;
   notes?: string;
   permissions?: string[];
+}
+
+export interface CredentialValidationResult {
+  isValid: boolean;
+  error?: string;
 }
 
 export interface AuthSession {

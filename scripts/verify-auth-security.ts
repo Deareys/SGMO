@@ -76,17 +76,17 @@ async function runSecurityTests() {
     });
     assert(unauthVerify.status === 401, 'Ruta /api/mercadopago/verify-payment rechaza acceso anónimo con HTTP 401');
 
-    // 3. Intento de login con PIN inválido (debe fallar con HTTP 401)
+    // 3. Intento de login con PIN inválido sin userCode (debe fallar con HTTP 400 MISSING_USER_CODE o 401)
     const badLogin = await request('/api/auth/login', {
       method: 'POST',
-      body: { pin: '0000' }
+      body: { pin: '00000000' }
     });
-    assert(badLogin.status === 401 && badLogin.body.success === false, 'Login rechaza PIN inválido con HTTP 401');
+    assert(badLogin.status === 400 || badLogin.status === 401, 'Login sin userCode o con PIN inválido es rechazado');
 
-    // 4. Login exitoso con PIN de Vendedor ('1111' - Lucas Benítez)
+    // 4. Login exitoso con Vendedor (userCode: 'VEND-01', PIN de 8 dígitos: '38491725')
     const sellerLogin = await request('/api/auth/login', {
       method: 'POST',
-      body: { pin: '1111' }
+      body: { userCode: 'VEND-01', pin: '38491725' }
     });
     assert(
       sellerLogin.status === 200 && sellerLogin.body.success === true && Boolean(sellerLogin.body.token),
@@ -94,10 +94,10 @@ async function runSecurityTests() {
     );
     const sellerToken = sellerLogin.body.token;
 
-    // 5. Login exitoso con PIN de Administrador ('1234' - Carlos Mendoza)
+    // 5. Login exitoso con Administrador (identifier: 'carlos.admin@tequenosplaya.com', password: 'CostaTequenos2026!#')
     const adminLogin = await request('/api/auth/login', {
       method: 'POST',
-      body: { pin: '1234' }
+      body: { identifier: 'carlos.admin@tequenosplaya.com', password: 'CostaTequenos2026!#' }
     });
     assert(
       adminLogin.status === 200 && adminLogin.body.success === true && adminLogin.body.user.role === 'admin',
@@ -214,7 +214,7 @@ async function runSecurityTests() {
     // 15. Control de Rol Estricto: Operario de fábrica (factory_worker) no puede acceder a ventas ni jornadas
     const factoryLogin = await request('/api/auth/login', {
       method: 'POST',
-      body: { pin: '5566' } // Marcos Benavídez (USR-FAB-1)
+      body: { userCode: 'FAB-01', pin: '61528473' } // Marcos Benavídez (USR-FAB-1)
     });
     assert(
       factoryLogin.status === 200 && factoryLogin.body.user.role === 'factory_worker',
@@ -485,6 +485,107 @@ async function runSecurityTests() {
     // 27. Token revocado ya no permite acceso a /api/auth/me
     const postLogoutMe = await request('/api/auth/me', { token: sellerToken });
     assert(postLogoutMe.status === 401, 'Token revocado es rechazado con HTTP 401');
+
+    // --- PRUEBAS DE MODERNIZACIÓN DE CREDENCIALES (HITO 1.2) ---
+    console.log('\n--- HITO 1.2: VALIDACIÓN DE CREDENCIALES Y AUTENTICACIÓN MODERNIZADA ---');
+
+    // 28. Login de Vendedor con código único 'VEND-01' y PIN personal de 8 dígitos ('38491725')
+    const modernWorkerLogin = await request('/api/auth/login', {
+      method: 'POST',
+      body: { userCode: 'VEND-01', pin: '38491725' }
+    });
+    assert(
+      modernWorkerLogin.status === 200 &&
+        modernWorkerLogin.body.success === true &&
+        modernWorkerLogin.body.user.role === 'seller' &&
+        modernWorkerLogin.body.user.userCode === 'VEND-01',
+      'Hito 1.2: Login exitoso de Vendedor con userCode VEND-01 y PIN de 8 dígitos'
+    );
+
+    // 29. Login con PIN de 8 dígitos sin userCode (debe ser rechazado por Hito 1.2.1)
+    const modernWorkerDirectPin = await request('/api/auth/login', {
+      method: 'POST',
+      body: { pin: '38491725' }
+    });
+    assert(
+      modernWorkerDirectPin.status === 400 &&
+        modernWorkerDirectPin.body.code === 'MISSING_USER_CODE',
+      'Hito 1.2.1: Login por PIN sin userCode es rechazado estrictamente'
+    );
+
+    // 30. Login de Administrador con correo y contraseña de >= 14 caracteres
+    const modernAdminLogin = await request('/api/auth/login', {
+      method: 'POST',
+      body: { identifier: 'carlos.admin@tequenosplaya.com', password: 'CostaTequenos2026!#' }
+    });
+    assert(
+      modernAdminLogin.status === 200 &&
+        modernAdminLogin.body.success === true &&
+        modernAdminLogin.body.user.role === 'admin',
+      'Hito 1.2: Login exitoso de Administrador con correo y contraseña (≥14 caracteres)'
+    );
+
+    // 31. Login de Administrador con código único 'ADM-01' y contraseña
+    const modernAdminByCode = await request('/api/auth/login', {
+      method: 'POST',
+      body: { userCode: 'ADM-01', password: 'CostaTequenos2026!#' }
+    });
+    assert(
+      modernAdminByCode.status === 200 &&
+        modernAdminByCode.body.success === true &&
+        modernAdminByCode.body.user.userCode === 'ADM-01',
+      'Hito 1.2: Login exitoso de Administrador mediante userCode ADM-01 y contraseña'
+    );
+
+    // 32. Rechazo de PIN secuencial (12345678)
+    const valSequential = await request('/api/auth/validate-credential', {
+      method: 'POST',
+      body: { type: 'worker_pin', value: '12345678' }
+    });
+    assert(
+      valSequential.body.isValid === false,
+      'Hito 1.2: Validación rechaza PIN secuencial 12345678'
+    );
+
+    // 33. Rechazo de PIN repetitivo (00000000 y 11111111)
+    const valRepetitive = await request('/api/auth/validate-credential', {
+      method: 'POST',
+      body: { type: 'worker_pin', value: '00000000' }
+    });
+    assert(
+      valRepetitive.body.isValid === false,
+      'Hito 1.2: Validación rechaza PIN repetitivo 00000000'
+    );
+
+    // 34. Rechazo de contraseña de admin demasiado corta (< 14 caracteres)
+    const valShortPassword = await request('/api/auth/validate-credential', {
+      method: 'POST',
+      body: { type: 'admin_password', value: 'AdminPass123!' }
+    });
+    assert(
+      valShortPassword.body.isValid === false,
+      'Hito 1.2: Validación rechaza contraseña de administrador de menos de 14 caracteres'
+    );
+
+    // 35. Aceptación de contraseña de admin segura (≥ 14 caracteres con mayúsculas, minúsculas y caracteres especiales)
+    const valStrongPassword = await request('/api/auth/validate-credential', {
+      method: 'POST',
+      body: { type: 'admin_password', value: 'CostaTequenos2026!#' }
+    });
+    assert(
+      valStrongPassword.body.isValid === true,
+      'Hito 1.2: Validación acepta contraseña de administrador segura (≥14 chars con variedad)'
+    );
+
+    // 36. Aceptación de PIN de 8 dígitos seguro para trabajador
+    const valStrongWorkerPin = await request('/api/auth/validate-credential', {
+      method: 'POST',
+      body: { type: 'worker_pin', value: '38491725' }
+    });
+    assert(
+      valStrongWorkerPin.body.isValid === true,
+      'Hito 1.2: Validación acepta PIN no predecible de 8 dígitos para trabajador'
+    );
 
     console.log('\n=====================================================================');
     console.log(`RESULTADO DE LA AUDITORÍA DE SEGURIDAD: ${passed} pruebas superadas, ${failed} fallidas.`);

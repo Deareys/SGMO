@@ -19,6 +19,7 @@
 - [ADR-009: Política Escalonada de Descuento por Merma y Faltantes Injustificados](#adr-009-política-escalonada-de-descuento-por-merma-y-faltantes-injustificados)
 - [ADR-010: Persistencia Central en PostgreSQL y Estrategia de Migración Progresiva Híbrida](#adr-010-persistencia-central-en-postgresql-y-estrategia-de-migración-progresiva-híbrida)
 - [ADR-011: Integridad Económica de Ventas, Precios Oficiales y Rechazo Atómico de Lotes Offline](#adr-011-integridad-económica-de-ventas-precios-oficiales-y-rechazo-atómico-de-lotes-offline)
+- [ADR-012: Modernización de Autenticación, Credenciales de Administrador y PINs Seguros de 8 Dígitos](#adr-012-modernización-de-autenticación-credenciales-de-administrador-y-pins-seguros-de-8-dígitos)
 
 ---
 
@@ -193,6 +194,42 @@ Teniendo en cuenta el informe del ingeniero auditor, las decisiones que cambiar�
   - Cierre definitivo de vectores de fraude por manipulación de precios en el cliente.
   - Blindaje completo del cálculo económico en el backend sin depender de la UI de React.
   - Trazabilidad y consistencia garantizadas tanto en operaciones individuales como en sincronización de lotes offline.
+
+---
+
+### ADR-012: Modernización de Autenticación, Credenciales de Administrador y PINs Seguros de 8 Dígitos
+
+- **Estado:** Aceptado e Implementado (Hito 1.2).
+- **Fecha:** Octubre 2026.
+- **Contexto:** En el diseño preliminar, SGMO utilizaba PINs de 4 dígitos (ej: 1111, 2222, 1234). En una operación en playa de hasta 25 personas (vendedores, coordinadores y operarios de fábrica), los PINs de 4 dígitos presentan un espacio de claves limitado (10.000 combinaciones) y riesgo de colisión o acceso no autorizado cruzado. Además, el rol de Administrador requería un nivel superior de protección con contraseñas de alta entropía.
+- **Decisión:**
+  1. **Cuentas Individuales con Códigos Únicos (`userCode`)**:
+     - Cada usuario dispone de un código único y no ambiguo (ej: `ADM-01`, `COORD-01`, `COORD-02`, `FAB-01`, `FAB-02`, `VEND-01` a `VEND-04`).
+     - Se prohíbe el uso de credenciales compartidas entre trabajadores.
+  2. **Trabajadores Operativos (PIN personal de 8 dígitos)**:
+     - PIN personal de exactamente 8 dígitos numéricos (100.000.000 combinaciones posibles).
+     - Validación estricta en backend (`validateWorkerPin`):
+       - Rechaza PINs idénticos (`00000000`, `11111111`).
+       - Rechaza 4 o más dígitos consecutivos repetidos (`11119876`).
+       - Rechaza secuencias aritméticas ascendentes (`01234567`, `12345678`, etc.) y descendentes (`98765432`, `87654321`, etc.).
+       - Rechaza patrones duplicados o alternantes (`12121212`, `12341234`, `11223344`).
+       - Rechaza lista negra de PINs comunes predecibles.
+     - Almacenamiento protegido mediante función de derivación de claves `scrypt` con salt criptográfica individual de 16 bytes.
+  3. **Administradores (Contraseñas de Alta Entropía)**:
+     - Identificador mediante código (`ADM-01`) o correo electrónico (`carlos.admin@tequenosplaya.com`).
+     - Contraseña de al menos 14 caracteres (`validateAdminPassword`) con presencia obligatoria de letras mayúsculas, minúsculas y caracteres numéricos o símbolos.
+     - Almacenamiento mediante scrypt con salt criptográfica individual de 16 bytes.
+  4. **Compatibilidad y Período de Transición**:
+     - Se mantiene soporte retrocompatible para pruebas de transición automatizadas sin debilitar las reglas del nuevo flujo.
+     - Se añade migración de base de datos `migrations/004_auth_credentials_modernization.sql` con actualización de esquema e índices.
+  5. **Experiencia de Usuario en Playa (Solar High Contrast)**:
+     - Pantalla de inicio de sesión con selector intuitivo entre trabajador y administrador.
+     - Selector ágil de cuenta individual + visor de 8 puntos de alto contraste + teclado táctil amplio optimizado para el pulgar bajo luz solar directa.
+- **Consecuencias:**
+  - Elevación drástica de la seguridad y el aislamiento de cuentas operativas.
+  - Cero secretos expuestos en el código del frontend.
+  - Trazabilidad y auditoría infalible por cuenta individual en el backend.
+
 
 
 
