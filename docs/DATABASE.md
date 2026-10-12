@@ -7,6 +7,10 @@
 
 ---
 
+## Actualización de autenticación — 12 de octubre de 2026
+
+Migraciones 001–005 disponibles. 004 corregida para instalaciones nuevas; 005 también corrige esquemas donde 004 ya consta aplicada. Respaldar y comprobar colisiones de códigos antes de ejecutar. 005 invalida una vez PINs anteriores y revoca sesiones; aprovisionar trabajadores después, nunca antes. El código nuevo de autenticación necesita 005 por la ventana de intentos. No se conectó Neon ni se aplicaron migraciones remotas. SQL verificado en WASM; conexiones PostgreSQL reales pendientes. La contingencia operativa local no permite crear sesiones centrales alternativas. Ver `AUTHENTICATION.md` y `POSTGRES_AUTH_TESTS.md`.
+
 ## 1. ARQUITECTURA DE PERSISTENCIA REAL
 
 La persistencia del sistema está desacoplada mediante la **Arquitectura Hexagonal**:

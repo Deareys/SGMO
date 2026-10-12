@@ -15,7 +15,8 @@ import {
   validateSaleIntegrity
 } from '../db';
 import { authenticateToken, requireRole } from '../auth/authMiddleware';
-import { validateWorkerPin, validateAdminPassword } from '../auth/cryptoUtils';
+import { UserCredentialValidationError } from '../db/repositories/UserRepository';
+import { publicProfile } from '../auth/publicProfile';
 import { INITIAL_SHIFTS, INITIAL_SALES } from '../../mockData';
 
 export const dbRouter = Router();
@@ -86,111 +87,59 @@ export async function resolveShift(shiftId: string) {
 dbRouter.get('/users', authenticateToken, requireRole('admin', 'coordinator'), requireDb, async (req: Request, res: Response) => {
   try {
     const users = await userRepository.getAll();
-    res.json({ success: true, count: users.length, users });
+    res.json({ success: true, count: users.length, users: users.map(publicProfile) });
   } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
+    res.status(503).json({ success: false, code: 'SERVICE_UNAVAILABLE', error: 'Servicio central no disponible.' });
   }
 });
 
-// POST /users: Sólo admin puede crear usuarios
+/** Solo campos públicos y credenciales de entrada; nunca se aceptan hashes o flags de aprovisionamiento del cliente. */
+function userInput(body: unknown): Record<string, any> {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new UserCredentialValidationError('Perfil inválido.');
+  const allowed = ['id', 'userCode', 'name', 'email', 'role', 'phone', 'pin', 'password', 'avatarUrl',
+    'assignedHouseId', 'commissionRate', 'housingCostExempt', 'housingCostOverride', 'isActive', 'notes', 'permissions'];
+  const input = Object.fromEntries(Object.entries(body).filter(([key]) => allowed.includes(key)));
+  if (input.userCode !== undefined && (typeof input.userCode !== 'string' || !/^[A-Za-z0-9_-]{1,32}$/.test(input.userCode))) {
+    throw new UserCredentialValidationError('Código de usuario inválido.');
+  }
+  return input;
+}
+
+function userWriteError(error: unknown, res: Response) {
+  if (error instanceof UserCredentialValidationError) {
+    return res.status(400).json({ success: false, code: 'INVALID_USER_INPUT', error: error.message });
+  }
+  if ((error as { code?: string })?.code === '23505') {
+    return res.status(409).json({ success: false, code: 'DUPLICATE_USER_CODE', error: 'El identificador de usuario ya está asignado.' });
+  }
+  return res.status(503).json({ success: false, code: 'SERVICE_UNAVAILABLE', error: 'No se pudo confirmar la operación central.' });
+}
+
+// POST /users: Sólo admin puede crear usuarios. La validación completa está también en el repositorio.
 dbRouter.post('/users', authenticateToken, requireRole('admin'), requireDb, async (req: Request, res: Response) => {
   try {
-    const { role, pin, password, userCode } = req.body;
-
-    // Validación de código de usuario único
-    if (userCode) {
-      const existingUserCode = await userRepository.getByUserCode(userCode);
-      if (existingUserCode) {
-        return res.status(400).json({
-          success: false,
-          code: 'DUPLICATE_USER_CODE',
-          error: `El código de usuario '${userCode}' ya se encuentra asignado a otro trabajador.`
-        });
-      }
-    }
-
-    // Validación de credencial según rol
-    if (role === 'admin') {
-      if (password) {
-        const val = validateAdminPassword(password);
-        if (!val.isValid) {
-          return res.status(400).json({
-            success: false,
-            code: 'WEAK_ADMIN_PASSWORD',
-            error: val.error
-          });
-        }
-      }
-    } else {
-      if (pin) {
-        const pinClean = pin.toString().trim();
-        if (pinClean.length === 8) {
-          const val = validateWorkerPin(pinClean);
-          if (!val.isValid) {
-            return res.status(400).json({
-              success: false,
-              code: 'INVALID_WORKER_PIN',
-              error: val.error
-            });
-          }
-        }
-      }
-    }
-
-    const created = await userRepository.create(req.body);
-    res.status(201).json({ success: true, user: created });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
+    const input = userInput(req.body);
+    if (typeof input.id !== 'string' || !input.id || typeof input.name !== 'string' || !input.name.trim()
+        || !input.role || typeof input.commissionRate !== 'number') throw new UserCredentialValidationError('Perfil de usuario incompleto.');
+    input.isActive ??= true;
+    const created = await userRepository.create(input as any);
+    return res.status(201).json({ success: true, user: publicProfile(created) });
+  } catch (error) {
+    return userWriteError(error, res);
   }
 });
 
-// PUT /users/:id: Sólo admin puede modificar usuarios
+// PUT /users/:id: Sólo admin; devuelve confirmación pública para actualizar la caché del cliente.
 dbRouter.put('/users/:id', authenticateToken, requireRole('admin'), requireDb, async (req: Request, res: Response) => {
   try {
-    const { role, pin, password, userCode } = req.body;
-
-    // Validación de código de usuario único
-    if (userCode) {
-      const existingUser = await userRepository.getByUserCode(userCode);
-      if (existingUser && existingUser.id !== req.params.id) {
-        return res.status(400).json({
-          success: false,
-          code: 'DUPLICATE_USER_CODE',
-          error: `El código de usuario '${userCode}' ya se encuentra asignado a otro trabajador.`
-        });
-      }
-    }
-
-    // Validación de credencial según rol
-    if (password) {
-      const val = validateAdminPassword(password);
-      if (!val.isValid) {
-        return res.status(400).json({
-          success: false,
-          code: 'WEAK_ADMIN_PASSWORD',
-          error: val.error
-        });
-      }
-    }
-
-    if (pin) {
-      const pinClean = pin.toString().trim();
-      if (pinClean.length === 8) {
-        const val = validateWorkerPin(pinClean);
-        if (!val.isValid) {
-          return res.status(400).json({
-            success: false,
-            code: 'INVALID_WORKER_PIN',
-            error: val.error
-          });
-        }
-      }
-    }
-
-    await userRepository.update(req.params.id, req.body);
-    res.json({ success: true, message: 'Usuario actualizado' });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
+    const input = userInput(req.body);
+    delete input.id;
+    await userRepository.update(req.params.id, input);
+    const updated = await userRepository.getById(req.params.id);
+    if (!updated) throw new UserCredentialValidationError('Perfil no disponible.');
+    return res.json({ success: true, user: publicProfile(updated), message: 'Usuario actualizado' });
+  } catch (error) {
+    return userWriteError(error, res);
   }
 });
 

@@ -28,7 +28,7 @@ export interface IStorageRepository {
   getCurrentUser(): UserProfile | null;
   setCurrentUser(user: UserProfile | null): void;
   getUsers(): UserProfile[];
-  updateUser(id: string, updates: Partial<UserProfile>): void;
+  updateUser(id: string, updates: Partial<UserProfile>): Promise<void>;
 
   // Carritos y Flota
   getCarts(): SellingCart[];

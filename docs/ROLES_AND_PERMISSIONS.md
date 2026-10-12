@@ -6,6 +6,10 @@
 
 ---
 
+## Estado vigente — 12 de octubre de 2026
+
+Las secciones de auditoría/plan anteriores describen el estado histórico y no el contrato vigente. Este se documenta en `AUTHENTICATION.md`: roles reales `admin`, `coordinator`, `seller`, `factory_worker`; sesiones opacas centrales, scrypt y RBAC en backend. No se usan JWT ni PIN4. Memoria solo demo aislada. La autorización e integridad por recurso siguen verificadas por la suite de regresión. Persistencia distribuida/cookies aún pendientes.
+
 ## 1. ROLES DEFINIDOS EN EL SISTEMA
 
 El negocio cuenta con 4 roles operativos claramente diferenciados:

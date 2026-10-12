@@ -6,13 +6,15 @@
  * - Se elimina totalmente el login por PIN sin identificador ({ pin } solo es rechazado).
  * - Se elimina la compatibilidad con PINs legados de 4 dígitos (se exigen 8 dígitos exactos).
  * - Se eliminan todas las comparaciones en texto plano: solo scrypt con salt individual.
- * - Las cuentas sin credenciales aprovisionadas son rechazadas (HTTP 401 ACCOUNT_NOT_PROVISIONED).
+ * - Credenciales incorrectas y cuentas no aprovisionadas comparten respuesta genérica 401.
  * - Fallo de PostgreSQL propaga HTTP 503 SERVICE_UNAVAILABLE y jamás recurre a credenciales de contingencia.
  * - Concurrencia y bloqueo por fuerza bruta persistido en base de datos.
  */
 
 import { Router, Request, Response } from 'express';
-import { isDbConfigured } from '../db/connection';
+import crypto from 'node:crypto';
+import { isDbConfigured, withTransaction } from '../db/connection';
+import { isIsolatedDemoEnabled } from './authPolicy';
 import { userRepository, UserAuthRecord } from '../db/repositories/UserRepository';
 import { sessionManager } from './sessionManager';
 import {
@@ -26,6 +28,7 @@ import {
 import { pinRateLimiter, recordFailedAttempt, recordSuccessfulAttempt } from './rateLimiter';
 import { authenticateToken, extractToken } from './authMiddleware';
 import { INITIAL_USERS } from '../../mockData';
+import { publicProfile } from './publicProfile';
 
 export const authRouter = Router();
 
@@ -47,8 +50,15 @@ const devTestCredentialsStore = new Map<string, DevAccountCredential>();
 
 // Inicializar credenciales con hash scrypt y salt individual para entorno de pruebas/desarrollo
 function initDevTestStore() {
-  // 1. Admin de prueba (CostaTequenos2026!#)
-  const adminHashed = hashPassword('CostaTequenos2026!#');
+  if (!isIsolatedDemoEnabled()) return;
+  // 1. Administrador demo aprovisionado por variables de entorno.
+  const adminPassword = process.env.SGMO_DEMO_ADMIN_PASSWORD;
+  const sellerPin = process.env.SGMO_DEMO_SELLER_PIN;
+  const factoryPin = process.env.SGMO_DEMO_FACTORY_PIN;
+  // Sin credenciales proporcionadas por el operador no se crea ninguna cuenta demo.
+  if (!validateAdminPassword(adminPassword).isValid
+      || !validateWorkerPin(sellerPin).isValid || !validateWorkerPin(factoryPin).isValid) return;
+  const adminHashed = hashPassword(adminPassword);
   const adminCred: DevAccountCredential = {
     passwordHash: adminHashed.hash,
     passwordSalt: adminHashed.salt,
@@ -59,8 +69,8 @@ function initDevTestStore() {
   devTestCredentialsStore.set('usr-admin-1', adminCred);
   devTestCredentialsStore.set('carlos.admin@tequenosplaya.com', adminCred);
 
-  // 2. Vendedor Lucas Benítez (VEND-01: 38491725)
-  const vend1Hashed = hashPin('38491725');
+  // 2. Vendedor demo con PIN proporcionado por el operador.
+  const vend1Hashed = hashPin(sellerPin);
   const vend1Cred: DevAccountCredential = {
     pinHash: vend1Hashed.hash,
     pinSalt: vend1Hashed.salt,
@@ -71,8 +81,8 @@ function initDevTestStore() {
   devTestCredentialsStore.set('usr-vend-1', vend1Cred);
   devTestCredentialsStore.set('lucas.b@playa.com', vend1Cred);
 
-  // 3. Operario de fábrica Marcos Benavídez (FAB-01: 61528473)
-  const fab1Hashed = hashPin('61528473');
+  // 3. Operario demo con PIN proporcionado por el operador.
+  const fab1Hashed = hashPin(factoryPin);
   const fab1Cred: DevAccountCredential = {
     pinHash: fab1Hashed.hash,
     pinSalt: fab1Hashed.salt,
@@ -96,9 +106,9 @@ initDevTestStore();
  * POST /api/auth/validate-credential
  * Valida la fortaleza sintáctica y reglas de seguridad de credenciales (sin revelar existencia de usuarios).
  */
-authRouter.post('/validate-credential', async (req: Request, res: Response) => {
+authRouter.post('/validate-credential', pinRateLimiter, async (req: Request, res: Response) => {
   try {
-    const { type, value } = req.body;
+    const { type, value } = req.body || {};
 
     if (type === 'admin_password') {
       const result = validateAdminPassword(value);
@@ -115,7 +125,7 @@ authRouter.post('/validate-credential', async (req: Request, res: Response) => {
       error: 'Tipo de credencial no reconocido. Use worker_pin o admin_password.'
     });
   } catch (error: any) {
-    res.status(500).json({ isValid: false, error: error.message });
+    res.status(400).json({ isValid: false, error: 'Formato de credencial inválido.' });
   }
 });
 
@@ -123,449 +133,137 @@ authRouter.post('/validate-credential', async (req: Request, res: Response) => {
  * POST /api/auth/bootstrap-admin
  * Procedimiento seguro para dar de alta el primer administrador en una base de datos recién instalada.
  */
-authRouter.post('/bootstrap-admin', async (req: Request, res: Response) => {
+authRouter.post('/bootstrap-admin', pinRateLimiter, async (req: Request, res: Response) => {
+  const body = req.body;
+  const infrastructureSecret = process.env.BOOTSTRAP_SECRET;
+  // El secreto es obligatorio incluso antes del primer aprovisionamiento.
+  // Hashear ambos lados permite comparación constante sin filtrar longitudes.
+  const suppliedSecret = body?.bootstrapSecret;
+  if (!infrastructureSecret || infrastructureSecret.length < 32
+      || typeof suppliedSecret !== 'string' || suppliedSecret.length > 1024
+      || !crypto.timingSafeEqual(
+        crypto.createHash('sha256').update(infrastructureSecret).digest(),
+        crypto.createHash('sha256').update(suppliedSecret).digest())) {
+    recordFailedAttempt(req);
+    return res.status(403).json({ success: false, code: 'BOOTSTRAP_DISABLED', message: 'Aprovisionamiento no autorizado.' });
+  }
+  if (!isDbConfigured()) {
+    return res.status(503).json({ success: false, code: 'DATABASE_REQUIRED', message: 'El aprovisionamiento requiere la base central.' });
+  }
+  if (!body || typeof body.identifier !== 'string' || body.identifier.trim().length === 0
+      || body.identifier.length > 254 || !validateAdminPassword(body.newPassword).isValid) {
+    return res.status(400).json({ success: false, code: 'INVALID_CREDENTIAL_FORMAT', message: 'Datos de aprovisionamiento inválidos.' });
+  }
   try {
-    const { identifier, newPassword, bootstrapSecret } = req.body;
-
-    if (!identifier || !newPassword) {
-      return res.status(400).json({
-        success: false,
-        message: 'Debe ingresar el identificador del administrador y la nueva contraseña.'
-      });
+    const provisioned = await userRepository.bootstrapInitialAdmin(body.identifier.trim(), body.newPassword);
+    if (!provisioned) {
+      return res.status(403).json({ success: false, code: 'BOOTSTRAP_DISABLED', message: 'Aprovisionamiento inicial no disponible.' });
     }
-
-    const val = validateAdminPassword(newPassword);
-    if (!val.isValid) {
-      return res.status(400).json({ success: false, message: val.error });
-    }
-
-    if (isDbConfigured()) {
-      const existingAdmin = await userRepository.getAuthRecordByIdentifier(identifier);
-      if (!existingAdmin) {
-        return res.status(404).json({ success: false, message: 'Usuario no encontrado en la base central.' });
-      }
-
-      if (existingAdmin.isProvisioned && existingAdmin.passwordHash) {
-        // Si ya está aprovisionado, se requiere el token secreto de infraestructura para rotación de emergencia
-        const envSecret = process.env.BOOTSTRAP_SECRET;
-        if (!envSecret || bootstrapSecret !== envSecret) {
-          return res.status(403).json({
-            success: false,
-            code: 'BOOTSTRAP_DISABLED',
-            message: 'El administrador ya se encuentra aprovisionado. Procedimiento bloqueado.'
-          });
-        }
-      }
-
-      await userRepository.updatePassword(existingAdmin.id, newPassword);
-      return res.json({ success: true, message: 'Contraseña de administrador aprovisionada correctamente.' });
-    } else {
-      // Modo desarrollo
-      const hashed = hashPassword(newPassword);
-      devTestCredentialsStore.set(identifier.toLowerCase(), {
-        passwordHash: hashed.hash,
-        passwordSalt: hashed.salt,
-        isProvisioned: true,
-        failedAttempts: 0
-      });
-      return res.json({ success: true, message: 'Contraseña de administrador provisionada en entorno de desarrollo.' });
-    }
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    return res.json({ success: true, message: 'Administrador inicial aprovisionado.' });
+  } catch {
+    return res.status(503).json({ success: false, code: 'SERVICE_UNAVAILABLE', message: 'Servicio central no disponible.' });
   }
 });
 
 /**
  * POST /api/auth/login
  * Contrato Oficial Estricto:
- * - Trabajador: { userCode, pin } (o { identifier, pin })
+ * - Trabajador: { userCode, pin }
  * - Administrador: { identifier, password }
  *
  * Rechazos obligatorios:
  * - { pin } sin identificador -> HTTP 400 MISSING_USER_CODE
  * - { password } sin identificador -> HTTP 400 MISSING_IDENTIFIER
  * - PIN de 4 dígitos o longitud diferente a 8 -> HTTP 400 INVALID_PIN_FORMAT
- * - Cuentas sin aprovisionar -> HTTP 401 ACCOUNT_NOT_PROVISIONED
+ * - Cuentas sin aprovisionar -> HTTP 401 INVALID_CREDENTIALS
  * - Intentos fallidos excedidos -> HTTP 429 ACCOUNT_LOCKED
  */
 authRouter.post('/login', pinRateLimiter, async (req: Request, res: Response) => {
+  const body = req.body;
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return res.status(400).json({ success: false, code: 'MISSING_CREDENTIALS', message: 'Credenciales requeridas.' });
+  }
+  const isAdminLogin = body.password !== undefined;
+  const isWorkerLogin = body.pin !== undefined;
+  const identifier = isAdminLogin ? body.identifier : body.userCode;
+  if (isAdminLogin === isWorkerLogin
+      || Object.keys(body).some((key) => !(isAdminLogin ? ['identifier', 'password'] : ['userCode', 'pin']).includes(key))) {
+    return res.status(400).json({ success: false, code: 'INVALID_AUTH_CONTRACT', message: 'Contrato de autenticación inválido.' });
+  }
+  if (typeof identifier !== 'string' || identifier.trim().length === 0 || identifier.length > 254) {
+    return res.status(400).json({ success: false, code: isAdminLogin ? 'MISSING_IDENTIFIER' : 'MISSING_USER_CODE', message: 'Identificador requerido.' });
+  }
+  const secret = isAdminLogin ? body.password : body.pin;
+  if (typeof secret !== 'string' || (isAdminLogin ? secret.length === 0 || secret.length > 1024 : !/^\d{8}$/.test(secret))) {
+    return res.status(400).json({ success: false, code: isAdminLogin ? 'INVALID_PASSWORD_FORMAT' : 'INVALID_PIN_FORMAT', message: 'Formato de credencial inválido.' });
+  }
+  const normalizedIdentifier = identifier.trim();
+  const meta = { ip: req.ip, userAgent: req.headers['user-agent']?.slice(0, 512) };
+  const rejectCredentials = () => {
+    recordFailedAttempt(req);
+    // Misma respuesta para inexistente, inactiva, no aprovisionada, hash inválido o clave incorrecta.
+    return res.status(401).json({ success: false, code: 'INVALID_CREDENTIALS', message: 'Credenciales incorrectas.' });
+  };
+  type LoginResult = { user: UserAuthRecord; token: string; expiresAt: string };
   try {
-    const { pin, password, identifier, userCode, email, username } = req.body;
-    const resolvedIdentifier = (identifier || userCode || email || username || '').toString().trim();
-
-    // =========================================================================
-    // 1. CASO: AUTENTICACIÓN DE ADMINISTRADOR MEDIANTE CONTRASEÑA
-    // =========================================================================
-    if (password !== undefined) {
-      if (!resolvedIdentifier) {
-        return res.status(400).json({
-          success: false,
-          code: 'MISSING_IDENTIFIER',
-          message: 'Debe ingresar el identificador o correo electrónico del usuario administrador.'
-        });
-      }
-
-      if (typeof password !== 'string' || password.length === 0) {
-        return res.status(400).json({
-          success: false,
-          code: 'INVALID_PASSWORD_FORMAT',
-          message: 'Debe suministrar una contraseña válida.'
-        });
-      }
-
-      let authenticatedAdmin: any = null;
-
-      // 1.a. Validación contra PostgreSQL si está configurado
-      if (isDbConfigured()) {
-        try {
-          const authRecord = await userRepository.getAuthRecordByIdentifier(resolvedIdentifier);
-
-          if (!authRecord || authRecord.isActive === false || authRecord.role !== 'admin') {
-            recordFailedAttempt(req);
-            return res.status(401).json({
-              success: false,
-              code: 'INVALID_CREDENTIALS',
-              message: 'Credenciales de administrador incorrectas.'
-            });
-          }
-
-          // Verificar si la cuenta está bloqueada en base de datos
-          if (authRecord.lockedUntil && new Date(authRecord.lockedUntil).getTime() > Date.now()) {
-            return res.status(429).json({
-              success: false,
-              code: 'ACCOUNT_LOCKED',
-              message: 'Cuenta bloqueada temporalmente por reiterados intentos fallidos. Reintente en 15 minutos.'
-            });
-          }
-
-          // Verificar si la cuenta está aprovisionada con hash scrypt válido
-          if (!authRecord.isProvisioned || !authRecord.passwordHash || !authRecord.passwordSalt) {
-            return res.status(401).json({
-              success: false,
-              code: 'ACCOUNT_NOT_PROVISIONED',
-              message: 'La cuenta de administrador no posee credenciales aprovisionadas en el sistema.'
-            });
-          }
-
-          // Verificación criptográfica estricta con scrypt
-          const isPasswordValid = verifyPassword(password, authRecord.passwordHash, authRecord.passwordSalt);
-          if (isPasswordValid) {
-            authenticatedAdmin = authRecord;
-            await userRepository.recordSuccessfulLogin(authRecord.id);
-            recordSuccessfulAttempt(req);
-          } else {
-            await userRepository.recordFailedAttempt(authRecord.id);
-            const { remainingAttempts, isBlocked } = recordFailedAttempt(req);
-            return res.status(401).json({
-              success: false,
-              code: 'INVALID_CREDENTIALS',
-              message: isBlocked
-                ? 'Demasiados intentos fallidos. Acceso bloqueado temporalmente por seguridad.'
-                : `Credenciales de administrador incorrectas. Te quedan ${remainingAttempts} intento(s) antes del bloqueo.`,
-              remainingAttempts
-            });
-          }
-        } catch (dbErr: any) {
-          console.error('⚠️ Error al consultar base de datos para login admin:', dbErr.message);
-          // REGLA CRÍTICA: La falla de PostgreSQL propaga 503 y NUNCA recurre a datos de contingencia
-          return res.status(503).json({
-            success: false,
-            code: 'SERVICE_UNAVAILABLE',
-            message: 'Servicio central de base de datos no disponible temporalmente.'
-          });
+    let loginResult: LoginResult | null = null;
+    let locked = false;
+    if (isDbConfigured()) {
+      loginResult = await withTransaction(async (client) => {
+        // Mismo orden de locks que aprovisionamiento: tabla antes de fila.
+        await client.query('LOCK TABLE users IN ROW EXCLUSIVE MODE');
+        // La fila bloqueada serializa verificación, contador y emisión frente a otros logins/restablecimientos.
+        const account = await userRepository.getAuthRecordByIdentifier(normalizedIdentifier, client);
+        if (!account || !account.isActive || (isAdminLogin ? account.role !== 'admin' : account.role === 'admin')
+            || (!isAdminLogin && account.userCode?.toLowerCase() !== normalizedIdentifier.toLowerCase())) return null;
+        if (account.lockedUntil && new Date(account.lockedUntil).getTime() > Date.now()) {
+          locked = true;
+          return null;
         }
-      } else {
-        // 1.b. Modo desarrollo local / pruebas sin base central
-        if (process.env.NODE_ENV === 'production') {
-          return res.status(503).json({
-            success: false,
-            code: 'DATABASE_REQUIRED',
-            message: 'La base de datos central es obligatoria para iniciar sesión en producción.'
-          });
+        const verified = account.isProvisioned && (isAdminLogin
+          ? verifyPassword(secret, account.passwordHash, account.passwordSalt)
+          : verifyPin(secret, account.pinHash, account.pinSalt));
+        if (!verified) {
+          await userRepository.recordFailedAttempt(account.id, client);
+          return null;
         }
-
-        const devCred = devTestCredentialsStore.get(resolvedIdentifier.toLowerCase());
-        const mockUser = INITIAL_USERS.find(
-          (u) =>
-            u.id.toLowerCase() === resolvedIdentifier.toLowerCase() ||
-            (u.userCode && u.userCode.toLowerCase() === resolvedIdentifier.toLowerCase()) ||
-            u.email?.toLowerCase() === resolvedIdentifier.toLowerCase()
-        );
-
-        if (!devCred || !mockUser || mockUser.role !== 'admin' || mockUser.isActive === false) {
-          recordFailedAttempt(req);
-          return res.status(401).json({
-            success: false,
-            code: 'INVALID_CREDENTIALS',
-            message: 'Credenciales de administrador incorrectas.'
-          });
-        }
-
-        if (!devCred.isProvisioned || !devCred.passwordHash || !devCred.passwordSalt) {
-          return res.status(401).json({
-            success: false,
-            code: 'ACCOUNT_NOT_PROVISIONED',
-            message: 'La cuenta no posee credenciales aprovisionadas.'
-          });
-        }
-
-        if (devCred.lockedUntil && devCred.lockedUntil > Date.now()) {
-          return res.status(429).json({
-            success: false,
-            code: 'ACCOUNT_LOCKED',
-            message: 'Cuenta bloqueada temporalmente por reiterados intentos fallidos.'
-          });
-        }
-
-        const isPasswordValid = verifyPassword(password, devCred.passwordHash, devCred.passwordSalt);
-        if (isPasswordValid) {
-          devCred.failedAttempts = 0;
-          devCred.lockedUntil = null;
-          authenticatedAdmin = mockUser;
-          recordSuccessfulAttempt(req);
-        } else {
-          devCred.failedAttempts += 1;
-          if (devCred.failedAttempts >= 5) {
-            devCred.lockedUntil = Date.now() + 15 * 60 * 1000;
-          }
-          const { remainingAttempts, isBlocked } = recordFailedAttempt(req);
-          return res.status(401).json({
-            success: false,
-            code: 'INVALID_CREDENTIALS',
-            message: isBlocked
-              ? 'Demasiados intentos fallidos. Acceso bloqueado temporalmente.'
-              : `Credenciales de administrador incorrectas. Te quedan ${remainingAttempts} intento(s).`,
-            remainingAttempts
-          });
-        }
-      }
-
-      // Crear sesión segura
-      const meta = {
-        ip: req.socket.remoteAddress,
-        userAgent: req.headers['user-agent']
-      };
-
-      const { token, session } = await sessionManager.createSession(
-        {
-          id: authenticatedAdmin.id,
-          name: authenticatedAdmin.name,
-          role: authenticatedAdmin.role
-        },
-        meta
-      );
-
-      const { pin: _p, pinHash: _ph, pinSalt: _ps, password: _pw, passwordHash: _pwh, passwordSalt: _pws, ...safeAdmin } = authenticatedAdmin;
-
-      return res.json({
-        success: true,
-        token,
-        expiresAt: session.expiresAt,
-        user: safeAdmin,
-        message: `Bienvenido/a Administrador ${authenticatedAdmin.name}`
+        await userRepository.recordSuccessfulLogin(account.id, client);
+        const created = await sessionManager.createSession(account, meta, client);
+        return { user: account, token: created.token, expiresAt: created.session.expiresAt };
       });
+    } else if (isIsolatedDemoEnabled()) {
+      const demoCredential = devTestCredentialsStore.get(normalizedIdentifier.toLowerCase());
+      const account = INITIAL_USERS.find((user) => isAdminLogin
+        ? [user.id, user.userCode, user.email].some((value) => value?.toLowerCase() === normalizedIdentifier.toLowerCase())
+        : user.userCode?.toLowerCase() === normalizedIdentifier.toLowerCase());
+      if (demoCredential && account && account.isActive && (isAdminLogin ? account.role === 'admin' : account.role !== 'admin')) {
+        locked = Boolean(demoCredential.lockedUntil && demoCredential.lockedUntil > Date.now());
+        // Tras vencer el bloqueo empieza una ventana nueva de intentos.
+        if (demoCredential.lockedUntil && !locked) {
+          demoCredential.failedAttempts = 0;
+          demoCredential.lockedUntil = null;
+        }
+        if (!locked && demoCredential.isProvisioned && (isAdminLogin
+          ? verifyPassword(secret, demoCredential.passwordHash, demoCredential.passwordSalt)
+          : verifyPin(secret, demoCredential.pinHash, demoCredential.pinSalt))) {
+          demoCredential.failedAttempts = 0;
+          demoCredential.lockedUntil = null;
+          const created = await sessionManager.createSession(account, meta);
+          loginResult = { user: account, token: created.token, expiresAt: created.session.expiresAt };
+        } else if (!locked) {
+          demoCredential.failedAttempts += 1;
+          if (demoCredential.failedAttempts >= 5) demoCredential.lockedUntil = Date.now() + 15 * 60 * 1000;
+        }
+      }
+    } else {
+      return res.status(503).json({ success: false, code: 'DATABASE_REQUIRED', message: 'La autenticación requiere la base central.' });
     }
-
-    // =========================================================================
-    // 2. CASO: AUTENTICACIÓN DE TRABAJADOR MEDIANTE CÓDIGO DE USUARIO + PIN
-    // =========================================================================
-    if (pin !== undefined) {
-      // REGLA CRÍTICA (Hito 1.2.1): Prohibido terminantemente el login por PIN sin identificador
-      if (!resolvedIdentifier) {
-        return res.status(400).json({
-          success: false,
-          code: 'MISSING_USER_CODE',
-          message: 'Debe especificar el código de usuario (userCode) o identificador de cuenta.'
-        });
-      }
-
-      if (typeof pin !== 'string') {
-        return res.status(400).json({
-          success: false,
-          code: 'INVALID_PIN_FORMAT',
-          message: 'El PIN debe ser una cadena numérica de exactamente 8 dígitos.'
-        });
-      }
-
-      const cleanPin = pin.trim();
-
-      // REGLA CRÍTICA (Hito 1.2.1): Eliminada la compatibilidad con PINs de 4 dígitos
-      if (!/^\d{8}$/.test(cleanPin)) {
-        return res.status(400).json({
-          success: false,
-          code: 'INVALID_PIN_FORMAT',
-          message: `El PIN ingresado posee una longitud o formato inválido (${cleanPin.length} caracteres). Debe contener exactamente 8 dígitos numéricos.`
-        });
-      }
-
-      let authenticatedUser: any = null;
-
-      // 2.a. Validación contra PostgreSQL si está configurado
-      if (isDbConfigured()) {
-        try {
-          const authRecord = await userRepository.getAuthRecordByIdentifier(resolvedIdentifier);
-
-          if (!authRecord || authRecord.isActive === false) {
-            recordFailedAttempt(req);
-            return res.status(401).json({
-              success: false,
-              code: 'INVALID_CREDENTIALS',
-              message: 'Código de usuario incorrecto o cuenta inactiva.'
-            });
-          }
-
-          // Verificar si la cuenta está bloqueada en base de datos
-          if (authRecord.lockedUntil && new Date(authRecord.lockedUntil).getTime() > Date.now()) {
-            return res.status(429).json({
-              success: false,
-              code: 'ACCOUNT_LOCKED',
-              message: 'Cuenta bloqueada temporalmente por reiterados intentos fallidos. Reintente en 15 minutos.'
-            });
-          }
-
-          // Verificar si la cuenta está aprovisionada con hash scrypt válido
-          if (!authRecord.isProvisioned || !authRecord.pinHash || !authRecord.pinSalt) {
-            return res.status(401).json({
-              success: false,
-              code: 'ACCOUNT_NOT_PROVISIONED',
-              message: 'La cuenta no posee un PIN personal aprovisionado en el sistema.'
-            });
-          }
-
-          // Verificación criptográfica estricta con scrypt
-          const isPinValid = verifyPin(cleanPin, authRecord.pinHash, authRecord.pinSalt);
-          if (isPinValid) {
-            authenticatedUser = authRecord;
-            await userRepository.recordSuccessfulLogin(authRecord.id);
-            recordSuccessfulAttempt(req);
-          } else {
-            await userRepository.recordFailedAttempt(authRecord.id);
-            const { remainingAttempts, isBlocked } = recordFailedAttempt(req);
-            return res.status(401).json({
-              success: false,
-              code: 'INVALID_CREDENTIALS',
-              message: isBlocked
-                ? 'Demasiados intentos fallidos. Acceso bloqueado temporalmente por seguridad.'
-                : `PIN incorrecto. Te quedan ${remainingAttempts} intento(s) antes del bloqueo.`,
-              remainingAttempts
-            });
-          }
-        } catch (dbErr: any) {
-          console.error('⚠️ Error al consultar base de datos para login trabajador:', dbErr.message);
-          // REGLA CRÍTICA: La falla de PostgreSQL propaga 503 y NUNCA recurre a datos de contingencia
-          return res.status(503).json({
-            success: false,
-            code: 'SERVICE_UNAVAILABLE',
-            message: 'Servicio central de base de datos no disponible temporalmente.'
-          });
-        }
-      } else {
-        // 2.b. Modo desarrollo local / pruebas sin base central
-        if (process.env.NODE_ENV === 'production') {
-          return res.status(503).json({
-            success: false,
-            code: 'DATABASE_REQUIRED',
-            message: 'La base de datos central es obligatoria para iniciar sesión en producción.'
-          });
-        }
-
-        const devCred = devTestCredentialsStore.get(resolvedIdentifier.toLowerCase());
-        const mockUser = INITIAL_USERS.find(
-          (u) =>
-            u.id.toLowerCase() === resolvedIdentifier.toLowerCase() ||
-            (u.userCode && u.userCode.toLowerCase() === resolvedIdentifier.toLowerCase()) ||
-            u.email?.toLowerCase() === resolvedIdentifier.toLowerCase()
-        );
-
-        if (!devCred || !mockUser || mockUser.isActive === false) {
-          recordFailedAttempt(req);
-          return res.status(401).json({
-            success: false,
-            code: 'INVALID_CREDENTIALS',
-            message: 'Código de usuario incorrecto o cuenta no encontrada.'
-          });
-        }
-
-        if (!devCred.isProvisioned || !devCred.pinHash || !devCred.pinSalt) {
-          return res.status(401).json({
-            success: false,
-            code: 'ACCOUNT_NOT_PROVISIONED',
-            message: 'La cuenta no posee credenciales aprovisionadas.'
-          });
-        }
-
-        if (devCred.lockedUntil && devCred.lockedUntil > Date.now()) {
-          return res.status(429).json({
-            success: false,
-            code: 'ACCOUNT_LOCKED',
-            message: 'Cuenta bloqueada temporalmente por reiterados intentos fallidos.'
-          });
-        }
-
-        const isPinValid = verifyPin(cleanPin, devCred.pinHash, devCred.pinSalt);
-        if (isPinValid) {
-          devCred.failedAttempts = 0;
-          devCred.lockedUntil = null;
-          authenticatedUser = mockUser;
-          recordSuccessfulAttempt(req);
-        } else {
-          devCred.failedAttempts += 1;
-          if (devCred.failedAttempts >= 5) {
-            devCred.lockedUntil = Date.now() + 15 * 60 * 1000;
-          }
-          const { remainingAttempts, isBlocked } = recordFailedAttempt(req);
-          return res.status(401).json({
-            success: false,
-            code: 'INVALID_CREDENTIALS',
-            message: isBlocked
-              ? 'Demasiados intentos fallidos. Acceso bloqueado temporalmente.'
-              : `PIN incorrecto. Te quedan ${remainingAttempts} intento(s).`,
-            remainingAttempts
-          });
-        }
-      }
-
-      // Crear sesión segura
-      const meta = {
-        ip: req.socket.remoteAddress,
-        userAgent: req.headers['user-agent']
-      };
-
-      const { token, session } = await sessionManager.createSession(
-        {
-          id: authenticatedUser.id,
-          name: authenticatedUser.name,
-          role: authenticatedUser.role
-        },
-        meta
-      );
-
-      const { pin: _p, pinHash: _ph, pinSalt: _ps, password: _pw, passwordHash: _pwh, passwordSalt: _pws, ...safeUser } = authenticatedUser;
-
-      return res.json({
-        success: true,
-        token,
-        expiresAt: session.expiresAt,
-        user: safeUser,
-        message: `Bienvenido/a ${authenticatedUser.name}`
-      });
-    }
-
-    // =========================================================================
-    // 3. CASO: SOLICITUD SIN CREDENCIALES
-    // =========================================================================
-    return res.status(400).json({
-      success: false,
-      code: 'MISSING_CREDENTIALS',
-      message: 'Debe ingresar userCode + PIN personal de 8 dígitos para trabajador o identificador + contraseña para administrador.'
-    });
-  } catch (error: any) {
-    console.error('Error en /api/auth/login:', error);
-    res.status(500).json({
-      success: false,
-      code: 'INTERNAL_ERROR',
-      message: error.message || 'Error interno al procesar el inicio de sesión'
-    });
+    if (locked) return res.status(429).json({ success: false, code: 'ACCOUNT_LOCKED', message: 'Acceso bloqueado temporalmente.' });
+    if (!loginResult) return rejectCredentials();
+    recordSuccessfulAttempt(req);
+    return res.json({ success: true, token: loginResult.token, expiresAt: loginResult.expiresAt, user: publicProfile(loginResult.user), message: 'Inicio de sesión verificado.' });
+  } catch {
+    return res.status(503).json({ success: false, code: 'SERVICE_UNAVAILABLE', message: 'Servicio central no disponible.' });
   }
 });
 
@@ -577,14 +275,15 @@ authRouter.post('/logout', async (req: Request, res: Response) => {
   try {
     const token = extractToken(req);
     if (token) {
-      await sessionManager.revokeSession(token);
+      const revoked = await sessionManager.revokeSession(token);
+      if (!revoked) return res.status(503).json({ success: false, code: 'SERVICE_UNAVAILABLE', message: 'No se pudo revocar la sesión central.' });
     }
     res.json({
       success: true,
       message: 'Sesión cerrada correctamente'
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(503).json({ success: false, code: 'SERVICE_UNAVAILABLE', message: 'Servicio central no disponible.' });
   }
 });
 
@@ -595,38 +294,14 @@ authRouter.post('/logout', async (req: Request, res: Response) => {
 authRouter.get('/me', authenticateToken, async (req: Request, res: Response) => {
   try {
     const session = req.userSession!;
-
-    let userProfile: any = null;
-    if (isDbConfigured()) {
-      userProfile = await userRepository.getById(session.userId);
+    const user = isDbConfigured()
+      ? await userRepository.getById(session.userId)
+      : isIsolatedDemoEnabled() ? INITIAL_USERS.find((profile) => profile.id === session.userId) : null;
+    if (!user || !user.isActive || user.role !== session.role) {
+      return res.status(401).json({ success: false, code: 'INVALID_OR_EXPIRED_TOKEN', message: 'Sesión inválida.' });
     }
-
-    if (!userProfile) {
-      const match = INITIAL_USERS.find((u) => u.id === session.userId);
-      if (match) {
-        const { pin: _pin, ...safeMatch } = match;
-        userProfile = safeMatch;
-      }
-    }
-
-    if (!userProfile) {
-      userProfile = {
-        id: session.userId,
-        name: session.userName,
-        role: session.role
-      };
-    }
-
-    res.json({
-      success: true,
-      user: userProfile,
-      session: {
-        id: session.id,
-        expiresAt: session.expiresAt,
-        role: session.role
-      }
-    });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    return res.json({ success: true, user: publicProfile(user), session: { id: session.id, expiresAt: session.expiresAt, role: session.role } });
+  } catch {
+    return res.status(503).json({ success: false, code: 'SERVICE_UNAVAILABLE', message: 'Servicio central no disponible.' });
   }
 });

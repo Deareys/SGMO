@@ -5,7 +5,16 @@
 
 import http from 'http';
 
-const BASE_URL = 'http://localhost:3000';
+const BASE_URL = 'http://127.0.0.1:3000';
+// Esta suite histórica sólo puede utilizarse con demo local explícita, nunca contra una base de negocio.
+if (process.env.NODE_ENV !== 'test' || process.env.SGMO_AUTH_MODE !== 'demo'
+    || [process.env.DATABASE_URL, process.env.POSTGRES_URL, process.env.PGHOST, process.env.PGDATABASE, process.env.PGUSER].some(Boolean)
+    || !process.env.SGMO_DEMO_SELLER_PIN || !process.env.SGMO_DEMO_FACTORY_PIN || !process.env.SGMO_DEMO_ADMIN_PASSWORD) {
+  throw new Error('Esta suite requiere demo aislada, NODE_ENV=test y credenciales efímeras proporcionadas por el operador.');
+}
+const sellerPin = process.env.SGMO_DEMO_SELLER_PIN;
+const factoryPin = process.env.SGMO_DEMO_FACTORY_PIN;
+const adminPassword = process.env.SGMO_DEMO_ADMIN_PASSWORD;
 
 async function request(path: string, options: { method?: string; body?: any; token?: string } = {}): Promise<{ status: number; body: any }> {
   return new Promise((resolve, reject) => {
@@ -81,12 +90,12 @@ async function runSecurityTests() {
       method: 'POST',
       body: { pin: '00000000' }
     });
-    assert(badLogin.status === 400 || badLogin.status === 401, 'Login sin userCode o con PIN inválido es rechazado');
+    assert(badLogin.status === 400 && badLogin.body.code === 'MISSING_USER_CODE', 'Login sin userCode es rechazado');
 
-    // 4. Login exitoso con Vendedor (userCode: 'VEND-01', PIN de 8 dígitos: '38491725')
+    // 4. Login exitoso con Vendedor (userCode: 'VEND-01', PIN efímero de 8 dígitos)
     const sellerLogin = await request('/api/auth/login', {
       method: 'POST',
-      body: { userCode: 'VEND-01', pin: '38491725' }
+      body: { userCode: 'VEND-01', pin: sellerPin }
     });
     assert(
       sellerLogin.status === 200 && sellerLogin.body.success === true && Boolean(sellerLogin.body.token),
@@ -94,10 +103,10 @@ async function runSecurityTests() {
     );
     const sellerToken = sellerLogin.body.token;
 
-    // 5. Login exitoso con Administrador (identifier: 'carlos.admin@tequenosplaya.com', password: 'CostaTequenos2026!#')
+    // 5. Login exitoso con Administrador (identifier: 'carlos.admin@tequenosplaya.com', password: adminPassword)
     const adminLogin = await request('/api/auth/login', {
       method: 'POST',
-      body: { identifier: 'carlos.admin@tequenosplaya.com', password: 'CostaTequenos2026!#' }
+      body: { identifier: 'carlos.admin@tequenosplaya.com', password: adminPassword }
     });
     assert(
       adminLogin.status === 200 && adminLogin.body.success === true && adminLogin.body.user.role === 'admin',
@@ -214,7 +223,7 @@ async function runSecurityTests() {
     // 15. Control de Rol Estricto: Operario de fábrica (factory_worker) no puede acceder a ventas ni jornadas
     const factoryLogin = await request('/api/auth/login', {
       method: 'POST',
-      body: { userCode: 'FAB-01', pin: '61528473' } // Marcos Benavídez (USR-FAB-1)
+      body: { userCode: 'FAB-01', pin: factoryPin } // Marcos Benavídez (USR-FAB-1)
     });
     assert(
       factoryLogin.status === 200 && factoryLogin.body.user.role === 'factory_worker',
@@ -464,7 +473,7 @@ async function runSecurityTests() {
       token: adminToken
     });
     assert(
-      adminCheckShiftSales.status === 200 || adminCheckShiftSales.status === 503,
+      adminCheckShiftSales.status === 200 && adminCheckShiftSales.body.success === true,
       'SEC-03: Administrador conserva permisos para consultar ventas de jornadas operativas (no restringido por 403)'
     );
 
@@ -489,10 +498,10 @@ async function runSecurityTests() {
     // --- PRUEBAS DE MODERNIZACIÓN DE CREDENCIALES (HITO 1.2) ---
     console.log('\n--- HITO 1.2: VALIDACIÓN DE CREDENCIALES Y AUTENTICACIÓN MODERNIZADA ---');
 
-    // 28. Login de Vendedor con código único 'VEND-01' y PIN personal de 8 dígitos ('38491725')
+    // 28. Login de Vendedor con código único 'VEND-01' y PIN efímero personal de 8 dígitos
     const modernWorkerLogin = await request('/api/auth/login', {
       method: 'POST',
-      body: { userCode: 'VEND-01', pin: '38491725' }
+      body: { userCode: 'VEND-01', pin: sellerPin }
     });
     assert(
       modernWorkerLogin.status === 200 &&
@@ -505,7 +514,7 @@ async function runSecurityTests() {
     // 29. Login con PIN de 8 dígitos sin userCode (debe ser rechazado por Hito 1.2.1)
     const modernWorkerDirectPin = await request('/api/auth/login', {
       method: 'POST',
-      body: { pin: '38491725' }
+      body: { pin: sellerPin }
     });
     assert(
       modernWorkerDirectPin.status === 400 &&
@@ -516,7 +525,7 @@ async function runSecurityTests() {
     // 30. Login de Administrador con correo y contraseña de >= 14 caracteres
     const modernAdminLogin = await request('/api/auth/login', {
       method: 'POST',
-      body: { identifier: 'carlos.admin@tequenosplaya.com', password: 'CostaTequenos2026!#' }
+      body: { identifier: 'carlos.admin@tequenosplaya.com', password: adminPassword }
     });
     assert(
       modernAdminLogin.status === 200 &&
@@ -528,7 +537,7 @@ async function runSecurityTests() {
     // 31. Login de Administrador con código único 'ADM-01' y contraseña
     const modernAdminByCode = await request('/api/auth/login', {
       method: 'POST',
-      body: { userCode: 'ADM-01', password: 'CostaTequenos2026!#' }
+      body: { identifier: 'ADM-01', password: adminPassword }
     });
     assert(
       modernAdminByCode.status === 200 &&
@@ -570,7 +579,7 @@ async function runSecurityTests() {
     // 35. Aceptación de contraseña de admin segura (≥ 14 caracteres con mayúsculas, minúsculas y caracteres especiales)
     const valStrongPassword = await request('/api/auth/validate-credential', {
       method: 'POST',
-      body: { type: 'admin_password', value: 'CostaTequenos2026!#' }
+      body: { type: 'admin_password', value: adminPassword }
     });
     assert(
       valStrongPassword.body.isValid === true,
@@ -580,7 +589,7 @@ async function runSecurityTests() {
     // 36. Aceptación de PIN de 8 dígitos seguro para trabajador
     const valStrongWorkerPin = await request('/api/auth/validate-credential', {
       method: 'POST',
-      body: { type: 'worker_pin', value: '38491725' }
+      body: { type: 'worker_pin', value: sellerPin }
     });
     assert(
       valStrongWorkerPin.body.isValid === true,
