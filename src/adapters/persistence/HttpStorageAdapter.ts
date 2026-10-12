@@ -75,17 +75,9 @@ export class HttpStorageAdapter implements IStorageRepository {
     return this.localFallback.getState().users;
   }
 
-  updateUser(id: string, updates: Partial<UserProfile>): void {
-    this.localFallback.updateUser(id, updates);
-
-    // Asíncronamente actualizar en PostgreSQL si está configurado
-    if (this.isServerDbConfigured) {
-      fetch(`/api/users/${id}`, {
-        method: 'PUT',
-        headers: this.getAuthHeaders(),
-        body: JSON.stringify(updates)
-      }).catch((err) => console.warn('Sync PUT /api/users error:', err));
-    }
+  updateUser(id: string, updates: Partial<UserProfile>): Promise<void> {
+    // El servicio realiza una única escritura autenticada y confirma antes de actualizar la caché.
+    return this.localFallback.updateUser(id, updates);
   }
 
   getCarts(): SellingCart[] {

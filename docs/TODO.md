@@ -6,6 +6,20 @@
 
 ---
 
+## Seguimiento actual — 12 de octubre de 2026
+
+- [x] Reparación local de login legado, plaintext/offline, bootstrap y fallback de sesiones: ver `HITO_1_2_1_INFORME.md`.
+- [x] Pruebas HTTP, criptografía, cliente y SQL WASM reproducibles.
+- [ ] Cierre de integración PostgreSQL: conexiones reales, dos procesos, carrera login/reset y caída/reinicio. WASM no demuestra distribución.
+- [ ] QA de navegador real y móvil (véase BROWSER_AUTH_QA.md; descargas Chromium bloqueadas).
+- [ ] Hito 1.3: bearer sigue en localStorage; implementar cookies HttpOnly, CSRF y CORS de manera completa.
+- [ ] Control por origen compartido y política `trust proxy` limitada a proxies comprobados en Cloud Run. El Map es complementario por instancia.
+- [ ] Revisar TLS en `connection.ts`: actualmente permite `rejectUnauthorized:false`; configurar verificación y confianza del proveedor.
+- [ ] Recuperación administrativa cuando no exista ninguna sesión válida: procedimiento de infraestructura, sin reapertura pública de bootstrap.
+- [ ] Hito 2.1: hidratar perfiles/estado desde PostgreSQL; no depender de IDs/nombres de semillas locales para restablecer cuentas existentes. Usar GET /api/users como fuente central actual.
+- [ ] Hito 2.1: `resetToFactorySeed()` elimina ventas y cola pendiente; impedir pérdidas con respaldo/confirmación de sincronización y revocar sesión central. No cambiado en este hito.
+- [ ] Hito 2.1: reanudación de sesión tras recarga offline sin inventar autenticación local.
+
 ## 1. NIVEL 1: CRÍTICO (Seguridad y Arquitectura de Despliegue)
 
 - [ ] **Configurar Despliegue Correcto de Backend (Vercel / Cloud Run):**
@@ -17,9 +31,9 @@
   - Implementado `scrypt` con salt criptográfico individual de 16 bytes para PINs de 8 dígitos de trabajadores y contraseñas (≥14 caracteres) de administradores.
   - Rechazo estricto de PINs repetitivos, secuenciales y predecibles en backend.
   - Eliminación de exposición de hashes y contraseñas en DTOs públicos de la API.
-- [x] **Autenticación Segura con Tokens de Sesión y RBAC (Completado en Fase 3 y Hito 1.2):**
+- [ ] **Cierre productivo de Autenticación con Tokens de Sesión y RBAC:**
   - Endpoints `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me` y `POST /api/auth/validate-credential`.
-  - Sesiones criptográficas opacas de 256 bits almacenadas en PostgreSQL / memoria, con expiración automática y rate limiting contra fuerza bruta.
+  - Sesiones opacas de 256 bits centrales; memoria solo demo explícita. Implementación y pruebas locales corregidas; falta certificar PostgreSQL real, distribución y transporte seguro del token.
 - [ ] **Evitar Confusión con Fallbacks Simulados:**
   - Marcar de forma muy visible en la UI (`badge` rojo parpadeante) cuando una validación de comprobante fue simulada por falta de conexión, impidiendo que se confirme una venta como "aprobada por banco" si no hubo respuesta real de la API.
 
@@ -28,7 +42,7 @@
 ## 2. NIVEL 2: IMPORTANTE (Persistencia y Mercado Pago Real)
 
 - [ ] **Provisionar Base de Datos Centralizada en la Nube:**
-  - `[PENDIENTE DE CONFIRMACIÓN]` Elegir entre PostgreSQL (Cloud SQL) o Firebase Firestore para sincronización multi-dispositivo.
+  - PostgreSQL ya está implementado y Sebas eligió Neon. No se conectó ni verificó el entorno remoto en esta intervención.
   - Migrar las entidades de `src/types/index.ts` a tablas/colecciones remotas.
 - [ ] **Persistencia Inmutable de Webhooks de Mercado Pago:**
   - Reemplazar el array volátil en memoria RAM (`receivedWebhooks = []`) en `server.ts` por una tabla de eventos en base de datos.

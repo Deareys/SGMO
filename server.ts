@@ -11,7 +11,7 @@ import { authRouter } from './src/server/auth/authRoutes';
 import { authenticateToken, requireRole } from './src/server/auth/authMiddleware';
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 // Parser JSON con límite amplio para imágenes base64 de comprobantes
 app.use(express.json({ limit: '25mb' }));
