@@ -1,6 +1,6 @@
 # SGMO: cómo revisar, probar y empezar a entender el código
 
-Sebas, esta guía corresponde a la rama `codex/sgmo-preparacion-mvp`, no necesariamente a la app que hoy ves en producción. Primero verificá la versión. El plan y todos los prompts están en [HITOS_Y_PROMPTS_MVP.md](HITOS_Y_PROMPTS_MVP.md).
+Esta guía corresponde a la rama `codex/sgmo-preparacion-mvp`, no necesariamente a la app que hoy ves en producción. Primero verificá la versión. El plan y todos los prompts están en [HITOS_Y_PROMPTS_MVP.md](HITOS_Y_PROMPTS_MVP.md).
 
 ## 1. Dónde está cada cosa
 
