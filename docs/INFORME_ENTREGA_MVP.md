@@ -13,7 +13,7 @@ Los hitos y prompts están en [HITOS_Y_PROMPTS_MVP.md](HITOS_Y_PROMPTS_MVP.md), 
 | Verificación | Resultado | Qué demuestra |
 | --- | --- | --- |
 | `npm run lint` | Aprobado, sin errores | TypeScript compilable; no declara modo strict ni ESLint |
-| `npm test` | 172 aprobadas, 0 fallas/canceladas/omitidas | Contratos HTTP, sesiones, CSRF, roles, TLS, cliente, cola, cuotas, OCR, banco simulado y UI/adaptadores |
+| `npm test` | 174 aprobadas, 0 fallas/canceladas/omitidas | Contratos HTTP, sesiones, CSRF, roles, TLS, cliente, cola, cuotas, OCR, banco simulado y UI/adaptadores |
 | `npm run build` | Aprobado, frontend/servidor y 6 archivos públicos | Compilación completa y packaging frontend sin publicar backend; queda aviso de bundle grande |
 | `npm run test:auth:legacy` | 35 aprobadas, 0 fallas | Autenticación/RBAC y rechazo de escritura bancaria/central ficticia sin configuración |
 | SQL autenticación/migraciones | 10 grupos aprobados, migraciones 001–008 | Sintaxis, constraints, revocaciones y rollback en PostgreSQL WASM |
@@ -27,7 +27,7 @@ Las suites con SQL se ejecutaron en motores WASM efímeros, sin Neon. La suite h
 
 El workflow [SGMO validation](https://github.com/Deareys/SGMO/actions) incluye PostgreSQL16 por sockets, autenticación mediante dos procesos, transacciones operativas con conexiones concurrentes, configuración WASM y Chromium. Revisar la ejecución que corresponda al commit de esta rama. Un workflow escrito no es un resultado aprobado; su conclusión y artefactos están en esa ejecución. Los reportes excluyen credenciales/dumps/URLs de conexión.
 
-Aquí no se pudo iniciar PostgreSQL16 porque el namespace no permite asignar UID de un usuario no root; tampoco se pudo completar la descarga local de Chromium. Ninguno de esos intentos se contó como una prueba aprobada. La prueba de pérdida de conectividad del runner real corta sockets mediante proxy TCP local, no reinicia el motor ni certifica varias instancias en la nube.
+En el entorno local no se pudo iniciar PostgreSQL16 porque el namespace no permite asignar UID de un usuario no root; tampoco se pudo completar la descarga local de Chromium. Ninguno de esos intentos se contó como una prueba aprobada. La prueba de pérdida de conectividad del runner real corta sockets mediante proxy TCP local, no reinicia el motor ni certifica varias instancias en la nube.
 
 ## Resultado PostgreSQL real en Actions
 

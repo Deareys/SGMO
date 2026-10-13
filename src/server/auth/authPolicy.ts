@@ -7,6 +7,7 @@ import { isDbConfigured } from '../db/connection';
 
 export function isIsolatedDemoEnabled(): boolean {
   return process.env.SGMO_AUTH_MODE === 'demo'
+    && !process.env.VERCEL
     && ['development', 'test'].includes(process.env.NODE_ENV || '')
     && ![process.env.DATABASE_URL, process.env.POSTGRES_URL, process.env.PGHOST,
       process.env.PGDATABASE, process.env.PGUSER].some(Boolean)

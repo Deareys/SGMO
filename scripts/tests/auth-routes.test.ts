@@ -113,6 +113,7 @@ test('Contrato estricto, aislamiento demo, perfiles públicos y RBAC por HTTP', 
 
 for (const [name, overrides] of [
   ['NODE_ENV omitido', { NODE_ENV: undefined }],
+  ['Vercel no permite demo aunque NODE_ENV sea development', { VERCEL: '1', NODE_ENV: 'development' }],
   ['demo en producción', { NODE_ENV: 'production' }],
   ['demo no seleccionada', { SGMO_AUTH_MODE: undefined }],
   ['base central caída con demo seleccionada', { DATABASE_URL: 'postgresql://invalid:invalid@127.0.0.1:1/sgmo_auth_test' }]

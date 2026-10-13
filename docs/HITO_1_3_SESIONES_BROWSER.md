@@ -52,3 +52,7 @@ Pruebas realizadas durante integración:
 - `git diff --check`: aprobado.
 
 Estos resultados no sustituyen la prueba final de PostgreSQL real, los dos procesos ni browser smoke; esos controles pertenecen a la integración del hito y deben registrarse en el informe global. Las pruebas locales de atributos Secure no certifican HTTPS remoto ni el despliegue.
+
+## Refuerzo al integrar Vercel
+
+La presencia del marcador de Vercel exige cookie Secure/HTTPS aunque NODE_ENV falte o se configure como development, y desactiva demo. Se añadieron dos pruebas para esa configuración accidental; una preview no habilita sesiones en memoria. Confirmación de cookies del despliegue real sigue pendiente de acceso a la preview protegida.

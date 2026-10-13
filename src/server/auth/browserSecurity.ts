@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import type { Request, Response, NextFunction, CookieOptions } from 'express';
 
 const TOKEN_FORMAT = /^[a-f0-9]{64}$/;
-const production = () => process.env.NODE_ENV === 'production';
+const production = () => process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL);
 const sessionCookieName = () => production() ? '__Host-sgmo-session' : 'sgmo-session';
 const csrfCookieName = () => production() ? '__Host-sgmo-csrf' : 'sgmo-csrf';
 const cookieOptions = (): CookieOptions => ({ httpOnly: true, secure: production(), sameSite: 'strict', path: '/' });

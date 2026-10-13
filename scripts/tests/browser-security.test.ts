@@ -62,3 +62,16 @@ test('API opt-in cannot be used by a browser with Origin or browser Fetch Metada
     }
   } finally { if (original === undefined) delete process.env.SGMO_ENABLE_API_TOKENS; else process.env.SGMO_ENABLE_API_TOKENS = original; }
 });
+
+test('Vercel mantiene cookies Secure y origen HTTPS aunque NODE_ENV esté mal configurado', () => {
+  const saved = { NODE_ENV:process.env.NODE_ENV,VERCEL:process.env.VERCEL,SGMO_PUBLIC_ORIGIN:process.env.SGMO_PUBLIC_ORIGIN,VERCEL_URL:process.env.VERCEL_URL };
+  process.env.VERCEL='1'; process.env.NODE_ENV='development';
+  delete process.env.VERCEL_URL; process.env.SGMO_PUBLIC_ORIGIN='http://app.example';
+  try {
+    assert.throws(validateBrowserSecurityConfiguration);
+    let cookieName=''; let cookieOptions:Record<string,unknown>={};
+    const response={cookie(name:string,_token:string,options:Record<string,unknown>){cookieName=name;cookieOptions=options;},setHeader(){}};
+    setSessionCookie(response as never,randomBytes(32).toString('hex'),new Date(Date.now()+60000).toISOString());
+    assert.equal(cookieName,'__Host-sgmo-session');assert.equal(cookieOptions.secure,true);assert.equal(cookieOptions.httpOnly,true);
+  } finally {for(const [key,value] of Object.entries(saved)){if(value===undefined)delete process.env[key];else process.env[key]=value;}}
+});

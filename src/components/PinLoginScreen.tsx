@@ -60,9 +60,8 @@ export const PinLoginScreen: React.FC<PinLoginScreenProps> = ({ onLoginSuccess }
         const result = await storageService.loginWithPinAsync(pinToValidate, selectedUserCode);
         if (result.success && result.user) {
           setLoginSuccessUser(result.user);
-          setTimeout(() => {
-            onLoginSuccess(result.user!);
-          }, 350);
+          // La sesión ya actualizó App; no redirigir más tarde sobre una navegación nueva.
+          onLoginSuccess(result.user);
         } else {
           setIsAuthenticating(false);
           setErrorMsg(result.error || 'PIN incorrecto o cuenta no válida.');
@@ -121,9 +120,8 @@ export const PinLoginScreen: React.FC<PinLoginScreenProps> = ({ onLoginSuccess }
       const result = await storageService.loginAsAdminAsync(adminIdentifier, adminPassword);
       if (result.success && result.user) {
         setLoginSuccessUser(result.user);
-        setTimeout(() => {
-          onLoginSuccess(result.user!);
-        }, 350);
+        // Mismo contrato que trabajador: seleccionar ruta una sola vez al confirmar login.
+        onLoginSuccess(result.user);
       } else {
         setIsAuthenticating(false);
         setErrorMsg(result.error || 'Credenciales de administrador incorrectas.');

@@ -13,7 +13,7 @@ function workerPin(): string {
 const env = { ...process.env };
 for (const key of ['DATABASE_URL', 'POSTGRES_URL', 'PGHOST', 'PGDATABASE', 'PGUSER', 'PGPASSWORD',
   'PGPORT', 'PGOPTIONS', 'PGSERVICE', 'PGSERVICEFILE', 'MERCADOPAGO_ACCESS_TOKEN', 'MP_ACCESS_TOKEN',
-  'MERCADOPAGO_WEBHOOK_SECRET', 'GEMINI_API_KEY', 'BOOTSTRAP_SECRET']) delete env[key];
+  'MERCADOPAGO_WEBHOOK_SECRET', 'GEMINI_API_KEY', 'BOOTSTRAP_SECRET', 'VERCEL', 'VERCEL_URL']) delete env[key];
 Object.assign(env, { NODE_ENV: 'test', SGMO_AUTH_MODE: 'demo',
   SGMO_ENABLE_API_TOKENS: 'true', PORT: process.env.PORT || '3101',
   SGMO_DEMO_ADMIN_PASSWORD: `Aa!${randomBytes(24).toString('hex')}`,
