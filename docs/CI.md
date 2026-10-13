@@ -68,3 +68,7 @@ El browser necesita Playwright/Chromium instalados y `SGMO_PLAYWRIGHT_MODULES` i
 ## Límites antes de producción
 
 La suite en dos procesos locales mejora la evidencia de concurrencia; no certifica redes, configuración TLS, proxies ni varias instancias desplegadas en Cloud Run. Revisar por separado cookies `__Host-*` y `Secure` bajo HTTPS real, origen público, límites complementarios por IP y configuración del proxy. Las migraciones siguen pendientes de validación sobre una copia aislada del esquema real antes de ejecutarlas sobre un entorno operativo.
+
+## Primera ejecución y corrección del workflow
+
+La ejecución [38437844058](https://github.com/Deareys/SGMO/actions/runs/38437844058) del commit `7cf7bf9` fue rechazada antes de crear jobs: la variable `runner.temp` estaba en `jobs.env`, donde ese contexto no está disponible. Se trasladó el directorio de reportes a `steps.env`. El error corresponde al workflow, no a una prueba PostgreSQL ejecutada. Consultar la siguiente ejecución del commit corregido; no contar esta ejecución como evidencia aprobada.
