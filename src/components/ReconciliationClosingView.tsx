@@ -37,6 +37,7 @@ interface ReconciliationClosingViewProps {
 
 export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps> = ({ state }) => {
   const { shifts, currentUser, houses } = state;
+  const canConfirmSettlement = currentUser.role === 'admin' || currentUser.role === 'coordinator';
 
   // Filtrar jornadas activas o del día (si es vendedor, solo sus propias jornadas)
   const activeOrRecentShifts = shifts.filter((s) => {
@@ -69,6 +70,9 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
   const [receiptShift, setReceiptShift] = useState<DailyShift | null>(null);
   const [downloadSuccessMessage, setDownloadSuccessMessage] = useState<string | null>(null);
   const [historySearch, setHistorySearch] = useState<string>('');
+  const [pendingOperation, setPendingOperation] = useState<'closing' | 'payout' | null>(null);
+  const operationInFlight = React.useRef(false);
+  const [operationError, setOperationError] = useState<string | null>(null);
 
   // Función principal para descargar el comprobante en PDF real
   const handleDownloadPdf = (shiftToDownload: DailyShift) => {
@@ -88,7 +92,7 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
       setCashDeclared(selectedShift.cashExpected);
       const initial: Record<string, { count: number; waste: number }> = {};
       selectedShift.stockItems.forEach((item) => {
-        const estReturned = Math.max(0, item.deliveredUnits + item.reSuppliedUnits - item.soldUnits);
+        const estReturned = Math.max(0, item.deliveredUnits + item.reSuppliedUnits - item.soldUnits - (item.wasteUnits || 0));
         initial[item.varietyId] = {
           count: item.returnedUnits || estReturned,
           waste: item.wasteUnits || 0
@@ -129,9 +133,9 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
   }, [selectedShift, state.systemConfig?.commissionTiers]);
 
   // Manejar Cierre y Conciliación
-  const handlePerformClosing = (e: React.FormEvent) => {
+  const handlePerformClosing = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedShift) return;
+    if (!selectedShift || operationInFlight.current || !canConfirmSettlement) return;
 
     const returnedItems = selectedShift.stockItems.map((item) => ({
       varietyId: item.varietyId,
@@ -139,42 +143,65 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
       wasteCount: returnedCounts[item.varietyId]?.waste || 0
     }));
 
-    const reconciled = storageService.closeAndReconcileShift({
-      shiftId: selectedShift.id,
-      cashDeclared,
-      gasPercentEnd,
-      returnedItems,
-      deductionMissingRatePerUnit: deductionMissingRate,
-      bonusIncentive,
-      notes: closingNotes,
-      coordinatorSignature: currentUser.name
-    });
-
-    setReceiptShift(reconciled);
-    setShowReceiptModal(true);
-
+    operationInFlight.current = true;
+    setPendingOperation('closing');
+    setOperationError(null);
     try {
-      confetti({
-        particleCount: 50,
-        spread: 70,
-        origin: { y: 0.6 }
+      const reconciled = await storageService.closeAndReconcileShift({
+        shiftId: selectedShift.id,
+        cashDeclared,
+        gasPercentEnd,
+        returnedItems,
+        deductionMissingRatePerUnit: deductionMissingRate,
+        bonusIncentive,
+        notes: closingNotes,
+        coordinatorSignature: currentUser.name
       });
-    } catch (e) {}
+
+      if (!reconciled) throw new Error('El servidor no confirmó el cierre. Conservamos los datos para reintentar.');
+      setReceiptShift(reconciled);
+      setShowReceiptModal(true);
+
+      try {
+        confetti({
+          particleCount: 50,
+          spread: 70,
+          origin: { y: 0.6 }
+        });
+      } catch (e) {}
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : 'No se pudo guardar el cierre. Conservamos los datos para reintentar.');
+    } finally {
+      operationInFlight.current = false;
+      setPendingOperation(null);
+    }
   };
 
   // Pagar Comisión
-  const handlePayCommission = (shiftId: string) => {
-    const proof = `PAGO-EFVO-${new Date().toLocaleTimeString('es-AR').slice(0, 5)}`;
-    storageService.paySellerCommission(shiftId, proof);
-    const updated = storageService.getState().shifts.find((s) => s.id === shiftId);
-    if (updated) {
+  const handlePayCommission = async (shiftId: string) => {
+    if (operationInFlight.current || !canConfirmSettlement) return;
+    if (!window.confirm('¿Ya entregaste el importe de la comisión? Esta acción registra un pago manual; no mueve dinero ni verifica un banco.')) return;
+    operationInFlight.current = true;
+    setPendingOperation('payout');
+    setOperationError(null);
+    try {
+      const proof = `PAGO-EFVO-${new Date().toISOString()}`;
+      await storageService.paySellerCommission(shiftId, proof);
+      const updated = storageService.getState().shifts.find((shift) => shift.id === shiftId);
+      if (!updated || updated.payoutStatus === 'pendiente') throw new Error('El servidor no confirmó el registro del pago.');
       setReceiptShift(updated);
       setShowReceiptModal(true);
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : 'No se pudo registrar el pago.');
+    } finally {
+      operationInFlight.current = false;
+      setPendingOperation(null);
     }
   };
 
   return (
     <div className="space-y-6 pb-12">
+      {operationError && <p role="alert" className="bg-rose-50 border-2 border-rose-500 text-rose-900 p-3 rounded-xl">{operationError}</p>}
       
       {/* Encabezado */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
@@ -207,7 +234,7 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
           return (
             <div
               key={s.id}
-              onClick={() => setSelectedShiftId(s.id)}
+              onClick={() => { if (!operationInFlight.current) setSelectedShiftId(s.id); }}
               className={`p-4 rounded-2xl border cursor-pointer transition-all ${
                 isSelected
                   ? 'bg-slate-800 border-amber-500 ring-1 ring-amber-500 shadow-lg'
@@ -303,6 +330,7 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
             </div>
 
             <form onSubmit={handlePerformClosing} className="space-y-5">
+              <fieldset disabled={pendingOperation !== null} className="contents">
               
               {/* 1. Conteo Físico de Tequeños Devueltos */}
               <div className="space-y-3">
@@ -498,14 +526,16 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
               {selectedShift.status === 'en_curso' && (
                 <button
                   type="submit"
+                  disabled={pendingOperation !== null || !canConfirmSettlement}
                   className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black text-sm rounded-xl shadow-xl shadow-amber-500/20 flex items-center justify-center space-x-2 transition-all cursor-pointer"
                 >
                   <CheckCircle2 className="w-5 h-5" />
-                  <span>Realizar Cierre de Jornada & Calcular Liquidación</span>
+                  <span>{!canConfirmSettlement ? 'El cierre lo confirma coordinación' : pendingOperation === 'closing' ? 'Confirmando cierre…' : 'Realizar Cierre de Jornada & Calcular Liquidación'}</span>
                 </button>
               )}
 
-            </form>
+              </fieldset>
+</form>
           </div>
 
           {/* Columna Derecha: Liquidación de Comisión y Pago Final (5 cols) */}
@@ -618,10 +648,11 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
               <button
                 type="button"
                 onClick={() => handlePayCommission(selectedShift.id)}
+                disabled={pendingOperation !== null || !canConfirmSettlement || selectedShift.status === 'en_curso'}
                 className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-600/20 flex items-center justify-center space-x-2 transition-all cursor-pointer"
               >
                 <Coins className="w-4 h-4" />
-                <span>Pagar Comisión & Emitir Comprobante</span>
+                <span>{!canConfirmSettlement ? 'El pago lo registra coordinación' : pendingOperation === 'payout' ? 'Confirmando registro…' : 'Registrar Comisión Entregada & Emitir Comprobante'}</span>
               </button>
             ) : (
               <div className="space-y-3">

@@ -31,8 +31,29 @@ export const App: React.FC = () => {
     const unsubscribe = storageService.subscribe((newState) => {
       setState({ ...newState });
     });
+    void storageService.restoreSession();
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!state.currentUser?.id) return;
+    let stopped = false;
+    const refresh = async () => {
+      if (stopped || !storageService.getState().isOnline) return;
+      const loaded = await storageService.refreshCentralState();
+      if (!loaded || stopped) return;
+      const synchronization = await storageService.flushOfflineQueue();
+      if (synchronization.acknowledgedIds.length && !stopped) await storageService.refreshCentralState();
+    };
+    void refresh();
+    const refreshTimer = window.setInterval(() => { void refresh(); }, 30_000);
+    window.addEventListener('online', refresh);
+    return () => {
+      stopped = true;
+      window.clearInterval(refreshTimer);
+      window.removeEventListener('online', refresh);
+    };
+  }, [state.currentUser?.id]);
 
   // Adaptar ruta inicial automáticamente según el rol del usuario autenticado por PIN
   const handleLoginSuccess = (user: UserProfile) => {
@@ -45,8 +66,9 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleLogout = () => {
-    storageService.logout();
+  const handleLogout = async () => {
+    const result = await storageService.logout();
+    if (!result.success) window.alert(result.error || 'El cierre de sesión requiere conexión para confirmar la revocación.');
   };
 
   const handleSelectHouse = (houseId: string) => {
@@ -55,14 +77,32 @@ export const App: React.FC = () => {
 
   const handleResetSeed = () => {
     if (window.confirm('¿Deseás reiniciar todos los datos a la configuración inicial de fábrica? Se cerrará la sesión actual.')) {
-      storageService.resetToFactorySeed();
-      setActiveTab('dashboard');
+      try {
+        storageService.resetToFactorySeed();
+        setActiveTab('dashboard');
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : 'El reinicio no se pudo confirmar.');
+      }
     }
   };
 
   // Si no hay usuario autenticado, renderizar exclusivamente la pantalla de ingreso con PIN
   if (!state.currentUser) {
     return <PinLoginScreen onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  // No mostrar los datos de otra cuenta ni semillas antiguas durante el arranque.
+  if (state.centralOwnerUserId !== state.currentUser.id || !state.centralHydrated) {
+    return (
+      <div className="min-h-screen bg-slate-50 p-6 flex items-center justify-center">
+        <div className="max-w-md bg-white border-2 border-slate-300 rounded-2xl p-6 space-y-4">
+          <h1 className="font-black text-lg">Preparando la operación central</h1>
+          <p role="status" className="text-slate-800">{state.centralError || 'Cargando jornadas, catálogo y configuración de tu sesión…'}</p>
+          <button type="button" disabled={state.centralStatus === 'loading'} onClick={() => { void storageService.refreshCentralState(); }} className="min-h-12 w-full bg-amber-400 border-2 border-amber-600 rounded-xl font-bold disabled:opacity-50">Reintentar carga</button>
+          <button type="button" onClick={handleLogout} className="min-h-12 w-full border-2 border-slate-400 rounded-xl">Cerrar sesión</button>
+        </div>
+      </div>
+    );
   }
 
   const unreadAlertsCount = state.alerts.filter((a) => !a.isRead).length;
@@ -115,6 +155,16 @@ export const App: React.FC = () => {
         onResetSeed={handleResetSeed}
         onLogout={handleLogout}
       />
+
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-3 space-y-2">
+        {state.demoMode && <p className="rounded-xl border-2 border-amber-500 bg-amber-50 p-3 text-sm font-bold">Demostración aislada: estos datos no pertenecen a producción.</p>}
+        {(state.centralError || state.saleSyncError || state.operationSyncError || offlineQueueCount > 0) && (
+          <div role="status" className="rounded-xl border-2 border-amber-500 bg-amber-50 p-3 text-sm text-slate-950">
+            <p>{state.centralError || state.saleSyncError || state.operationSyncError || `${offlineQueueCount} ventas pendientes de confirmación central.`}</p>
+            <button type="button" disabled={state.saleSyncStatus === 'syncing' || !state.isOnline} onClick={() => { void storageService.flushOfflineQueue(); }} className="mt-2 min-h-12 px-4 border-2 border-slate-600 bg-white rounded-xl font-bold disabled:opacity-50">Reintentar sincronización</button>
+          </div>
+        )}
+      </div>
 
       {/* Contenedor Principal de la Aplicación */}
       <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-6">

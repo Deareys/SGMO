@@ -6,7 +6,35 @@
 
 ---
 
-## Estado actual (12 de octubre de 2026)
+## Actualización vigente — 13 de octubre de 2026
+
+Las decisiones históricas de PIN de 4 dígitos, bearer en navegador, fallback de sesiones o aprobación simulada no describen el código actual. Ver `HITOS_Y_PROMPTS_MVP.md`, `GUIA_SEBAS.md` y el informe de esta entrega. La fuente de verdad sigue siendo el código y su evidencia, no el estado “implementado” de una nota antigua.
+
+### ADR-014: navegador con cookies, CSRF y PostgreSQL TLS
+
+Estado: implementado; validación del deployment pendiente. Se conserva Express/React. Navegador usa cookie HttpOnly host-only, Secure en producción, SameSite Strict; CSRF y origen exacto protegen escrituras. Bearer queda como API explícita opt-in, nunca localStorage del navegador. Base remota exige certificado TLS verificado; se retiran parámetros URL que puedan sustituir esa política. Health sin secretos reporta commit, no certifica base ni banco.
+
+### ADR-015: operación central confirmada y cola durable
+
+Estado: implementado; prueba de campo pendiente. Las ventas se guardan en cola incluso online, con UUID, copia por clave de venta y ACK explícito; servidor valida propietario, precio, unidades y saldo en transacciones idempotentes. Un ID económico modificado produce409. Despacho/reposición/merma/sobrantes/cierre/pago de comisión esperan confirmación central. Sobrantes físicos no son cierre ni devolución confirmada. Catálogo e inventario se hidratan por rol, no se inventa stock inicial. Fábrica, gastos, radar y otros módulos locales no están certificados como persistencia compartida.
+
+### ADR-016: preservar fórmula económica activa
+
+Estado: conservada con decisión de negocio pendiente. La pantalla operativa anterior liquidaba `max(0, comisión+incentivo−faltantes−vivienda)`. El módulo alternativo de dominio descontaba además diferencia de efectivo. No se impuso esa deducción; cierre central calcula la regla operativa existente y registra snapshot de configuración/importes. El incentivo se recibe como decisión autorizada del coordinador, los totales se derivan del servidor. Cambiar esta política requiere acuerdo explícito del negocio y prueba de liquidación.
+
+### ADR-017: Express y frontend en Vercel
+
+Estado: configuración implementada; deployment no certificado. Se actualiza ADR-002/007: la documentación vigente de Vercel admite Express mediante `server.ts` con exportdefault. Los assets de React se generan en `public/**`; `express.static` no sirve esos assets en Vercel. El build copia sólo `index.html` y assets, jamás `server.cjs` o su mapa; API desconocida devuelve JSON404 antes de SPA. No se migra framework ni se necesita inventar un segundo backend por limitación histórica del hosting. Migraciones se incluyen como archivos del servidor, nunca se ejecutan automáticamente al arrancar/build. Fuente primaria consultada: https://vercel.com/docs/frameworks/backend/express y https://vercel.com/docs/project-configuration/vercel-json.
+
+### ADR-019: precios explícitos del catálogo central
+
+Estado: implementado. Se corrige la contradicción entre configuración administrativa y precios fijos de la terminal. En producción, unidad/combos/adicional usan su precio de variedad en catálogo y servidor compara centavos exactos. Las promociones fijas de ADR-011 se conservan únicamente en pruebas/demo sin base. No se actualizan importes históricos ni se eligen precios comerciales nuevos. La semilla SQL anterior tiene valores de referencia diferentes del prototipo: el administrador debe revisar catálogo, nombres y valores antes del primer despacho. Precios, disponibilidad y política económica se bloquean mientras hay jornadas abiertas. El alta de usuario no utiliza UPSERT: un ID existente409 debe editarse mediante la ruta que aplica los controles económicos.
+
+### ADR-018: OCR y banco como autoridades diferentes
+
+Estado: implementación en entrega actual; sandbox/deployment pendiente. OCR extrae campos sólo si la API respondió de forma utilizable; desconocido sigue desconocido. Banco sólo confirma un pago aprobado, con receptor/moneda/importe de la venta central autorizada. Firma de webhook no reemplaza la consulta de estado bancaria. Persistencia y unicidad de la operación impiden reutilizarla para otra venta. No se usan fallbacks positivos o enlaces Checkout ficticios.
+
+## Estado histórico (12 de octubre de 2026)
 
 ADR-013 sustituye los contratos antiguos de autenticación y sus contingencias. Los estados históricos no certifican producción. Consultar `AUTHENTICATION.md`, `HITO_1_2_1_INFORME.md` y `POSTGRES_AUTH_TESTS.md` antes de continuar.
 

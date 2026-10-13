@@ -12,6 +12,7 @@
  */
 
 import { isDbConfigured, query } from './connection';
+import type { PoolClient } from 'pg';
 import { ProductVariety, PaymentMethod } from '../../types';
 import { INITIAL_VARIETIES } from '../../mockData';
 
@@ -51,10 +52,11 @@ export interface SaleValidationResult {
  * Resuelve una variedad de producto consultando exclusivamente PostgreSQL si está configurada la base,
  * o recurriendo al catálogo de contingencia en modo local sin base central.
  */
-export async function resolveVariety(varietyId: string): Promise<ProductVariety | null> {
+export async function resolveVariety(varietyId: string, client?: PoolClient): Promise<ProductVariety | null> {
   if (isDbConfigured()) {
     try {
-      const res = await query(`
+      const execute = client ? client.query.bind(client) : query;
+      const res = await execute(`
         SELECT 
           id, name, category, description,
           is_available as "isAvailable", is_active as "isActive",
@@ -63,6 +65,7 @@ export async function resolveVariety(varietyId: string): Promise<ProductVariety 
           custom_combos as "customCombos"
         FROM product_varieties
         WHERE id = $1
+        ${client ? 'FOR SHARE' : ''}
       `, [varietyId]);
 
       if (res.rows.length === 0) return null;
@@ -80,8 +83,8 @@ export async function resolveVariety(varietyId: string): Promise<ProductVariety 
 /**
  * Valida la integridad estructural, las reglas de negocio de unidades y los precios oficiales de una venta.
  */
-export async function validateSaleIntegrity(sale: any): Promise<SaleValidationResult> {
-  if (!sale || typeof sale !== 'object') {
+export async function validateSaleIntegrity(sale: any, client?: PoolClient): Promise<SaleValidationResult> {
+  if (!sale || typeof sale !== 'object' || Array.isArray(sale)) {
     return {
       isValid: false,
       code: 'INVALID_PAYLOAD',
@@ -120,8 +123,8 @@ export async function validateSaleIntegrity(sale: any): Promise<SaleValidationRe
   const baseUnitsPerPackage = ITEM_UNITS_MAP[itemType];
 
   // 4. Unidades equivalentes
-  const units = Number(sale.quantityUnitsEquivalent);
-  if (!Number.isInteger(units) || units <= 0) {
+  const units = sale.quantityUnitsEquivalent;
+  if (!Number.isSafeInteger(units) || units <= 0 || units > 1000000) {
     return {
       isValid: false,
       code: 'INVALID_UNITS_EQUIVALENT',
@@ -140,8 +143,8 @@ export async function validateSaleIntegrity(sale: any): Promise<SaleValidationRe
   const packagesCount = Math.floor(units / baseUnitsPerPackage);
 
   // 5. Total monetario
-  const totalAmount = Number(sale.totalAmount);
-  if (isNaN(totalAmount) || totalAmount <= 0) {
+  const totalAmount = sale.totalAmount;
+  if (typeof totalAmount !== 'number' || !Number.isFinite(totalAmount) || totalAmount <= 0 || totalAmount > 9999999999.99 || Math.abs(Math.round(totalAmount * 100) - totalAmount * 100) > 0.0001) {
     return {
       isValid: false,
       code: 'INVALID_TOTAL_AMOUNT',
@@ -158,7 +161,7 @@ export async function validateSaleIntegrity(sale: any): Promise<SaleValidationRe
     };
   }
 
-  const variety = await resolveVariety(sale.varietyId);
+  const variety = await resolveVariety(sale.varietyId, client);
   if (!variety) {
     return {
       isValid: false,
@@ -167,7 +170,7 @@ export async function validateSaleIntegrity(sale: any): Promise<SaleValidationRe
     };
   }
 
-  if (variety.isActive === false) {
+  if (variety.isActive === false || variety.isAvailable === false) {
     return {
       isValid: false,
       code: 'INACTIVE_VARIETY',
@@ -178,7 +181,8 @@ export async function validateSaleIntegrity(sale: any): Promise<SaleValidationRe
   // 7. Validación de Precios Oficiales (Detección de importes adulterados)
   // Obtenemos los precios oficiales permitidos para este tipo de ítem en esta variedad:
   // - Precio específico de la variedad (si está configurado)
-  // - Precio promocional estándar de la terminal de playa
+  // - Las referencias históricas se admiten sólo en pruebas/demo sin base.
+  // En producción el catálogo configurado es la única autoridad de precios.
   const allowedPackagePrices: number[] = [];
 
   switch (itemType) {
@@ -186,7 +190,7 @@ export async function validateSaleIntegrity(sale: any): Promise<SaleValidationRe
       if (typeof variety.basePriceIndividual === 'number' && variety.basePriceIndividual > 0) {
         allowedPackagePrices.push(variety.basePriceIndividual);
       }
-      if (variety.category === 'tequeno') {
+      if (!isDbConfigured() && variety.category === 'tequeno') {
         allowedPackagePrices.push(STANDARD_PROMO_PRICES.unidad);
       }
       break;
@@ -195,7 +199,7 @@ export async function validateSaleIntegrity(sale: any): Promise<SaleValidationRe
       if (variety.comboPrices?.combo3 && Number(variety.comboPrices.combo3) > 0) {
         allowedPackagePrices.push(Number(variety.comboPrices.combo3));
       }
-      if (variety.category === 'tequeno') {
+      if (!isDbConfigured() && variety.category === 'tequeno') {
         allowedPackagePrices.push(STANDARD_PROMO_PRICES.combo3);
       }
       break;
@@ -204,7 +208,7 @@ export async function validateSaleIntegrity(sale: any): Promise<SaleValidationRe
       if (variety.comboPrices?.combo6 && Number(variety.comboPrices.combo6) > 0) {
         allowedPackagePrices.push(Number(variety.comboPrices.combo6));
       }
-      if (variety.category === 'tequeno') {
+      if (!isDbConfigured() && variety.category === 'tequeno') {
         allowedPackagePrices.push(STANDARD_PROMO_PRICES.combo6);
       }
       break;
@@ -213,7 +217,7 @@ export async function validateSaleIntegrity(sale: any): Promise<SaleValidationRe
       if (variety.comboPrices?.combo12 && Number(variety.comboPrices.combo12) > 0) {
         allowedPackagePrices.push(Number(variety.comboPrices.combo12));
       }
-      if (variety.category === 'tequeno') {
+      if (!isDbConfigured() && variety.category === 'tequeno') {
         allowedPackagePrices.push(STANDARD_PROMO_PRICES.combo12);
       }
       break;
@@ -222,13 +226,13 @@ export async function validateSaleIntegrity(sale: any): Promise<SaleValidationRe
       if (typeof variety.basePriceIndividual === 'number' && variety.basePriceIndividual > 0) {
         allowedPackagePrices.push(variety.basePriceIndividual);
       }
-      allowedPackagePrices.push(STANDARD_PROMO_PRICES.adicional);
+      if (!isDbConfigured()) allowedPackagePrices.push(STANDARD_PROMO_PRICES.adicional);
       break;
   }
 
   // Verificar si el total recibido coincide con alguno de los precios oficiales para el multiplicador
   const expectedTotals = allowedPackagePrices.map((p) => p * packagesCount);
-  const matchesOfficialPrice = expectedTotals.some((expected) => Math.abs(expected - totalAmount) < 0.01);
+  const matchesOfficialPrice = expectedTotals.some((expected) => Math.round(expected * 100) === Math.round(totalAmount * 100));
 
   if (!matchesOfficialPrice) {
     const formattedExpected = expectedTotals.map((e) => `$${e.toLocaleString('es-AR')}`).join(' o ');
@@ -247,3 +251,60 @@ export async function validateSaleIntegrity(sale: any): Promise<SaleValidationRe
     expectedTotal: totalAmount
   };
 }
+
+/** Errores del contrato operativo; nunca devolver errores SQL/credenciales al cliente. */
+export class DataIntegrityError extends Error {
+  constructor(public code: string, message: string, public status = 400) {
+    super(message);
+    this.name = 'DataIntegrityError';
+  }
+}
+
+export interface OperationActor {
+  userId: string;
+  userName: string;
+  role: 'admin' | 'coordinator' | 'seller' | 'factory_worker';
+}
+
+export function assertOperationId(value: unknown, label: string): asserts value is string {
+  if (typeof value !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(value)) {
+    throw new DataIntegrityError('INVALID_IDENTIFIER', `${label} inválido.`);
+  }
+}
+
+export function assertOperationQuantity(value: unknown, label: string, allowZero = false): asserts value is number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < (allowZero ? 0 : 1) || value > 1000000) {
+    throw new DataIntegrityError('INVALID_QUANTITY', `${label} debe ser una cantidad entera válida.`);
+  }
+}
+
+export function assertOperationMoney(value: unknown, label: string): asserts value is number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 9999999999.99
+    || Math.abs(Math.round(value * 100) - value * 100) > 0.0001) {
+    throw new DataIntegrityError('INVALID_AMOUNT', `${label} debe ser un importe válido con hasta dos decimales.`);
+  }
+}
+
+/** Coordina sólo recursos asignados; un administrador puede supervisar otras jornadas. */
+export function assertShiftMutationAccess(shift: { seller_id?: string; coordinator_id?: string }, actor?: OperationActor): void {
+  if (!actor) return; // Uso interno/repositorio; las rutas siempre entregan actor autenticado.
+  if (actor.role === 'factory_worker'
+      || (actor.role === 'seller' && shift.seller_id !== actor.userId)
+      || (actor.role === 'coordinator' && shift.coordinator_id !== actor.userId && shift.seller_id !== actor.userId)) {
+    throw new DataIntegrityError('FORBIDDEN', 'La jornada no pertenece a tu ámbito operativo.', 403);
+  }
+}
+
+/** Fragmento SQL interno fijo: sólo claims del servidor otorgan autoridad bancaria. */
+export const CANONICAL_BANK_SALE_SQL = `sales.payment_method != 'efectivo'
+  AND sales.validation_status = 'validada'
+  AND sales.mp_api_verification->>'matchedInApi' = 'true'
+  AND sales.mp_api_verification->>'isLiveApi' = 'true'
+  AND sales.mp_api_verification->>'apiStatus' = 'approved'
+  AND sales.mp_api_verification->>'amountMatches' = 'true'
+  AND sales.mp_api_verification->>'recipientMatches' = 'true'
+  AND sales.mp_api_verification->>'dateMatches' = 'true'
+  AND sales.mp_api_verification->>'currencyMatches' = 'true'
+  AND EXISTS (SELECT 1 FROM bank_payment_claims claim WHERE claim.sale_id=sales.id
+    AND claim.payment_id=sales.mp_api_verification->>'mpTransactionId'
+    AND claim.status='approved' AND claim.amount=sales.total_amount AND claim.currency_id='ARS')`;

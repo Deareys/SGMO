@@ -24,7 +24,7 @@ export class CloseShiftUseCase {
     const { shiftId, closingData, generatePdf } = request;
 
     // 1. Persistir el cierre de jornada en el repositorio
-    this.storageRepo.closeShift(shiftId, closingData);
+    await this.storageRepo.closeShift(shiftId, closingData);
 
     // 2. Si se solicita y hay generador de PDF disponible, emitir el documento
     if (generatePdf && this.pdfGenerator) {

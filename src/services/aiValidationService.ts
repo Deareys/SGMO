@@ -3,14 +3,10 @@
  * Servicio Cliente para Validación IA de Comprobantes y Asesor de Stock
  */
 
-import { storageService } from './storageService';
+import { authenticatedFetch } from './apiClient';
 
 function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  const token = storageService.getAuthToken();
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
   return headers;
 }
 
@@ -32,15 +28,16 @@ export interface MercadoPagoVerificationResponse {
 }
 
 export async function verifyMercadoPagoPayment(params: {
+  saleId?: string;
   operationId: string;
   expectedAmount: number;
   existingOperationIds?: string[];
 }): Promise<MercadoPagoVerificationResponse> {
   try {
-    const response = await fetch('/api/mercadopago/verify-payment', {
+    const response = await authenticatedFetch('/api/mercadopago/verify-payment', {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify(params)
+      body: JSON.stringify({ saleId:params.saleId,operationId:params.operationId })
     });
 
     if (!response.ok) {
@@ -48,7 +45,8 @@ export async function verifyMercadoPagoPayment(params: {
     }
 
     const data: MercadoPagoVerificationResponse = await response.json();
-    return data;
+    return { ...data,verified:data.verified===true && data.status==='approved' && data.isLiveApi===true
+      && data.amountMatches===true && Number.isFinite(data.amount) && Number(data.amount)>0 && !(data as any).isSimulated };
   } catch (error: any) {
     console.warn('Backend MP no disponible directamente o sin conexión en la playa, usando validación contingente segura:', error);
     const cleanId = (params.operationId || '').trim();
@@ -75,7 +73,7 @@ export async function verifyMercadoPagoPayment(params: {
       verified: false,
       status: 'pendiente_revision',
       operationId: cleanId,
-      amount: params.expectedAmount,
+      amount: undefined,
       expectedAmount: params.expectedAmount,
       amountMatches: false,
       payerName: undefined,
@@ -107,9 +105,9 @@ export interface MercadoPagoStatusResponse {
 
 export async function checkMercadoPagoConfigStatus(): Promise<MercadoPagoStatusResponse> {
   try {
-    const response = await fetch('/api/mercadopago/status');
+    const response = await authenticatedFetch('/api/mercadopago/status');
     if (!response.ok) {
-      return { configured: false, mode: 'simulation', message: 'Modo simulación local activo' };
+      return { configured: false, mode: 'unavailable', message: 'No se pudo comprobar la configuración bancaria.' };
     }
     return await response.json();
   } catch {
@@ -129,18 +127,19 @@ export interface MercadoPagoPreferenceResponse {
 }
 
 export async function createMercadoPagoPreference(params: {
-  title: string;
-  amount: number;
+  saleId?: string;
+  title?: string;
+  amount?: number;
   quantity?: number;
   payerEmail?: string;
 }): Promise<MercadoPagoPreferenceResponse> {
   try {
-    const response = await fetch('/api/mercadopago/create-preference', {
+    const response = await authenticatedFetch('/api/mercadopago/create-preference', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(params)
+      body: JSON.stringify({ saleId:params.saleId })
     });
     return await response.json();
   } catch (error: any) {
@@ -170,7 +169,7 @@ export async function getMercadoPagoRecentPayments(): Promise<{
   message?: string;
 }> {
   try {
-    const response = await fetch('/api/mercadopago/recent-payments', {
+    const response = await authenticatedFetch('/api/mercadopago/recent-payments', {
       headers: getAuthHeaders()
     });
     if (!response.ok) {
@@ -183,7 +182,7 @@ export async function getMercadoPagoRecentPayments(): Promise<{
 }
 
 /**
- * Genera dinámicamente en el cliente una imagen de comprobante oficial de Mercado Pago (Canvas HD)
+ * Genera una imagen de ensayo SIMULADA SIN VALIDEZ BANCARIA (Canvas HD).
  * Ideal para pruebas de OCR con Gemini, pruebas de fraude de doble gasto e inconsistencias de importe.
  */
 export function generateTestVoucherImage(options: {
@@ -230,7 +229,7 @@ export function generateTestVoucherImage(options: {
   ctx.fillStyle = '#ffffff';
   ctx.font = 'bold 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('mercado pago', 300, 95);
+  ctx.fillText('COMPROBANTE SIMULADO', 300, 95);
 
   // Círculo Verde con Tilde de Confirmación
   ctx.fillStyle = '#00a650';
@@ -253,12 +252,12 @@ export function generateTestVoucherImage(options: {
   ctx.fillStyle = '#1e293b';
   ctx.font = 'bold 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('¡Listo! Ya hiciste tu transferencia', 300, 270);
+  ctx.fillText('Ejemplo de ensayo · No acredita dinero', 300, 270);
 
   // Subtítulo
   ctx.fillStyle = '#64748b';
   ctx.font = '14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  ctx.fillText(`Acreditación instantánea a ${destinationAccount}`, 300, 298);
+  ctx.fillText(`Destinatario de ejemplo: ${destinationAccount}`, 300, 298);
 
   // Importe destacado
   ctx.fillStyle = '#0f172a';
@@ -306,11 +305,11 @@ export function generateTestVoucherImage(options: {
   ctx.textAlign = 'center';
   ctx.fillStyle = '#00a650';
   ctx.font = 'bold 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  ctx.fillText('🔒 Comprobante generado por Mercado Pago Oficial', 300, 745);
+  ctx.fillText('SIMULADO · SIN VALIDEZ BANCARIA', 300, 745);
 
   ctx.fillStyle = '#94a3b8';
   ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  ctx.fillText('Operación registrada bajo estándares de seguridad bancaria', 300, 770);
+  ctx.fillText('Imagen de prueba para OCR. No es un documento bancario.', 300, 770);
 
   return canvas.toDataURL('image/jpeg', 0.92);
 }
@@ -360,7 +359,7 @@ export async function analyzeVoucherWithAI(params: {
   existingOperationIds: string[];
 }): Promise<VoucherAnalysisResult> {
   try {
-    const response = await fetch('/api/ai/validate-voucher', {
+    const response = await authenticatedFetch('/api/ai/validate-voucher', {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(params)
@@ -387,7 +386,7 @@ export async function getStockRecommendationWithAI(params: {
   historicalAvgUnits: number;
 }): Promise<StockRecommendationResult> {
   try {
-    const response = await fetch('/api/ai/recommend-stock', {
+    const response = await authenticatedFetch('/api/ai/recommend-stock', {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(params)
@@ -414,47 +413,19 @@ function fallbackLocalVoucherAnalysis(params: {
   saleTimestamp: string;
   existingOperationIds: string[];
 }): VoucherAnalysisResult {
-  const generatedOpId = `MP-${Math.floor(100000000 + Math.random() * 900000000)}`;
-  const isDuplicate = (params.existingOperationIds || []).includes(generatedOpId);
-  const now = new Date();
-  const dateStr = now.toISOString().slice(0, 10);
-  const timeStr = now.toTimeString().slice(0, 5);
-
-  const amountMatches = true;
-  const isDuplicateId = isDuplicate;
-
-  // OCR solo extrae información; la ausencia de confirmación bancaria oficial obliga a 'pendiente_revision'
-  let validationStatus: 'validada' | 'pendiente_revision' | 'inconsistente' | 'sospechosa' = isDuplicateId
-    ? 'sospechosa'
-    : 'pendiente_revision';
-  let mismatchReason: string | undefined = undefined;
-
-  if (isDuplicateId) {
-    validationStatus = 'sospechosa';
-    mismatchReason = 'El ID de transacción ya fue utilizado en otra venta registrada.';
-  }
-
+  // Sin una lectura no sabemos los datos del comprobante. La venta y su imagen
+  // pueden conservarse pendientes; fabricar un ID o importe sugiere una revisión falsa.
   return {
     extractedData: {
-      operationId: generatedOpId,
-      amount: params.saleAmount,
-      date: dateStr,
-      time: timeStr,
-      senderName: 'Cliente Playa',
-      destinationAccount: 'Tequeños Costa SRL',
-      confidenceScore: 0.85,
-      aiNotes: isDuplicateId
-        ? 'Alerta de duplicidad detectada en el número de comprobante.'
-        : 'Comprobante escaneado localmente. PENDIENTE DE REVISIÓN: No verificado en banco.'
+      operationId: '', amount: 0, date: '', time: '', senderName: '',
+      destinationAccount: '', confidenceScore: 0,
+      aiNotes: 'Lectura OCR no disponible. No se extrajeron datos ni se verificó el pago.'
     },
-    validationStatus,
+    validationStatus: 'pendiente_revision',
     matchResults: {
-      amountMatches,
-      dateMatches: true,
-      isDuplicateOperationId: isDuplicateId,
-      mpApiMatched: false, // NUNCA TRUE SIN CONFIRMACIÓN OFICIAL DE MERCADO PAGO
-      mpTransactionStatus: isDuplicateId ? 'duplicate_flagged' : 'pending',
-      mismatchReason
+      amountMatches: false, dateMatches: false, isDuplicateOperationId: false,
+      mpApiMatched: false, mpTransactionStatus: 'pending',
+      mismatchReason: 'Sin lectura OCR confirmada. Requiere revisión y verificación bancaria.'
     }
   };
 }

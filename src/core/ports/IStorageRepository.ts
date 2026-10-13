@@ -28,22 +28,22 @@ export interface IStorageRepository {
   getCurrentUser(): UserProfile | null;
   setCurrentUser(user: UserProfile | null): void;
   getUsers(): UserProfile[];
-  updateUser(id: string, updates: Partial<UserProfile>): void;
+  updateUser(id: string, updates: Partial<UserProfile>): Promise<void>;
 
   // Carritos y Flota
   getCarts(): SellingCart[];
   getCartById(cartId: string): SellingCart | undefined;
-  updateCart(cartId: string, updates: Partial<SellingCart>): void;
+  updateCart(cartId: string, updates: Partial<SellingCart>): Promise<void>;
 
   // Variedades de Producto
   getVarieties(): ProductVariety[];
-  updateVariety(id: string, updates: Partial<ProductVariety>): void;
+  updateVariety(id: string, updates: Partial<ProductVariety>): Promise<void>;
 
   // Jornadas (Shifts)
   getActiveShiftForUser(userId: string): DailyShift | undefined;
   getShifts(): DailyShift[];
-  startShift(cartId: string, sellerId: string, initialStock: { varietyId: string; quantity: number }[]): DailyShift;
-  closeShift(shiftId: string, closingData: any): void;
+  startShift(cartId: string, sellerId: string, initialStock: { varietyId: string; quantity: number }[]): Promise<DailyShift>;
+  closeShift(shiftId: string, closingData: any): Promise<void>;
 
   // Ventas
   recordSale(sale: any): SaleTransaction;
@@ -57,17 +57,17 @@ export interface IStorageRepository {
     units: number;
     reason: string;
     notes?: string;
-  }): ShiftWasteRecord | undefined;
+  }): Promise<ShiftWasteRecord | undefined>;
   getWasteRecords(shiftId?: string): ShiftWasteRecord[];
   recordRestock(data: {
     shiftId: string;
     items: { varietyId: string; quantity: number }[];
     notes?: string;
-  }): ShiftRestockRecord[];
+  }): Promise<ShiftRestockRecord[]>;
 
   // Tramos de Comisión y Costos
   getCommissionTiers(): CommissionTier[];
-  updateCommissionTiers(tiers: CommissionTier[]): void;
+  updateCommissionTiers(tiers: CommissionTier[]): Promise<void>;
   getOperatingCosts(): OperationalExpense[];
 
   // Fábrica e Incidencias

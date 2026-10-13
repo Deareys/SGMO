@@ -53,16 +53,16 @@ export class LocalStorageAdapter implements IStorageRepository {
     return this.service.getState().carts.find((c) => c.id === cartId);
   }
 
-  updateCart(cartId: string, updates: Partial<SellingCart>): void {
-    this.service.updateCart(cartId, updates);
+  updateCart(cartId: string, updates: Partial<SellingCart>): Promise<void> {
+    return this.service.updateCart(cartId, updates);
   }
 
   getVarieties(): ProductVariety[] {
     return this.service.getState().varieties;
   }
 
-  updateVariety(id: string, updates: Partial<ProductVariety>): void {
-    this.service.updateVariety(id, updates);
+  updateVariety(id: string, updates: Partial<ProductVariety>): Promise<void> {
+    return this.service.updateVariety(id, updates);
   }
 
   getActiveShiftForUser(userId: string): DailyShift | undefined {
@@ -79,12 +79,12 @@ export class LocalStorageAdapter implements IStorageRepository {
     cartId: string,
     sellerId: string,
     initialStock: { varietyId: string; quantity: number }[]
-  ): DailyShift {
+  ): Promise<DailyShift> {
     return this.service.dispatchSellerShift({
-      houseId: this.service.getState().selectedHouseId || 'HOUSE-NORTE',
+      houseId: this.service.getState().selectedHouseId,
       sellerId,
       cartId,
-      zoneId: 'ZONE-STA-TERESITA-CENTRO',
+      zoneId: this.service.getState().zones[0]?.id || '',
       stockToDeliver: initialStock,
       gasPercentStart: 100,
       napkinsDelivered: 5,
@@ -93,8 +93,8 @@ export class LocalStorageAdapter implements IStorageRepository {
     });
   }
 
-  closeShift(shiftId: string, closingData: any): void {
-    this.service.closeAndReconcileShift({
+  async closeShift(shiftId: string, closingData: any): Promise<void> {
+    await this.service.closeAndReconcileShift({
       shiftId,
       cashDeclared: closingData.cashDeclared || 0,
       gasPercentEnd: closingData.gasPercentEnd || 80,
@@ -124,7 +124,7 @@ export class LocalStorageAdapter implements IStorageRepository {
     units: number;
     reason: string;
     notes?: string;
-  }): ShiftWasteRecord | undefined {
+  }): Promise<ShiftWasteRecord | undefined> {
     return this.service.recordShiftWaste(
       params.shiftId,
       params.varietyId,
@@ -147,12 +147,12 @@ export class LocalStorageAdapter implements IStorageRepository {
     return allWastes;
   }
 
-  recordRestock(data: {
+  async recordRestock(data: {
     shiftId: string;
     items: { varietyId: string; quantity: number }[];
     notes?: string;
-  }): ShiftRestockRecord[] {
-    const result = this.service.addShiftRestock(data);
+  }): Promise<ShiftRestockRecord[]> {
+    const result = await this.service.addShiftRestock(data);
     return result.restockRecords;
   }
 
@@ -160,8 +160,8 @@ export class LocalStorageAdapter implements IStorageRepository {
     return this.service.getCommissionTiers();
   }
 
-  updateCommissionTiers(tiers: CommissionTier[]): void {
-    this.service.saveCommissionTiers(tiers);
+  updateCommissionTiers(tiers: CommissionTier[]): Promise<void> {
+    return this.service.saveCommissionTiers(tiers);
   }
 
   getOperatingCosts(): OperationalExpense[] {

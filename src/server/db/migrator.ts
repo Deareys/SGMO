@@ -48,8 +48,8 @@ export async function runMigrations(): Promise<{ success: boolean; results: Migr
   const migrationsDir = path.join(process.cwd(), 'migrations');
   if (!fs.existsSync(migrationsDir)) {
     return {
-      success: true,
-      results: [{ version: 'none', success: true, message: 'Directorio migrations no encontrado.' }]
+      success: false,
+      results: [{ version: 'none', success: false, message: 'No se encontraron las migraciones; el esquema no fue verificado.' }]
     };
   }
 
@@ -90,11 +90,11 @@ export async function runMigrations(): Promise<{ success: boolean; results: Migr
       });
       console.log(`✅ [Migración aplicada]: ${file}`);
     } catch (err: any) {
-      console.error(`❌ [Error en migración ${file}]:`, err.message);
+      console.error(`No se pudo aplicar la migración ${file}.`);
       results.push({
         version,
         success: false,
-        message: `Error al aplicar: ${err.message}`
+        message: 'No se pudo aplicar la migración. El esquema requiere revisión antes de continuar.'
       });
       return { success: false, results };
     }

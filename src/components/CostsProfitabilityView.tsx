@@ -28,6 +28,7 @@ import {
   CartesianGrid
 } from 'recharts';
 import { AppState, storageService } from '../services/storageService';
+import { LocalOperationNotice } from './LocalOperationNotice';
 import { OperationalExpense } from '../types';
 
 interface CostsProfitabilityViewProps {
@@ -99,6 +100,7 @@ export const CostsProfitabilityView: React.FC<CostsProfitabilityViewProps> = ({ 
 
   return (
     <div className="space-y-6 pb-12">
+      <LocalOperationNotice>Los gastos y costos de producción son locales o estimados. La rentabilidad combina esos datos con ventas centrales: no representa una liquidación contable completa.</LocalOperationNotice>
       
       {/* Encabezado */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">

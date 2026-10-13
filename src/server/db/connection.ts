@@ -7,10 +7,12 @@
  */
 
 import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
+import { createPoolConfiguration } from './poolConfiguration';
 
 export interface DbStatus {
   status: 'DATABASE CONFIGURED' | 'DATABASE NOT CONFIGURED';
   configured: boolean;
+  connected?: boolean;
   provider: string;
   database?: string;
   host?: string;
@@ -62,25 +64,10 @@ export function getDbPool(): Pool | null {
   }
 
   if (!pool) {
-    const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL;
-    const isSslRequired = process.env.DATABASE_SSL === 'true' || 
-      (connectionString ? !connectionString.includes('localhost') && !connectionString.includes('127.0.0.1') : false);
-
-    pool = new Pool({
-      connectionString: connectionString || undefined,
-      host: process.env.PGHOST,
-      port: process.env.PGPORT ? parseInt(process.env.PGPORT, 10) : 5432,
-      database: process.env.PGDATABASE,
-      user: process.env.PGUSER,
-      password: process.env.PGPASSWORD,
-      max: 10,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
-      ssl: isSslRequired ? { rejectUnauthorized: false } : undefined
-    });
+    pool = new Pool(createPoolConfiguration());
 
     pool.on('error', (err) => {
-      console.error('❌ [PostgreSQL Pool Error inesperado]:', err.message);
+      console.error('PostgreSQL: la conexión del pool no está disponible.');
     });
   }
 
@@ -137,8 +124,9 @@ export async function getDatabaseStatus(): Promise<DbStatus> {
     return {
       status: 'DATABASE NOT CONFIGURED',
       configured: false,
+      connected: false,
       provider: 'Ninguno (Requiere DATABASE_URL en variables de entorno)',
-      message: 'PostgreSQL no está configurado. La aplicación opera con persistencia local en el navegador del dispositivo.'
+      message: 'PostgreSQL no está configurado. El acceso central está deshabilitado; las ventas aún pendientes permanecen en su dispositivo.'
     };
   }
 
@@ -155,6 +143,7 @@ export async function getDatabaseStatus(): Promise<DbStatus> {
     return {
       status: 'DATABASE CONFIGURED',
       configured: true,
+      connected: true,
       provider,
       database: res.rows[0]?.db_name,
       poolTotalCount: currentPool?.totalCount,
@@ -166,8 +155,9 @@ export async function getDatabaseStatus(): Promise<DbStatus> {
     return {
       status: 'DATABASE CONFIGURED',
       configured: true,
+      connected: false,
       provider,
-      message: `Credenciales presentes pero falló el handshake de conexión: ${err.message}`
+      message: 'La base central está configurada pero no está disponible.'
     };
   }
 }

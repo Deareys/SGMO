@@ -395,6 +395,7 @@ export interface SaleTransaction {
     zoneName?: string;
   };
   isOfflineCreated?: boolean;
+  syncStatus?: 'pending' | 'synced'; // Pendiente hasta ACK explícito de persistencia central.
 }
 
 export interface DailyShift {
