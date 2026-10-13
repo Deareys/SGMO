@@ -19,9 +19,9 @@ Un archivo workflow preparado no demuestra que un job haya pasado. Registrar aqu
 | Verificación | Estado al preparar este cambio |
 | --- | --- |
 | SQL en motor WASM | 13/10: migraciones 001–008 y diez grupos de autenticación aprobados localmente. |
-| PostgreSQL 16 mediante servicio CI | Aprobado en38441510211,commitc2e6e2c. |
-| HTTP con dos procesos y PostgreSQL real | 6grupos aprobados en38441510211. |
-| Browser headless en CI | 8escenarios aprobados enChromium,en38441510211. |
+| PostgreSQL 16 mediante servicio CI | Aprobado en 38441510211,commit c2e6e2c. |
+| HTTP con dos procesos y PostgreSQL real | 6 grupos aprobados en 38441510211. |
+| Browser headless en CI | 8 escenarios aprobados en Chromium,en 38441510211. |
 | Instancias Cloud Run/Neon | Fuera del alcance de este workflow; no comprobadas. |
 
 El job PostgreSQL conserva `postgres-auth.json` y `postgres-multiprocess.json`, con nombres de escenarios y eventual escenario fallido. El browser conserva capturas del acceso vacío y `result.json`. No se suben `.env`, dumps, SQL con credenciales, directorios de datos, cookies, tokens ni logs completos de procesos. La retención de artefactos es de siete días.
@@ -73,12 +73,12 @@ La suite en dos procesos locales mejora la evidencia de concurrencia; no certifi
 
 La ejecución [38437844058](https://github.com/Deareys/SGMO/actions/runs/38437844058) del commit `7cf7bf9` fue rechazada antes de crear jobs: la variable `runner.temp` estaba en `jobs.env`, donde ese contexto no está disponible. Se trasladó el directorio de reportes a `steps.env`. El error corresponde al workflow, no a una prueba PostgreSQL ejecutada. Consultar la siguiente ejecución del commit corregido; no contar esta ejecución como evidencia aprobada.
 
-La siguiente ejecución [38438746365](https://github.com/Deareys/SGMO/actions/runs/38438746365) ejecutó y aprobó el job `security-and-postgres`: 10 grupos de migración/autenticación, seis escenarios de dos procesos HTTP y18operaciones/pagos sobre PostgreSQL16 real, además de172tests,35regresiones,tipos/build y6configWASM. Chromium inició correctamente y detectó un assert prematuro al revisar la cookie antes de finalizar logout. El smoke ahora espera respuesta200, eliminación de cookie y rechazo401de/me; no se relajó el resultado esperado. La ejecución del siguiente commit determina el resultado completo de browser.
+La siguiente ejecución [38438746365](https://github.com/Deareys/SGMO/actions/runs/38438746365) ejecutó y aprobó el job `security-and-postgres`: 10 grupos de migración/autenticación, seis escenarios de dos procesos HTTP y18 escenarios de operaciones/pagos sobre PostgreSQL 16 real, además de172 pruebas,35 regresiones,tipos y build y6 grupos de configuración WASM. Chromium inició correctamente y detectó un assert prematuro al revisar la cookie antes de finalizar logout. El smoke ahora espera respuesta200, eliminación de cookie y rechazo401 de /me; no se relajó el resultado esperado. La ejecución del siguiente commit determina el resultado completo de browser.
 
-La ejecución [38439626588](https://github.com/Deareys/SGMO/actions/runs/38439626588), commit `729e291`, repitió y aprobó todas las comprobaciones PostgreSQL. Browser confirmó correctamente logout y luego encontró que Configuración desaparecía justo después del login. Se identificó una redirección tardía de350msen PinLoginScreen: el callback seguía activo después de desmontar la pantalla y podía sustituir la pestaña ya elegida por el usuario. Se eliminó el retraso; el smoke mantiene su navegación inmediata para comprobar la reparación.
+La ejecución [38439626588](https://github.com/Deareys/SGMO/actions/runs/38439626588), commit `729e291`, repitió y aprobó todas las comprobaciones PostgreSQL. Browser confirmó correctamente logout y luego encontró que Configuración desaparecía justo después del login. Se identificó una redirección tardía de350 ms en PinLoginScreen: el callback seguía activo después de desmontar la pantalla y podía sustituir la pestaña ya elegida por el usuario. Se eliminó el retraso; el smoke mantiene su navegación inmediata para comprobar la reparación.
 
 ## Cierre técnico verificado
 
-**Aprobado:** [38441510211](https://github.com/Deareys/SGMO/actions/runs/38441510211), commit `c2e6e2ced60e58520fd5268b088875ccca0761b3`,13/10/2026. `security-and-postgres` y `browser` terminaron success:174tests,35regresiones,tipos/build,10grupos PostgreSQLauth/migraciones,6grupos HTTPmultiproceso,18operaciones/pagos con concurrencia,6configWASM y**8escenarios Chromium**. El push equivalente [38441503064](https://github.com/Deareys/SGMO/actions/runs/38441503064) también aprobó. Cambios posteriores de esta entrega son documentación de este resultado, sin cambiar el código probado.
+**Aprobado:** [38441510211](https://github.com/Deareys/SGMO/actions/runs/38441510211), commit `c2e6e2ced60e58520fd5268b088875ccca0761b3`, 13/10/2026. `security-and-postgres` y `browser` terminaron success: 174 pruebas,35 regresiones,tipos y build,10 grupos PostgreSQL de autenticación/migraciones,6 grupos HTTP multiproceso,18 escenarios de operaciones y pagos con concurrencia,6 grupos de configuración WASM y **8 escenarios Chromium**. El push equivalente [38441503064](https://github.com/Deareys/SGMO/actions/runs/38441503064) también aprobó. Cambios posteriores de esta entrega son documentación de este resultado, sin cambiar el código probado.
 
 Los escenarios browser verifican acceso vacío móvil, credencial errónea, cookie HttpOnly/Strict y recarga, rechazo CSRF/origen, logout y loginadmin, alta/edición503conservarformularios, y rechazo demo productivo. No certifican el preview HTTPS protegido, una operación real en Neon ni un pago externo.
