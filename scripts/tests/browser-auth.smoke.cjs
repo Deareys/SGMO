@@ -189,10 +189,17 @@ async function main() {
   checks.push('CSRF ausente y origen externo rechazados sin cerrar una sesión legítima');
 
   await page.getByTitle('Abrir menú de navegación').click();
+  // La pantalla se limpia inmediatamente por seguridad; la revocación es asíncrona.
+  const logoutResponse = page.waitForResponse((response) => response.url() === `${origin}/api/auth/logout`
+    && response.request().method() === 'POST');
   await page.getByRole('button', { name: 'Cerrar Sesión', exact: true }).click();
+  const revoked = await logoutResponse;
+  assert.equal(revoked.status(), 200);
+  await revoked.finished();
   await assertVisible(page.getByLabel('Código de usuario:'));
   assert.equal(await page.evaluate(() => localStorage.getItem('SGMO_AUTH_TOKEN')), null);
-  assert.equal((await context.cookies()).some((cookie) => cookie.name === 'sgmo-session'), false);
+  await assertEventually(async () => assert.equal((await context.cookies()).some((cookie) => cookie.name === 'sgmo-session'), false));
+  assert.equal((await context.request.get(`${origin}/api/auth/me`)).status(), 401);
   await page.getByRole('button', { name: 'Administración', exact: true }).click();
   await assertValue(page.locator('input[type="text"]'), '');
   await assertValue(page.locator('input[type="password"]'), '');

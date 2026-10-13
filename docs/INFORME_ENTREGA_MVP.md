@@ -29,6 +29,12 @@ El workflow [SGMO validation](https://github.com/Deareys/SGMO/actions) incluye P
 
 Aquí no se pudo iniciar PostgreSQL16 porque el namespace no permite asignar UID de un usuario no root; tampoco se pudo completar la descarga local de Chromium. Ninguno de esos intentos se contó como una prueba aprobada. La prueba de pérdida de conectividad del runner real corta sockets mediante proxy TCP local, no reinicia el motor ni certifica varias instancias en la nube.
 
+## Resultado PostgreSQL real en Actions
+
+La ejecución [38438746365](https://github.com/Deareys/SGMO/actions/runs/38438746365), commit `4eaf617`, ejecutó correctamente migraciones/autenticación (10 grupos), HTTP con dos procesos (6 grupos) y operaciones/pagos (18 escenarios, incluido dos conexiones concurrentes). Tipos,172tests,35regresiones,build y6configWASM también pasaron. Browser empezó en Chromium real y detectó una carrera en el smoke al revisar cookie antes de finalizar logout; se corrigió la espera sin cambiar los asserts financieros/de seguridad. Consultar el siguiente commit para la conclusión completa. Más historial en [CI.md](CI.md).
+
+Vercel marcó una preview automática como desplegada. La petición pública a `/api/health` redirigió a **Login – Vercel**: su protección impide comprobar desde esta sesión la app/backend. Esto no demuestra fallo de SGMO ni confirma su configuración. No se eludió esa protección ni se modificaron variables o datos remotos.
+
 ## Qué todavía impide certificar producción
 
 1. Estado/datos de Neon sin identificar: primero respaldo, copia aislada, revisión de migraciones y aprovisionamiento. La005 invalida credenciales heredadas una vez. Inventario inicial exige conteo real; el catálogo y alias de semilla necesitan revisión del negocio.
