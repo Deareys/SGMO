@@ -92,3 +92,7 @@ El cierre activo del prototipo usaba `max(0, comisión + incentivo − faltantes
 ## Cómo leer los resultados
 
 `npm run lint` comprueba tipos; no es ESLint ni significa que TypeScript estricto esté activado. `npm test` verifica comportamientos concretos con fixtures. Build verifica compilación. SQL WASM ejecuta SQL, pero serializa en un motor embebido; no prueba sockets ni múltiples procesos. Sólo Actions/PostgreSQL y una prueba del despliegue pueden cerrar esas evidencias. El número de pruebas cambia cuando se añaden casos; no copiar los 76/41 históricos como resultado actual.
+
+## Evidencia final y siguiente hito
+
+El código `c2e6e2c` aprobó [CI38441510211](https://github.com/Deareys/SGMO/actions/runs/38441510211),incluyendo PostgreSQL16por sockets y8escenarios Chromium. Las174pruebas y el build también aprobaron localmente. El siguiente paso es comprobar previewHTTPS/base aislada y configuración real; la petición pública de health devuelve login deVercel,por lo que no se certificó ese deployment. Ver INFORME_ENTREGA_MVP.md y CI para detalle.
