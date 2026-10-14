@@ -6,6 +6,7 @@ Aplicación React/TypeScript + Express + PostgreSQL para gestión de venta ambul
 
 - [Informe de entrega y evidencia](docs/INFORME_ENTREGA_MVP.md)
 - [Guía para Sebas: probar y entender el código](docs/GUIA_SEBAS.md)
+- [Conectar credenciales y verificar servicios](docs/CREDENCIALES_Y_VERIFICACION.md)
 - [Hitos, prompts y criterios de aceptación](docs/HITOS_Y_PROMPTS_MVP.md)
 - [Operaciones y pruebas manuales](docs/OPERACIONES_MVP.md)
 - [Configuración central e inventario inicial](docs/CONFIGURACION_CENTRAL_MVP.md)
