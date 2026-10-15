@@ -25,9 +25,11 @@
 
 ## Prioridades vigentes de esta entrega
 
+- **Actualización 15/10 — Hito 3.2:** base `sgmo-pruebas` respaldada e inicializada; preview accesible y arranque ESM corregido; login, permisos, venta compartida/idempotente y cierre comprobados por HTTP y SQL. Mercado Pago consulta oficial 200. OCR llega a Gemini pero devuelve 402 de facturación. Webhook del proveedor y ensayo desde teléfonos siguen pendientes. Evidencia y próximos hitos: [HITO_3_2_ENSAYO.md](HITO_3_2_ENSAYO.md); pasos: [PRUEBA_MANUAL_ENSAYO.md](PRUEBA_MANUAL_ENSAYO.md).
 - [x] Código: cookies/CSRF/TLS, venta y stock centrales, cola ACK, ledger banco/webhooks, configuración, CI y packaging Vercel. Evidencia/limitaciones: [INFORME_ENTREGA_MVP.md](INFORME_ENTREGA_MVP.md).
-- [ ] Verificar Actions PostgreSQL/Chromium de la revisión y preview HTTPS con base aislada.
-- [ ] Respaldar/identificar datos de Neon, revisar migraciones sobre copia y provisionar credenciales reales.
+- [x] Verificar Actions PostgreSQL/Chromium de la revisión y preview HTTPS con base aislada. Código `aec673f`, Actions `38680069628` aprobado.
+- [x] Respaldar/identificar y aplicar migraciones 001–008 exclusivamente en la rama Neon de ensayo, con verificación SQL. Production no se modificó.
+- [ ] Aprovisionar cuentas propias; las credenciales QA se retiraron y las semillas permanecen sin claves predeterminadas.
 - [ ] Configurar precios/catálogo/alias/cuenta/stock reales y probar Mercado Pago/OCR oficial con dos dispositivos.
 - [ ] Resolver fórmula de faltante de efectivo con el negocio; conservar snapshot y comprobante de liquidación reproducible.
 - [ ] PWA, IndexedDB/almacenamiento de imágenes y QA de playa; actualmente sólo sesión/turno ya cargados operan con red intermitente.

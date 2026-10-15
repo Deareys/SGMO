@@ -5,6 +5,7 @@ Aplicación React/TypeScript + Express + PostgreSQL para gestión de venta ambul
 ## Empezar a revisar
 
 - [Hito 3.2: base de ensayo y preview](docs/HITO_3_2_ENSAYO.md)
+- [Repetir el ensayo paso a paso](docs/PRUEBA_MANUAL_ENSAYO.md)
 - [Verificación de Vercel y Neon — 15/10/2026](docs/VERIFICACION_2026_10_15.md)
 - [Informe de entrega y evidencia](docs/INFORME_ENTREGA_MVP.md)
 - [Guía para Sebas: probar y entender el código](docs/GUIA_SEBAS.md)
