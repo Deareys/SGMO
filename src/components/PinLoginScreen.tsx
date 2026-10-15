@@ -3,13 +3,13 @@
  * Pantalla de Inicio de Sesión Modernizada (Hito 1.2)
  *
  * Soporta dos vías de autenticación:
- * 1. Trabajadores de Playa, Base y Fábrica: Selección de cuenta individual + PIN personal de 8 dígitos.
+ * 1. Trabajadores de Playa, Base y Fábrica: Código de cuenta individual + PIN personal de 8 dígitos.
  * 2. Administradores: Identificador (userCode/email) + Contraseña de al menos 14 caracteres.
  *
  * Alto Contraste Solar — Diseñado para lectura impecable bajo luz solar directa en la arena.
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Lock,
   Delete,
@@ -36,7 +36,7 @@ export const PinLoginScreen: React.FC<PinLoginScreenProps> = ({ onLoginSuccess }
   const [authMode, setAuthMode] = useState<'worker' | 'admin'>('worker');
 
   // Estado modo trabajador (PIN 8 dígitos)
-  const [selectedUserCode, setSelectedUserCode] = useState<string>('VEND-01');
+  const [selectedUserCode, setSelectedUserCode] = useState<string>('');
   const [pin, setPin] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isAuthenticating, setIsAuthenticating] = useState<boolean>(false);
@@ -44,26 +44,14 @@ export const PinLoginScreen: React.FC<PinLoginScreenProps> = ({ onLoginSuccess }
   const [loginSuccessUser, setLoginSuccessUser] = useState<UserProfile | null>(null);
 
   // Estado modo administrador
-  const [adminIdentifier, setAdminIdentifier] = useState<string>('carlos.admin@tequenosplaya.com');
+  const [adminIdentifier, setAdminIdentifier] = useState<string>('');
   const [adminPassword, setAdminPassword] = useState<string>('');
   const [showAdminPassword, setShowAdminPassword] = useState<boolean>(false);
 
-  // Lista de trabajadores activos
-  const workers = useMemo(() => {
-    return storageService
-      .getState()
-      .users
-      .filter((u) => u.isActive !== false && u.role !== 'admin');
-  }, []);
-
-  const selectedWorker = useMemo(() => {
-    return workers.find((w) => w.userCode === selectedUserCode || w.id === selectedUserCode);
-  }, [workers, selectedUserCode]);
-
-  // Manejo de validación de PIN (8 dígitos para trabajadores o 4 dígitos de transición)
+  // La cuenta se identifica manualmente; no publicar un listado de trabajadores.
   const handleValidatePin = useCallback(
     async (pinToValidate: string) => {
-      if (pinToValidate.length !== 8 && pinToValidate.length !== 4) return;
+      if (!/^\d{8}$/.test(pinToValidate)) return;
 
       setIsAuthenticating(true);
       setErrorMsg(null);
@@ -72,9 +60,8 @@ export const PinLoginScreen: React.FC<PinLoginScreenProps> = ({ onLoginSuccess }
         const result = await storageService.loginWithPinAsync(pinToValidate, selectedUserCode);
         if (result.success && result.user) {
           setLoginSuccessUser(result.user);
-          setTimeout(() => {
-            onLoginSuccess(result.user!);
-          }, 350);
+          // La sesión ya actualizó App; no redirigir más tarde sobre una navegación nueva.
+          onLoginSuccess(result.user);
         } else {
           setIsAuthenticating(false);
           setErrorMsg(result.error || 'PIN incorrecto o cuenta no válida.');
@@ -133,9 +120,8 @@ export const PinLoginScreen: React.FC<PinLoginScreenProps> = ({ onLoginSuccess }
       const result = await storageService.loginAsAdminAsync(adminIdentifier, adminPassword);
       if (result.success && result.user) {
         setLoginSuccessUser(result.user);
-        setTimeout(() => {
-          onLoginSuccess(result.user!);
-        }, 350);
+        // Mismo contrato que trabajador: seleccionar ruta una sola vez al confirmar login.
+        onLoginSuccess(result.user);
       } else {
         setIsAuthenticating(false);
         setErrorMsg(result.error || 'Credenciales de administrador incorrectas.');
@@ -155,6 +141,7 @@ export const PinLoginScreen: React.FC<PinLoginScreenProps> = ({ onLoginSuccess }
     if (authMode !== 'worker') return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLElement && e.target.closest('input, textarea, select, [contenteditable="true"]')) return;
       if (/^[0-9]$/.test(e.key)) {
         handleKeyPress(e.key);
       } else if (e.key === 'Backspace') {
@@ -165,7 +152,7 @@ export const PinLoginScreen: React.FC<PinLoginScreenProps> = ({ onLoginSuccess }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [pin, isAuthenticating, loginSuccessUser, authMode]);
+  }, [pin, isAuthenticating, loginSuccessUser, authMode, selectedUserCode]);
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col justify-center items-center p-3 sm:p-4 relative select-none">
@@ -224,12 +211,18 @@ export const PinLoginScreen: React.FC<PinLoginScreenProps> = ({ onLoginSuccess }
         {/* 1. MODO TRABAJADOR */}
         {authMode === 'worker' && (
           <div>
-            {/* Selector de Trabajador */}
+            {/* Identificador de Trabajador */}
             <div className="mb-3.5">
-              <label className="block text-[11px] font-black text-slate-700 uppercase tracking-wider mb-1">
-                Cuenta Individual:
+              <label htmlFor="worker-user-code" className="block text-[11px] font-black text-slate-700 uppercase tracking-wider mb-1">
+                Código de usuario:
               </label>
-              <select
+              <input
+                id="worker-user-code"
+                type="text"
+                autoComplete="username"
+                autoCapitalize="characters"
+                spellCheck={false}
+                placeholder="Ingresá tu código de usuario"
                 value={selectedUserCode}
                 onChange={(e) => {
                   setSelectedUserCode(e.target.value);
@@ -237,14 +230,8 @@ export const PinLoginScreen: React.FC<PinLoginScreenProps> = ({ onLoginSuccess }
                   setErrorMsg(null);
                 }}
                 disabled={isAuthenticating || !!loginSuccessUser}
-                className="w-full bg-slate-50 border-2 border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:border-amber-500 cursor-pointer"
-              >
-                {workers.map((w) => (
-                  <option key={w.id} value={w.userCode || w.id}>
-                    [{w.userCode || w.id}] {w.name} — {w.role === 'seller' ? 'Vendedor' : w.role === 'coordinator' ? 'Coordinador' : 'Fábrica'}
-                  </option>
-                ))}
-              </select>
+                className="w-full bg-slate-50 border-2 border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:border-amber-500"
+              />
             </div>
 
             {/* Visualizador de Dígitos (8 Dots de PIN de Alto Contraste) */}
@@ -371,7 +358,8 @@ export const PinLoginScreen: React.FC<PinLoginScreenProps> = ({ onLoginSuccess }
                 type="text"
                 value={adminIdentifier}
                 onChange={(e) => setAdminIdentifier(e.target.value)}
-                placeholder="carlos.admin@tequenosplaya.com o ADM-01"
+                placeholder="Ingresá tu código o correo"
+                autoComplete="username"
                 required
                 disabled={isAuthenticating || !!loginSuccessUser}
                 className="w-full bg-slate-50 border-2 border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:border-slate-900"
@@ -387,6 +375,7 @@ export const PinLoginScreen: React.FC<PinLoginScreenProps> = ({ onLoginSuccess }
                   type={showAdminPassword ? 'text' : 'password'}
                   value={adminPassword}
                   onChange={(e) => setAdminPassword(e.target.value)}
+                  autoComplete="current-password"
                   placeholder="••••••••••••••"
                   required
                   disabled={isAuthenticating || !!loginSuccessUser}

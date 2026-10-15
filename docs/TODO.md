@@ -1,5 +1,8 @@
 # TODO.md — Backlog Técnico y Plan de Mejoras Priorizado
 
+> **Actualización 13/10/2026:** el contenido histórico puede describir prototipo/localStorage o contratos sustituidos. Para alcance vigente, pruebas y pendientes leer [HITOS_Y_PROMPTS_MVP.md](HITOS_Y_PROMPTS_MVP.md), [GUIA_SEBAS.md](GUIA_SEBAS.md), [CI.md](CI.md) y los módulos nuevos. “Implementado” no certifica producción ni datos compartidos de todas las pantallas.
+
+
 > **Sistema:** SGMO — Tequeños Costa  
 > **Versión:** 0.6.0  
 > **Criterio de Priorización:** Seguridad y Disponibilidad > Integridad de Datos > Experiencia de Usuario > Optimizaciones Secundarias.
@@ -19,6 +22,20 @@
 - [ ] Hito 2.1: hidratar perfiles/estado desde PostgreSQL; no depender de IDs/nombres de semillas locales para restablecer cuentas existentes. Usar GET /api/users como fuente central actual.
 - [ ] Hito 2.1: `resetToFactorySeed()` elimina ventas y cola pendiente; impedir pérdidas con respaldo/confirmación de sincronización y revocar sesión central. No cambiado en este hito.
 - [ ] Hito 2.1: reanudación de sesión tras recarga offline sin inventar autenticación local.
+
+## Prioridades vigentes de esta entrega
+
+- **Actualización 15/10 — Hito 3.2:** base `sgmo-pruebas` respaldada e inicializada; preview accesible y arranque ESM corregido; login, permisos, venta compartida/idempotente y cierre comprobados por HTTP y SQL. Mercado Pago consulta oficial 200. OCR llega a Gemini pero devuelve 402 de facturación. Webhook del proveedor y ensayo desde teléfonos siguen pendientes. Evidencia y próximos hitos: [HITO_3_2_ENSAYO.md](HITO_3_2_ENSAYO.md); pasos: [PRUEBA_MANUAL_ENSAYO.md](PRUEBA_MANUAL_ENSAYO.md).
+- [x] Código: cookies/CSRF/TLS, venta y stock centrales, cola ACK, ledger banco/webhooks, configuración, CI y packaging Vercel. Evidencia/limitaciones: [INFORME_ENTREGA_MVP.md](INFORME_ENTREGA_MVP.md).
+- [x] Verificar Actions PostgreSQL/Chromium de la revisión y preview HTTPS con base aislada. Código `aec673f`, Actions `38680069628` aprobado.
+- [x] Respaldar/identificar y aplicar migraciones 001–008 exclusivamente en la rama Neon de ensayo, con verificación SQL. Production no se modificó.
+- [ ] Aprovisionar cuentas propias; las credenciales QA se retiraron y las semillas permanecen sin claves predeterminadas.
+- [ ] Configurar precios/catálogo/alias/cuenta/stock reales y probar Mercado Pago/OCR oficial con dos dispositivos.
+- [ ] Resolver fórmula de faltante de efectivo con el negocio; conservar snapshot y comprobante de liquidación reproducible.
+- [ ] PWA, IndexedDB/almacenamiento de imágenes y QA de playa; actualmente sólo sesión/turno ya cargados operan con red intermitente.
+- [ ] Centralizar módulos locales de fábrica/gastos/traslados/mantenimiento/radar y revisión manual; evitar usarlos como fuente compartida hasta ese hito.
+
+La lista histórica siguiente documenta hallazgos previos, no el estado literal del código entregado.
 
 ## 1. NIVEL 1: CRÍTICO (Seguridad y Arquitectura de Despliegue)
 

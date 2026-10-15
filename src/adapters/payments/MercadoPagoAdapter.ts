@@ -14,13 +14,14 @@ import {
   VerifyPaymentResult,
   PaymentGatewayStatus
 } from '../../core/ports/IPaymentGateway';
+import { authenticatedFetch } from '../../services/apiClient';
 
 export class MercadoPagoAdapter implements IPaymentGateway {
   private baseUrl = '/api/mercadopago';
 
   async getStatus(): Promise<PaymentGatewayStatus> {
     try {
-      const response = await fetch(`${this.baseUrl}/status`);
+      const response = await authenticatedFetch(`${this.baseUrl}/status`);
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
@@ -29,55 +30,41 @@ export class MercadoPagoAdapter implements IPaymentGateway {
         isConfigured: !!data.isConfigured,
         hasAccessToken: !!data.hasAccessToken,
         tokenPrefix: data.tokenPrefix,
-        mode: data.mode || 'sandbox',
+        mode: data.mode || 'unconfigured',
         publicKey: data.publicKey
       };
     } catch {
       return {
         isConfigured: false,
         hasAccessToken: false,
-        mode: 'mock'
+        mode: 'unavailable'
       };
     }
   }
 
-  async createPreference(
-    input: CreatePaymentPreferenceInput
-  ): Promise<CreatePaymentPreferenceResult> {
-    try {
-      const response = await fetch(`${this.baseUrl}/create-preference`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(input)
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      return {
-        preferenceId: data.preferenceId || data.id,
-        initPoint: data.initPoint || '',
-        sandboxInitPoint: data.sandboxInitPoint || data.initPoint || ''
-      };
-    } catch (err: any) {
-      // Contingencia local si el backend no responde
-      const fakeId = `pref_mock_${Date.now()}`;
-      return {
-        preferenceId: fakeId,
-        initPoint: `https://www.mercadopago.com.ar/checkout/v1/redirect?pref_id=${fakeId}`,
-        sandboxInitPoint: `https://sandbox.mercadopago.com.ar/checkout/v1/redirect?pref_id=${fakeId}`
-      };
+  async createPreference(input: CreatePaymentPreferenceInput): Promise<CreatePaymentPreferenceResult> {
+    if (!input.saleId) throw new Error('Primero debe confirmar una venta central.');
+    const response = await authenticatedFetch(`${this.baseUrl}/create-preference`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ saleId: input.saleId })
+    });
+    if (!response.ok) throw new Error('No se pudo generar un enlace oficial de pago.');
+    const result = await response.json();
+    if (result.success !== true || typeof result.preferenceId !== 'string' || !result.preferenceId
+        || typeof result.initPoint !== 'string' || !/^https:\/\/([a-z0-9-]+\.)*mercadopago\.(com|com\.ar)\//i.test(result.initPoint)) {
+      throw new Error('El servidor no confirmó un enlace oficial de pago.');
     }
+    return { preferenceId: result.preferenceId, initPoint: result.initPoint,
+      sandboxInitPoint: typeof result.sandboxInitPoint === 'string' ? result.sandboxInitPoint : '' };
   }
 
   async verifyPayment(input: VerifyPaymentInput): Promise<VerifyPaymentResult> {
+    if (!input.saleId) throw new Error('Primero debe confirmar una venta central.');
     try {
-      const response = await fetch(`${this.baseUrl}/verify-payment`, {
+      const response = await authenticatedFetch(`${this.baseUrl}/verify-payment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(input)
+        body: JSON.stringify({ saleId: input.saleId, operationId: input.paymentId })
       });
 
       if (!response.ok) {
@@ -86,14 +73,18 @@ export class MercadoPagoAdapter implements IPaymentGateway {
 
       const data = await response.json();
       return {
-        verified: data.verified === true,
-        status: data.status || (data.verified ? 'approved' : 'pending'),
-        amount: Number(data.amount) || input.expectedAmount,
+        verified: data.verified === true && data.status === 'approved' && data.isLiveApi === true
+          && data.amountMatches === true && data.isSimulated !== true
+          && typeof data.amount === 'number' && Number.isFinite(data.amount) && data.amount > 0,
+        status: data.status || 'pending',
+        amount: typeof data.amount === 'number' && Number.isFinite(data.amount) ? data.amount : undefined,
+        amountMatches: data.amountMatches === true,
+        isLiveApi: data.isLiveApi === true,
         operationId: String(data.operationId || input.paymentId),
         dateCreated: data.dateCreated,
         payerEmail: data.payerEmail,
         paymentMethodId: data.paymentMethodId,
-        isSimulated: false,
+        isSimulated: data.isSimulated === true || data.isLiveApi !== true,
         message: data.message
       };
     } catch (err: any) {
@@ -101,7 +92,9 @@ export class MercadoPagoAdapter implements IPaymentGateway {
       return {
         verified: false,
         status: 'pending',
-        amount: input.expectedAmount,
+        amount: undefined,
+        amountMatches: false,
+        isLiveApi: false,
         operationId: input.paymentId,
         isSimulated: true,
         message: 'No se pudo contactar con la API oficial de Mercado Pago (Modo sin conexión).'

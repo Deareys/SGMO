@@ -19,6 +19,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { AppState, storageService } from '../services/storageService';
+import { LocalOperationNotice } from './LocalOperationNotice';
 
 interface ProductionInventoryViewProps {
   state: AppState;
@@ -116,6 +117,7 @@ export const ProductionInventoryView: React.FC<ProductionInventoryViewProps> = (
 
   return (
     <div className="space-y-6 pb-12">
+      <LocalOperationNotice>Las compras de materias primas, lotes y traslados se registran en este navegador. Un traslado local no acredita stock central para despachar carritos.</LocalOperationNotice>
       
       {/* Cabecera */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">

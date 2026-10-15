@@ -4,8 +4,9 @@
  */
 
 import { Request, Response, NextFunction } from 'express';
-import { sessionManager, SessionData } from './sessionManager';
+import { sessionManager, SessionData } from './sessionManager.js';
 import { UserRole } from '../../types';
+import { isExplicitApiRequest, readSessionCookie } from './browserSecurity.js';
 
 // Extender la interfaz Request de Express para adjuntar la sesión
 declare global {
@@ -17,16 +18,15 @@ declare global {
 }
 
 /**
- * Extrae el Bearer token del encabezado Authorization o de x-auth-token
+ * El navegador autentica con cookie HttpOnly. Bearer sólo existe en el transporte API opt-in.
  */
 export function extractToken(req: Request): string | null {
+  const cookieToken = readSessionCookie(req);
+  if (cookieToken) return cookieToken;
+  if (!isExplicitApiRequest(req)) return null;
   const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
+  if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
     return authHeader.substring(7).trim();
-  }
-  const customHeader = req.headers['x-auth-token'];
-  if (typeof customHeader === 'string' && customHeader.length > 0) {
-    return customHeader.trim();
   }
   return null;
 }
@@ -41,12 +41,22 @@ export async function authenticateToken(req: Request, res: Response, next: NextF
     res.status(401).json({
       success: false,
       code: 'UNAUTHORIZED',
-      message: 'Acceso denegado: Se requiere un token de sesión válido en el encabezado Authorization.'
+      message: 'Se requiere una sesión válida.'
     });
     return;
   }
 
-  const session = await sessionManager.validateToken(token);
+  let session: SessionData | null;
+  try {
+    session = await sessionManager.validateToken(token);
+  } catch {
+    res.status(503).json({
+      success: false,
+      code: 'SERVICE_UNAVAILABLE',
+      message: 'El servicio de autenticación no está disponible. Intentá nuevamente.'
+    });
+    return;
+  }
   if (!session) {
     res.status(401).json({
       success: false,

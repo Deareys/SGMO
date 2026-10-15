@@ -29,11 +29,11 @@ import { calculateCommissionForSales, formatTierRange } from '../utils/commissio
 interface CommissionTiersTabProps {
   tiers: CommissionTier[];
   housingCostDaily: number;
-  onAddTier: (tierData: Omit<CommissionTier, 'id'>) => void;
-  onUpdateTier: (tierId: string, updates: Partial<CommissionTier>) => void;
-  onDeleteTier: (tierId: string) => void;
-  onToggleTier: (tierId: string) => void;
-  onResetDefaults: () => void;
+  onAddTier: (tierData: Omit<CommissionTier, 'id'>) => Promise<void>;
+  onUpdateTier: (tierId: string, updates: Partial<CommissionTier>) => Promise<void>;
+  onDeleteTier: (tierId: string) => Promise<void>;
+  onToggleTier: (tierId: string) => Promise<void>;
+  onResetDefaults: () => Promise<void>;
 }
 
 export const CommissionTiersTab: React.FC<CommissionTiersTabProps> = ({
@@ -45,6 +45,12 @@ export const CommissionTiersTab: React.FC<CommissionTiersTabProps> = ({
   onToggleTier,
   onResetDefaults
 }) => {
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionPending, setActionPending] = useState(false);
+  const runAction = async (operation: () => Promise<void>, confirmed?: () => void) => {
+    if (actionPending) return; setActionPending(true); setActionError(null);
+    try { await operation(); confirmed?.(); } catch(error) {setActionError(error instanceof Error ? error.message : 'No se confirmó el cambio.');} finally {setActionPending(false);}
+  };
   const [editingTier, setEditingTier] = useState<CommissionTier | null>(null);
   const [isCreatingTier, setIsCreatingTier] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -72,6 +78,7 @@ export const CommissionTiersTab: React.FC<CommissionTiersTabProps> = ({
 
   return (
     <div className="space-y-6 animate-fadeIn">
+      {actionError && <p role="alert" className="text-rose-300">{actionError}</p>}
       {/* Encabezado de la Sección */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
@@ -194,7 +201,7 @@ export const CommissionTiersTab: React.FC<CommissionTiersTabProps> = ({
                   <div className="mt-4 pt-3 border-t border-slate-800/70 flex items-center justify-between text-xs">
                     <button
                       type="button"
-                      onClick={() => onToggleTier(tier.id)}
+                      onClick={() => void runAction(() => onToggleTier(tier.id))}
                       className={`px-2.5 py-1 rounded-lg flex items-center space-x-1 font-semibold transition-colors ${
                         tier.isActive
                           ? 'text-slate-400 hover:text-amber-400 hover:bg-slate-800'
@@ -394,12 +401,9 @@ export const CommissionTiersTab: React.FC<CommissionTiersTabProps> = ({
             setIsCreatingTier(false);
             setEditingTier(null);
           }}
-          onSave={(tierData) => {
-            if (editingTier) {
-              onUpdateTier(editingTier.id, tierData);
-            } else {
-              onAddTier(tierData as Omit<CommissionTier, 'id'>);
-            }
+          onSave={async (tierData) => {
+            if (editingTier) await onUpdateTier(editingTier.id, tierData);
+            else await onAddTier(tierData as Omit<CommissionTier, 'id'>);
             setIsCreatingTier(false);
             setEditingTier(null);
           }}
@@ -428,8 +432,7 @@ export const CommissionTiersTab: React.FC<CommissionTiersTabProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  onDeleteTier(confirmDeleteId);
-                  setConfirmDeleteId(null);
+                  void runAction(() => onDeleteTier(confirmDeleteId), () => setConfirmDeleteId(null));
                 }}
                 className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs"
               >
@@ -468,8 +471,7 @@ export const CommissionTiersTab: React.FC<CommissionTiersTabProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  onResetDefaults();
-                  setShowResetConfirm(false);
+                  void runAction(onResetDefaults, () => setShowResetConfirm(false));
                 }}
                 className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs"
               >
@@ -488,8 +490,8 @@ export const CommissionTiersTab: React.FC<CommissionTiersTabProps> = ({
 // =========================================================================
 interface CommissionTierModalProps {
   tier: CommissionTier | null;
-  onClose: () => void;
-  onSave: (data: Partial<CommissionTier>) => void;
+  onClose: () => Promise<void>;
+  onSave: (data: Partial<CommissionTier>) => Promise<void>;
 }
 
 const CommissionTierModal: React.FC<CommissionTierModalProps> = ({ tier, onClose, onSave }) => {
@@ -500,8 +502,10 @@ const CommissionTierModal: React.FC<CommissionTierModalProps> = ({ tier, onClose
   const [ratePercent, setRatePercent] = useState<number>(tier ? Math.round(tier.rate * 100) : 10);
   const [isActive, setIsActive] = useState<boolean>(tier?.isActive ?? true);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    if (saving) return;
     e.preventDefault();
     if (!name.trim()) {
       setError('Por favor ingresa un nombre descriptivo para el tramo.');
@@ -520,13 +524,14 @@ const CommissionTierModal: React.FC<CommissionTierModalProps> = ({ tier, onClose
       return;
     }
 
-    onSave({
+    setSaving(true); setError(null);
+    try { await onSave({
       name: name.trim(),
       minSales,
       maxSales: hasNoMax ? null : maxSales,
       rate: ratePercent / 100,
       isActive
-    });
+    }); } catch (error) { setError(error instanceof Error ? error.message : "No se guardó el tramo."); } finally {setSaving(false);}
   };
 
   return (
@@ -659,7 +664,7 @@ const CommissionTierModal: React.FC<CommissionTierModalProps> = ({ tier, onClose
               Cancelar
             </button>
             <button
-              type="submit"
+              type="submit" disabled={saving}
               className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl shadow-md shadow-amber-500/20 flex items-center space-x-1.5"
             >
               <Save className="w-4 h-4" />

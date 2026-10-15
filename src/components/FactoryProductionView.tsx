@@ -24,6 +24,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { AppState, storageService } from '../services/storageService';
+import { LocalOperationNotice } from './LocalOperationNotice';
 import { ProductionOrder, ProductionRecipe, FactoryIncident } from '../types';
 
 interface FactoryProductionViewProps {
@@ -41,7 +42,7 @@ export const FactoryProductionView: React.FC<FactoryProductionViewProps> = ({ st
   const [selectedRecipeForBatch, setSelectedRecipeForBatch] = useState<ProductionRecipe | null>(null);
 
   const notifySuccess = (msg: string) => {
-    setSuccessMsg(msg);
+    setSuccessMsg(`${msg} (guardado solo en este dispositivo).`);
     setTimeout(() => setSuccessMsg(null), 3000);
   };
 
@@ -50,6 +51,7 @@ export const FactoryProductionView: React.FC<FactoryProductionViewProps> = ({ st
 
   return (
     <div className="space-y-6 pb-16">
+      <LocalOperationNotice>Las órdenes, recetas, lotes e incidencias de fábrica todavía no tienen persistencia central compartida. Registrarlos aquí no confirma stock para despacho en PostgreSQL.</LocalOperationNotice>
       
       {/* Encabezado Principal */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -546,7 +548,7 @@ export const FactoryProductionView: React.FC<FactoryProductionViewProps> = ({ st
               wasteReason,
               notes
             );
-            notifySuccess(`Orden ${completingOrder.id} finalizada y lote ingresado a cámara central`);
+            notifySuccess(`Orden ${completingOrder.id} finalizada y lote registrado localmente`);
             setCompletingOrder(null);
           }}
         />
@@ -574,7 +576,7 @@ export const FactoryProductionView: React.FC<FactoryProductionViewProps> = ({ st
           onClose={() => setIsReportingIncident(false)}
           onReport={(data) => {
             storageService.reportFactoryIncident(data);
-            notifySuccess('Incidencia y alerta enviada a los coordinadores');
+            notifySuccess('Incidencia registrada; avisá a coordinación por el canal habitual');
             setIsReportingIncident(false);
           }}
         />

@@ -5,14 +5,16 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && cp -rf dist build",
+    "dev:local": "node --env-file=.env --import tsx server.ts",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && cp -rf dist build && node scripts/prepare-vercel-public.mjs",
     "start": "node dist/server.cjs",
     "clean": "rm -rf dist server.cjs",
     "lint": "tsc --noEmit",
     "test": "node --import tsx --test scripts/tests/*.test.ts",
     "test:auth:legacy": "node --import tsx scripts/run-demo-security.ts",
     "test:auth:postgres": "node --import tsx scripts/tests/postgres-auth.integration.ts --postgres",
-    "test:auth:sql": "node --import tsx scripts/tests/postgres-auth.integration.ts --wasm"
+    "test:auth:sql": "node --import tsx scripts/tests/postgres-auth.integration.ts --wasm",
+    "db:migrate": "node --env-file=.env --import tsx scripts/migrate-database.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

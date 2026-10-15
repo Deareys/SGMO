@@ -72,6 +72,13 @@ type AdminTab =
 export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
   const [activeTab, setActiveTab] = useState<AdminTab>('params');
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
+  const [configError, setConfigError] = useState<string | null>(null);
+  const [stockHouseId, setStockHouseId] = useState('');
+  const [stockVarietyId, setStockVarietyId] = useState('');
+  const [stockQuantity, setStockQuantity] = useState(0);
+  const [stockReason, setStockReason] = useState('');
+  const [stockSaving, setStockSaving] = useState(false);
+  const [newZoneName, setNewZoneName] = useState('');
 
   // Estados para Modales de Creación / Edición
   const [editingCart, setEditingCart] = useState<SellingCart | null>(null);
@@ -109,15 +116,20 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
     setTimeout(() => setSaveSuccessMsg(null), 3000);
   };
 
+  React.useEffect(() => { setGlobalParams(state.systemConfig); }, [state.systemConfig]);
+  const reportConfigError = (error: unknown) => setConfigError(error instanceof Error ? error.message : 'No se confirmó el cambio.');
+
   // Guardar Parámetros Globales
-  const handleSaveGlobalParams = (e: React.FormEvent) => {
+  const handleSaveGlobalParams = async (e: React.FormEvent) => {
     e.preventDefault();
-    storageService.updateSystemConfig(globalParams);
-    notifySuccess('Parámetros del sistema actualizados con éxito');
+    setConfigError(null);
+    try { await storageService.updateSystemConfig(globalParams);
+    notifySuccess('Parámetros confirmados por el servidor'); } catch (error) { reportConfigError(error); }
   };
 
   return (
     <div className="space-y-6 pb-16">
+      {configError && <p role="alert" className="bg-rose-100 text-rose-900 border-2 border-rose-500 p-4 rounded-xl">{configError}</p>}
       
       {/* Encabezado Principal */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -586,24 +598,24 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
         <CommissionTiersTab
           tiers={state.systemConfig?.commissionTiers || []}
           housingCostDaily={state.systemConfig?.housingCostPerPersonDaily || 8000}
-          onAddTier={(tierData) => {
-            storageService.addCommissionTier(tierData);
+          onAddTier={async (tierData) => {
+            await storageService.addCommissionTier(tierData);
             notifySuccess(`Nuevo tramo "${tierData.name}" agregado con éxito`);
           }}
-          onUpdateTier={(tierId, updates) => {
-            storageService.updateCommissionTier(tierId, updates);
+          onUpdateTier={async (tierId, updates) => {
+            await storageService.updateCommissionTier(tierId, updates);
             notifySuccess('Tramo de comisión actualizado');
           }}
-          onDeleteTier={(tierId) => {
-            storageService.deleteCommissionTier(tierId);
+          onDeleteTier={async (tierId) => {
+            await storageService.deleteCommissionTier(tierId);
             notifySuccess('Tramo eliminado');
           }}
-          onToggleTier={(tierId) => {
-            storageService.toggleCommissionTier(tierId);
+          onToggleTier={async (tierId) => {
+            await storageService.toggleCommissionTier(tierId);
             notifySuccess('Estado del tramo actualizado');
           }}
-          onResetDefaults={() => {
-            storageService.resetCommissionTiersToDefault();
+          onResetDefaults={async () => {
+            await storageService.resetCommissionTiersToDefault();
             notifySuccess('Se restablecieron los tramos iniciales sugeridos (10%, 20%, 30%)');
           }}
         />
@@ -699,9 +711,9 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
                       <span>Editar</span>
                     </button>
                     <button
-                      onClick={() => {
-                        storageService.toggleCartActive(cart.id);
-                        notifySuccess(`Estado del carrito ${cart.code} modificado`);
+                      onClick={async () => {
+                        try { await storageService.toggleCartActive(cart.id);
+                        notifySuccess(`Estado del carrito ${cart.code} confirmado`); } catch(error) { reportConfigError(error); }
                       }}
                       className={`flex items-center space-x-1 ${
                         cart.isActive !== false ? 'text-rose-400 hover:text-rose-300' : 'text-emerald-400 hover:text-emerald-300'
@@ -799,9 +811,9 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
                     <span>Editar Precios / Datos</span>
                   </button>
                   <button
-                    onClick={() => {
-                      storageService.toggleVarietyActive(v.id);
-                      notifySuccess(`Variedad ${v.name} actualizada`);
+                    onClick={async () => {
+                      try { await storageService.toggleVarietyActive(v.id);
+                      notifySuccess(`Variedad ${v.name} confirmada`); } catch(error) { reportConfigError(error); }
                     }}
                     className={`flex items-center space-x-1 ${
                       v.isActive !== false ? 'text-rose-400 hover:text-rose-300' : 'text-emerald-400 hover:text-emerald-300'
@@ -816,6 +828,28 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
           </div>
         </div>
       )}
+
+      {activeTab === 'houses' && <div className="bg-white text-slate-950 border-2 border-slate-300 rounded-xl p-5 space-y-4">
+        <h3 className="font-bold">Conteo físico / ingreso de mercadería en la casa</h3>
+        <p className="text-sm">Ingresá la cantidad total contada para esa variedad, no sólo el incremento. El motivo queda registrado. El despacho y las devoluciones actualizan este saldo automáticamente.</p>
+        <form className="grid sm:grid-cols-2 gap-3" onSubmit={async event => {
+          event.preventDefault(); if (stockSaving) return; setStockSaving(true); setConfigError(null);
+          try { await storageService.adjustHouseStock(stockHouseId, stockVarietyId, stockQuantity, stockReason); notifySuccess('Conteo físico confirmado'); setStockReason(''); }
+          catch (error) { reportConfigError(error); } finally { setStockSaving(false); }
+        }}>
+          <select aria-label="Casa del conteo" required value={stockHouseId} onChange={event=>setStockHouseId(event.target.value)} className="border-2 p-3 rounded-lg"><option value="">Elegir casa</option>{state.houses.filter(house=>house.isActive).map(house=><option key={house.id} value={house.id}>{house.name}</option>)}</select>
+          <select aria-label="Variedad del conteo" required value={stockVarietyId} onChange={event=>setStockVarietyId(event.target.value)} className="border-2 p-3 rounded-lg"><option value="">Elegir variedad</option>{state.varieties.filter(variety=>variety.isActive).map(variety=><option key={variety.id} value={variety.id}>{variety.name}</option>)}</select>
+          <label>Unidades totales contadas<input type="number" required min="0" step="1" value={stockQuantity} onChange={event=>setStockQuantity(Number(event.target.value))} className="border-2 p-3 rounded-lg w-full" /></label>
+          <label>Motivo<input required maxLength={2000} value={stockReason} onChange={event=>setStockReason(event.target.value)} placeholder="Ingreso de lote / inventario físico" className="border-2 p-3 rounded-lg w-full" /></label>
+          <button disabled={stockSaving} type="submit" className="bg-emerald-600 text-white font-bold min-h-12 rounded-lg">{stockSaving?'Confirmando...':'Guardar conteo real'}</button>
+        </form>
+        <h3 className="font-bold">Zonas de despacho</h3>
+        <p className="text-sm">Creá las zonas reales antes del primer despacho.</p>
+        <ul>{state.zones.map(zone=><li key={zone.id}>{zone.name}</li>)}</ul>
+        <form className="flex gap-2" onSubmit={async event=>{event.preventDefault();setConfigError(null);try {await storageService.saveZones([...state.zones,{id:`ZONE-${crypto.randomUUID()}`,name:newZoneName.trim(),description:'',touristAffluence:'media',avgDailySalesUnits:0,recommendedStartUnits:0}]);setNewZoneName('');notifySuccess('Zona confirmada');} catch(error){reportConfigError(error);} }}>
+          <input required maxLength={120} aria-label="Nombre de zona nueva" value={newZoneName} onChange={event=>setNewZoneName(event.target.value)} className="border-2 p-3 rounded-lg" placeholder="Localidad / calles" /><button type="submit" className="bg-amber-400 p-3 rounded-lg font-bold">Agregar zona</button>
+        </form>
+      </div>}
 
       {/* 4. TAB: BASES OPERATIVAS */}
       {activeTab === 'houses' && (
@@ -1249,12 +1283,12 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
             setIsCreatingCart(false);
             setEditingCart(null);
           }}
-          onSave={(cartData) => {
+          onSave={async (cartData) => {
             if (editingCart) {
-              storageService.updateCart(editingCart.id, cartData);
+              await storageService.updateCart(editingCart.id, cartData);
               notifySuccess(`Carrito ${editingCart.code} actualizado`);
             } else {
-              storageService.createCart(cartData as any);
+              await storageService.createCart(cartData as any);
               notifySuccess('Nuevo carrito agregado al parque móvil');
             }
             setIsCreatingCart(false);
@@ -1271,12 +1305,12 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
             setIsCreatingVariety(false);
             setEditingVariety(null);
           }}
-          onSave={(varData) => {
+          onSave={async (varData) => {
             if (editingVariety) {
-              storageService.updateVariety(editingVariety.id, varData);
+              await storageService.updateVariety(editingVariety.id, varData);
               notifySuccess(`Producto ${editingVariety.name} actualizado`);
             } else {
-              storageService.createVariety(varData as any);
+              await storageService.createVariety(varData as any);
               notifySuccess('Nueva variedad registrada en catálogo');
             }
             setIsCreatingVariety(false);
@@ -1294,12 +1328,12 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
             setIsCreatingHouse(false);
             setEditingHouse(null);
           }}
-          onSave={(houseData) => {
+          onSave={async (houseData) => {
             if (editingHouse) {
-              storageService.updateHouse(editingHouse.id, houseData);
+              await storageService.updateHouse(editingHouse.id, houseData);
               notifySuccess(`Base operativa ${editingHouse.name} actualizada`);
             } else {
-              storageService.createHouse(houseData as any);
+              await storageService.createHouse(houseData as any);
               notifySuccess('Nueva base operativa creada con éxito');
             }
             setIsCreatingHouse(false);
@@ -1419,10 +1453,12 @@ interface CartModalProps {
   cart: SellingCart | null;
   houses: OperationalHouse[];
   onClose: () => void;
-  onSave: (data: Partial<SellingCart>) => void;
+  onSave: (data: Partial<SellingCart>) => Promise<void>;
 }
 
 const CartModal: React.FC<CartModalProps> = ({ cart, houses, onClose, onSave }) => {
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
     code: cart?.code || '',
     model: cart?.model || 'Modelo Playa Pro 2026 - Ruedas Globo',
@@ -1444,10 +1480,13 @@ const CartModal: React.FC<CartModalProps> = ({ cart, houses, onClose, onSave }) 
           </button>
         </div>
 
+        {saveError && <p role="alert" className="text-rose-300">{saveError}</p>}
         <form
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
-            onSave(formData);
+            if (saving) return;
+            setSaving(true); setSaveError(null);
+            try { await onSave(formData); } catch (error) { setSaveError(error instanceof Error ? error.message : "No se guardó el cambio."); } finally { setSaving(false); }
           }}
           className="space-y-3 text-xs"
         >
@@ -1533,7 +1572,7 @@ const CartModal: React.FC<CartModalProps> = ({ cart, houses, onClose, onSave }) 
               Cancelar
             </button>
             <button
-              type="submit"
+              type="submit" disabled={saving}
               className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg"
             >
               Guardar Carrito
@@ -1548,10 +1587,12 @@ const CartModal: React.FC<CartModalProps> = ({ cart, houses, onClose, onSave }) 
 interface VarietyModalProps {
   variety: ProductVariety | null;
   onClose: () => void;
-  onSave: (data: Partial<ProductVariety>) => void;
+  onSave: (data: Partial<ProductVariety>) => Promise<void>;
 }
 
 const VarietyModal: React.FC<VarietyModalProps> = ({ variety, onClose, onSave }) => {
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
     name: variety?.name || '',
     category: variety?.category || 'tequeno',
@@ -1575,10 +1616,13 @@ const VarietyModal: React.FC<VarietyModalProps> = ({ variety, onClose, onSave })
           </button>
         </div>
 
+        {saveError && <p role="alert" className="text-rose-300">{saveError}</p>}
         <form
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
-            onSave({
+            if (saving) return;
+            setSaving(true); setSaveError(null);
+            try { await onSave({
               name: formData.name,
               category: formData.category as any,
               description: formData.description,
@@ -1589,7 +1633,7 @@ const VarietyModal: React.FC<VarietyModalProps> = ({ variety, onClose, onSave })
                 combo6: Number(formData.combo6),
                 combo12: Number(formData.combo12)
               }
-            });
+            }); } catch (error) { setSaveError(error instanceof Error ? error.message : "No se guardó el cambio."); } finally { setSaving(false); }
           }}
           className="space-y-3 text-xs"
         >
@@ -1685,7 +1729,7 @@ const VarietyModal: React.FC<VarietyModalProps> = ({ variety, onClose, onSave })
               Cancelar
             </button>
             <button
-              type="submit"
+              type="submit" disabled={saving}
               className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg"
             >
               Guardar Variedad
@@ -1701,15 +1745,17 @@ interface HouseModalProps {
   house: OperationalHouse | null;
   users: UserProfile[];
   onClose: () => void;
-  onSave: (data: Partial<OperationalHouse>) => void;
+  onSave: (data: Partial<OperationalHouse>) => Promise<void>;
 }
 
 const HouseModal: React.FC<HouseModalProps> = ({ house, users, onClose, onSave }) => {
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
     name: house?.name || '',
     address: house?.address || '',
-    freezerCapacityUnits: house?.freezerCapacityUnits || 3000,
-    fixedCostDaily: house?.fixedCostDaily || 15000,
+    freezerCapacityUnits: house?.freezerCapacityUnits ?? 0,
+    fixedCostDaily: house?.fixedCostDaily ?? 0,
     residentUserIds: Array.isArray(house?.residentUserIds) ? house.residentUserIds : [],
     coordinatorIds: Array.isArray(house?.coordinatorIds) ? house.coordinatorIds : []
   });
@@ -1741,10 +1787,13 @@ const HouseModal: React.FC<HouseModalProps> = ({ house, users, onClose, onSave }
           </button>
         </div>
 
+        {saveError && <p role="alert" className="text-rose-300">{saveError}</p>}
         <form
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
-            onSave(formData);
+            if (saving) return;
+            setSaving(true); setSaveError(null);
+            try { await onSave(formData); } catch (error) { setSaveError(error instanceof Error ? error.message : "No se guardó el cambio."); } finally { setSaving(false); }
           }}
           className="space-y-3 text-xs"
         >
@@ -1822,7 +1871,7 @@ const HouseModal: React.FC<HouseModalProps> = ({ house, users, onClose, onSave }
               Cancelar
             </button>
             <button
-              type="submit"
+              type="submit" disabled={saving}
               className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg"
             >
               Guardar Base

@@ -94,48 +94,17 @@ export const GeneralVouchersRepositoryView: React.FC<GeneralVouchersRepositoryVi
       .filter(Boolean) as string[];
 
     const result = await verifyMercadoPagoPayment({
+      saleId: sale.id,
       operationId: opId,
       expectedAmount: sale.totalAmount,
       existingOperationIds: otherOpIds
     });
 
-    const newStatus: VoucherValidationStatus = result.verified
-      ? 'validada'
-      : result.isDuplicate
-      ? 'sospechosa'
-      : result.status === 'not_found'
-      ? 'inconsistente'
-      : 'pendiente_revision';
-
-    const updatedExtracted = {
-      ...sale.voucherExtractedData,
-      operationId: opId,
-      senderName: result.payerName || sale.voucherExtractedData?.senderName
-    };
-
-    const updatedMpVerif = {
-      matchedInApi: result.verified,
-      mpTransactionId: result.operationId,
-      apiStatus: result.status,
-      verifiedAt: new Date().toISOString(),
-      payerName: result.payerName,
-      payerEmail: result.payerEmail,
-      amount: result.amount,
-      amountMatches: result.amountMatches,
-      isDuplicate: result.isDuplicate,
-      isLiveApi: result.isLiveApi,
-      message: result.message
-    };
-
-    storageService.updateVoucherStatus(sale.id, newStatus, updatedExtracted, updatedMpVerif);
-
+    // The bank endpoint owns canonical evidence; local OCR cannot mark a payment as credited.
+    await storageService.refreshCentralState();
     if (inspectingSale?.id === sale.id) {
-      setInspectingSale({
-        ...sale,
-        validationStatus: newStatus,
-        voucherExtractedData: updatedExtracted,
-        mpApiVerification: updatedMpVerif
-      });
+      const canonical = storageService.getState().sales.find((storedSale) => storedSale.id === sale.id);
+      if (canonical) setInspectingSale(canonical);
     }
 
     setReverifyMessage(result.message);

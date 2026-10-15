@@ -45,6 +45,9 @@ export const PlanningDispatchView: React.FC<PlanningDispatchViewProps> = ({ stat
 
   // Tab de navegación del módulo
   const [activeTab, setActiveTab] = useState<'dispatch' | 'restock' | 'history'>('dispatch');
+  const [pendingOperation, setPendingOperation] = useState<'dispatch' | 'restock' | null>(null);
+  const operationInFlight = React.useRef(false);
+  const [operationError, setOperationError] = useState<string | null>(null);
 
   // Estados del Formulario de Despacho
   const [selectedSellerId, setSelectedSellerId] = useState(sellers[0]?.id || '');
@@ -128,9 +131,12 @@ export const PlanningDispatchView: React.FC<PlanningDispatchViewProps> = ({ stat
   };
 
   // Confirmar Despacho Matutino
-  const handleConfirmDispatch = (e: React.FormEvent) => {
+  const handleConfirmDispatch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedSellerId || !selectedCartId || !selectedZoneId) return;
+    if (operationInFlight.current || !selectedSellerId || !selectedCartId || !selectedZoneId) return;
+    operationInFlight.current = true;
+    setPendingOperation('dispatch');
+    setOperationError(null);
 
     const stockToDeliver = [
       { varietyId: 'VAR-CLASICO', quantity: clasicoUnits },
@@ -138,7 +144,8 @@ export const PlanningDispatchView: React.FC<PlanningDispatchViewProps> = ({ stat
       { varietyId: 'VAR-DULCE', quantity: dulceUnits }
     ].filter((s) => s.quantity > 0);
 
-    storageService.dispatchSellerShift({
+    try {
+      await storageService.dispatchSellerShift({
       sellerId: selectedSellerId,
       cartId: selectedCartId,
       zoneId: selectedZoneId,
@@ -152,12 +159,19 @@ export const PlanningDispatchView: React.FC<PlanningDispatchViewProps> = ({ stat
     });
 
     alert(`¡Despacho registrado con éxito para ${users.find((u) => u.id === selectedSellerId)?.name}! Carrito listo para salir a la playa.`);
-    onNavigate('dashboard');
+      onNavigate('dashboard');
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : 'No se pudo confirmar el despacho. Conservamos los datos para reintentar.');
+    } finally {
+      operationInFlight.current = false;
+      setPendingOperation(null);
+    }
   };
 
   // Confirmar Restock en Playa
-  const handleConfirmRestock = (e: React.FormEvent) => {
+  const handleConfirmRestock = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (operationInFlight.current) return;
     if (!targetShift) {
       alert('Seleccione un carrito con jornada activa');
       return;
@@ -172,8 +186,12 @@ export const PlanningDispatchView: React.FC<PlanningDispatchViewProps> = ({ stat
       return;
     }
 
+    operationInFlight.current = true;
+    setPendingOperation('restock');
+    setOperationError(null);
+    setRestockSuccessMessage(null);
     try {
-      storageService.addShiftRestock({
+      await storageService.addShiftRestock({
         shiftId: targetShift.id,
         items: itemsToRestock,
         originLocation: originHouse?.name || 'Base Operativa',
@@ -191,8 +209,11 @@ export const PlanningDispatchView: React.FC<PlanningDispatchViewProps> = ({ stat
       setTimeout(() => {
         setRestockSuccessMessage(null);
       }, 5000);
-    } catch (err: any) {
-      alert(`Error al registrar restock: ${err.message || err}`);
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : 'No se pudo confirmar la reposición. Conservamos los datos para reintentar.');
+    } finally {
+      operationInFlight.current = false;
+      setPendingOperation(null);
     }
   };
 
@@ -208,6 +229,8 @@ export const PlanningDispatchView: React.FC<PlanningDispatchViewProps> = ({ stat
 
   return (
     <div className="space-y-6 pb-12">
+      <p className="text-sm font-semibold text-slate-700 bg-white border-2 border-slate-300 p-3 rounded-xl">Despachos y reposiciones requieren conexión. La entrega se confirma cuando el servidor la guarda.</p>
+      {operationError && <p role="alert" className="bg-rose-50 border-2 border-rose-500 text-rose-900 p-3 rounded-xl">{operationError}</p>}
       
       {/* Encabezado */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
@@ -406,6 +429,7 @@ export const PlanningDispatchView: React.FC<PlanningDispatchViewProps> = ({ stat
           </div>
 
           <form onSubmit={handleConfirmDispatch} className="space-y-5">
+              <fieldset disabled={pendingOperation !== null} className="contents">
             
             {/* Vendedor, Carrito y Zona */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -569,14 +593,16 @@ export const PlanningDispatchView: React.FC<PlanningDispatchViewProps> = ({ stat
             <div className="pt-2">
               <button
                 type="submit"
+                disabled={pendingOperation !== null}
                 className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black text-sm rounded-xl shadow-xl shadow-amber-500/20 flex items-center justify-center space-x-2 transition-all cursor-pointer"
               >
                 <CheckCircle2 className="w-5 h-5" />
-                <span>Confirmar Salida & Despachar Carrito a la Playa</span>
+                <span>{pendingOperation === 'dispatch' ? 'Confirmando despacho…' : 'Confirmar Salida & Despachar Carrito a la Playa'}</span>
               </button>
             </div>
 
-          </form>
+            </fieldset>
+</form>
         </div>
 
       </div>
@@ -735,6 +761,7 @@ export const PlanningDispatchView: React.FC<PlanningDispatchViewProps> = ({ stat
               </div>
 
               <form onSubmit={handleConfirmRestock} className="space-y-6">
+              <fieldset disabled={pendingOperation !== null} className="contents">
                 
                 {/* 1. Datos de Trazabilidad: Origen y Destino */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -910,15 +937,16 @@ export const PlanningDispatchView: React.FC<PlanningDispatchViewProps> = ({ stat
 
                   <button
                     type="submit"
-                    disabled={currentRestockTotalUnits === 0}
+                    disabled={currentRestockTotalUnits === 0 || pendingOperation !== null}
                     className="px-6 py-3 bg-gradient-to-r from-sky-500 to-blue-500 hover:from-sky-400 hover:to-blue-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-sky-500/20 flex items-center justify-center space-x-2 transition-all cursor-pointer disabled:opacity-40"
                   >
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>Confirmar Entrega de Restock</span>
+                    <span>{pendingOperation === 'restock' ? 'Confirmando reposición…' : 'Confirmar Entrega de Restock'}</span>
                   </button>
                 </div>
 
-              </form>
+                </fieldset>
+</form>
 
               {/* Historial de Restocks Específicos de este Carrito */}
               {targetShift.restocks && targetShift.restocks.length > 0 && (
