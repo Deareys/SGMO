@@ -4,6 +4,7 @@ Aplicación React/TypeScript + Express + PostgreSQL para gestión de venta ambul
 
 ## Empezar a revisar
 
+- [Verificación de Vercel y Neon — 15/10/2026](docs/VERIFICACION_2026_10_15.md)
 - [Informe de entrega y evidencia](docs/INFORME_ENTREGA_MVP.md)
 - [Guía para Sebas: probar y entender el código](docs/GUIA_SEBAS.md)
 - [Conectar credenciales y verificar servicios](docs/CREDENCIALES_Y_VERIFICACION.md)
