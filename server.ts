@@ -46,10 +46,13 @@ app.use('/api', configRouter);
 let aiClient: GoogleGenAI | null = null;
 
 function getGeminiClient(): GoogleGenAI | null {
-  if (!aiClient && process.env.GEMINI_API_KEY) {
+  // Compatibilidad con el Secret ya cargado con una errata en Preview.
+  // La clave canónica tiene prioridad; ambos nombres son exclusivos del servidor.
+  const apiKey = process.env.GEMINI_API_KEY?.trim() || process.env.GIMINI_API_KEY?.trim();
+  if (!aiClient && apiKey) {
     try {
       aiClient = new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY,
+        apiKey,
         httpOptions: {
           timeout: 10000,
           headers: {

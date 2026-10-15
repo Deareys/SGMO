@@ -34,6 +34,12 @@ Mercado Pago: `/recent-payments` devolvió 200 y dos resultados de la cuenta con
 
 OCR: la primera imagen generada para el ensayo, con marca SIN VALIDEZ y datos ficticios, produjo HTTP 200 pero `extractionSucceeded:false`, sin operación ni importe inventados y sin acreditación bancaria. El servidor ocultaba la diferencia entre error del proveedor y lectura incompleta. Se añade `ocrFailure`, diagnóstico acotado sin mensajes/URLs/claves del SDK, y se detienen cambios de modelo ante errores 400/401/402/403. Se preservan los reintentos de contingencia existentes para errores transitorios. La comprobación del diagnóstico desplegado está pendiente.
 
+En la revisión `6662d271958c72dd8524e56138d2603e48c1db3f`, desplegada y con Actions aprobado (`38679556634`), el diagnóstico devolvió `NOT_CONFIGURED`. La configuración específica de esta rama tenía `GIMINI_API_KEY`, un nombre no consumido por SGMO; también existe una entrada global correctamente nombrada, cuya presencia por sí sola no garantizó un cliente disponible en el deployment. Se intentó corregir sólo el nombre de la entrada específica, pero Vercel rechazó la operación con 400: los Secrets no admiten cambio de nombre. No se alteró ningún valor o alcance. Para aprovechar la configuración existente sin leer ni recrear secretos, el backend acepta `GIMINI_API_KEY` como alias de compatibilidad sólo si falta o está vacía la canónica `GEMINI_API_KEY`. La canónica conserva prioridad y ambos nombres quedan fuera del frontend. La extracción real se verifica en un deployment nuevo.
+
+El cierre de la jornada ficticia quedó `conciliada`. Consulta SQL independiente: una venta de $1500 ficticios, una unidad vendida, nueve devueltas, ninguna merma, diferencia física cero, caja declarada/esperada $1500 y diferencia de caja cero. La casa quedó con 29 de las 30 unidades ficticias iniciales. Cero asignaciones de pagos bancarios. Logout del vendedor confirmado y sesión posterior rechazada.
+
+Verificación de la corrección de diagnóstico: tipos, 177 pruebas, build y 35 regresiones aprobaron. El diagnóstico usa una allowlist de razones y no expone mensajes o metadatos del SDK.
+
 ## Prompt operativo del principal
 
 ```text
@@ -44,4 +50,10 @@ Prompt de la corrección del diagnóstico OCR:
 
 ```text
 La llamada real de OCR no extrajo datos y el error genérico no permite distinguir configuración de lectura. Añadir sólo códigos seguros de diagnóstico y estado HTTP del proveedor; nunca devolver errores completos, claves, URLs ni metadatos. No seguir cambiando modelos ante errores permanentes de credenciales/facturación/solicitud. Mantener extracción y acreditación bancaria separadas. Probar errores reales del SDK y verificar ausencia de datos privados; desplegar en la misma rama de ensayo y repetir la imagen ficticia.
+```
+
+Continuación del prompt de configuración:
+
+```text
+El preview informa NOT_CONFIGURED y el Secret de esta rama tiene la errata GIMINI_API_KEY. Vercel no permite renombrar Secrets y no se debe leer, publicar o rotar el valor para esta reparación. Añadir una compatibilidad mínima en el backend: GEMINI_API_KEY tiene prioridad; GIMINI_API_KEY sólo se usa si falta/está vacía la primera. Mantener el nombre canónico en la documentación de nuevas configuraciones. Repetir tipos, pruebas, build y el OCR real con imagen ficticia antes de afirmar que quedó operativo.
 ```
