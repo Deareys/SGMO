@@ -5,4 +5,4 @@
  * Re-exporta y centraliza los tipos del dominio de la Arquitectura Hexagonal.
  */
 
-export * from '../../types';
+export * from '../../types.js';

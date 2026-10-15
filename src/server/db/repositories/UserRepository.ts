@@ -3,12 +3,12 @@
  * PostgreSQL Repository: Users (Con soporte de seguridad, user_code, passwords y PINs scrypt)
  */
 
-import { query, withTransaction } from '../connection';
+import { query, withTransaction } from '../connection.js';
 import type { PoolClient } from 'pg';
 import { createHash } from 'crypto';
 import { UserProfile } from '../../../types';
-import { DataIntegrityError } from '../salesValidation';
-import { hashPin, hashPassword, validateWorkerPin, validateAdminPassword } from '../../auth/cryptoUtils';
+import { DataIntegrityError } from '../salesValidation.js';
+import { hashPin, hashPassword, validateWorkerPin, validateAdminPassword } from '../../auth/cryptoUtils.js';
 
 export interface UserAuthRecord extends UserProfile {
   pinHash?: string | null;

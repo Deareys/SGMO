@@ -7,11 +7,11 @@
  * Un fallo de PostgreSQL se propaga: nunca habilita una sesión alternativa.
  */
 
-import { query, isDbConfigured } from '../db/connection';
-import { generateSessionToken, hashToken } from './cryptoUtils';
+import { query, isDbConfigured } from '../db/connection.js';
+import { generateSessionToken, hashToken } from './cryptoUtils.js';
 import { UserRole } from '../../types';
 import { randomUUID } from 'crypto';
-import { isIsolatedDemoEnabled } from './authPolicy';
+import { isIsolatedDemoEnabled } from './authPolicy.js';
 import type { PoolClient } from 'pg';
 
 export interface SessionData {

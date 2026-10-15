@@ -7,7 +7,7 @@
  */
 
 import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
-import { createPoolConfiguration } from './poolConfiguration';
+import { createPoolConfiguration } from './poolConfiguration.js';
 
 export interface DbStatus {
   status: 'DATABASE CONFIGURED' | 'DATABASE NOT CONFIGURED';

@@ -3,13 +3,13 @@
  * PostgreSQL Repository: Daily Shifts & Shift Stock Items
  */
 
-import { query, withTransaction } from '../connection';
+import { query, withTransaction } from '../connection.js';
 import { DailyShift, ShiftStockItem, ShiftStatus } from '../../../types';
 import type { PoolClient } from 'pg';
 import { randomUUID } from 'crypto';
-import { calculateCommissionForSales } from '../../../core/domain/commissionRules';
-import { calculateWasteDeduction } from '../../../core/domain/settlementRules';
-import { assertOperationId, assertOperationQuantity, assertOperationMoney, CANONICAL_BANK_SALE_SQL, assertShiftMutationAccess, DataIntegrityError, type OperationActor } from '../salesValidation';
+import { calculateCommissionForSales } from '../../../core/domain/commissionRules.js';
+import { calculateWasteDeduction } from '../../../core/domain/settlementRules.js';
+import { assertOperationId, assertOperationQuantity, assertOperationMoney, CANONICAL_BANK_SALE_SQL, assertShiftMutationAccess, DataIntegrityError, type OperationActor } from '../salesValidation.js';
 
 function countIdentity(items: Array<{ varietyId: string; count: number; wasteCount?: number }>): string {
   for (const item of items) {

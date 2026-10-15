@@ -1,5 +1,5 @@
 /** Only official bank responses reach this repository; OCR/client proof is never an input. */
-import { query, withTransaction } from '../connection';
+import { query, withTransaction } from '../connection.js';
 import type { UserRole } from '../../../types';
 
 export class PaymentError extends Error {

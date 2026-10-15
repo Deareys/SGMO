@@ -8,6 +8,10 @@
 
 ## Actualización vigente — 13 de octubre de 2026
 
+### ADR-020: imports ejecutables en Node ESM — 15 de octubre de 2026
+
+Se confirmó que el backend emitido con la configuración ESM del proyecto no iniciaba en Node nativo por imports relativos sin extensión y directorios sin `index.js`; tsx ocultaba esa incompatibilidad. Los especificadores del grafo ejecutable ahora señalan archivos `.js`, que TypeScript y el bundler resuelven a sus fuentes `.ts`. No cambia el framework ni la lógica del negocio. Una prueba compila el grafo, lo carga con Node sin cargador de desarrollo y solicita health por HTTP. La reparación local aprobó; su confirmación en el preview se registra en `HITO_3_2_ENSAYO.md`.
+
 Las decisiones históricas de PIN de 4 dígitos, bearer en navegador, fallback de sesiones o aprobación simulada no describen el código actual. Ver `HITOS_Y_PROMPTS_MVP.md`, `GUIA_SEBAS.md` y el informe de esta entrega. La fuente de verdad sigue siendo el código y su evidencia, no el estado “implementado” de una nota antigua.
 
 ### ADR-014: navegador con cookies, CSRF y PostgreSQL TLS

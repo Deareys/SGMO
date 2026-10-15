@@ -3,7 +3,7 @@
  */
 import crypto from 'node:crypto';
 import type { PoolClient } from 'pg';
-import { query, withTransaction } from '../connection';
+import { query, withTransaction } from '../connection.js';
 import type { BeachZone, CommissionTier, OperationalHouse, ProductVariety, SellingCart, SystemConfig } from '../../../types';
 export class ConfigurationValidationError extends Error {
   constructor(message: string, public status = 400) { super(message); }

@@ -8,7 +8,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { isDbConfigured, withTransaction, query } from './connection';
+import { isDbConfigured, withTransaction, query } from './connection.js';
 
 export interface MigrationResult {
   version: string;

@@ -13,10 +13,10 @@
 
 import { Router, Request, Response } from 'express';
 import crypto from 'node:crypto';
-import { isDbConfigured, withTransaction } from '../db/connection';
-import { isIsolatedDemoEnabled } from './authPolicy';
-import { userRepository, UserAuthRecord } from '../db/repositories/UserRepository';
-import { sessionManager } from './sessionManager';
+import { isDbConfigured, withTransaction } from '../db/connection.js';
+import { isIsolatedDemoEnabled } from './authPolicy.js';
+import { userRepository, UserAuthRecord } from '../db/repositories/UserRepository.js';
+import { sessionManager } from './sessionManager.js';
 import {
   verifyPin,
   verifyPassword,
@@ -24,12 +24,12 @@ import {
   validateAdminPassword,
   hashPin,
   hashPassword
-} from './cryptoUtils';
-import { pinRateLimiter, recordFailedAttempt, recordSuccessfulAttempt } from './rateLimiter';
-import { authenticateToken, extractToken } from './authMiddleware';
-import { INITIAL_USERS } from '../../mockData';
-import { publicProfile } from './publicProfile';
-import { browserSecurityMiddleware, issueCsrfToken, isExplicitApiRequest, setSessionCookie, clearSessionCookie } from './browserSecurity';
+} from './cryptoUtils.js';
+import { pinRateLimiter, recordFailedAttempt, recordSuccessfulAttempt } from './rateLimiter.js';
+import { authenticateToken, extractToken } from './authMiddleware.js';
+import { INITIAL_USERS } from '../../mockData.js';
+import { publicProfile } from './publicProfile.js';
+import { browserSecurityMiddleware, issueCsrfToken, isExplicitApiRequest, setSessionCookie, clearSessionCookie } from './browserSecurity.js';
 
 export const authRouter = Router();
 authRouter.use(browserSecurityMiddleware);

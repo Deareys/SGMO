@@ -3,7 +3,7 @@
  * habilita credenciales ni sesiones de prueba. La política se comparte entre
  * las rutas y el gestor de sesiones para evitar contingencias inconsistentes.
  */
-import { isDbConfigured } from '../db/connection';
+import { isDbConfigured } from '../db/connection.js';
 
 export function isIsolatedDemoEnabled(): boolean {
   return process.env.SGMO_AUTH_MODE === 'demo'

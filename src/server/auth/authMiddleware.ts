@@ -4,9 +4,9 @@
  */
 
 import { Request, Response, NextFunction } from 'express';
-import { sessionManager, SessionData } from './sessionManager';
+import { sessionManager, SessionData } from './sessionManager.js';
 import { UserRole } from '../../types';
-import { isExplicitApiRequest, readSessionCookie } from './browserSecurity';
+import { isExplicitApiRequest, readSessionCookie } from './browserSecurity.js';
 
 // Extender la interfaz Request de Express para adjuntar la sesión
 declare global {

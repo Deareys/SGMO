@@ -1,8 +1,8 @@
 /** Cambios de configuración sólo por administrador autenticado; CSRF se aplica en servidor. */
 import { Router } from 'express';
-import { authenticateToken, requireRole } from '../auth/authMiddleware';
-import { isDbConfigured } from '../db/connection';
-import { configurationRepository, ConfigurationValidationError } from '../db/repositories/ConfigurationRepository';
+import { authenticateToken, requireRole } from '../auth/authMiddleware.js';
+import { isDbConfigured } from '../db/connection.js';
+import { configurationRepository, ConfigurationValidationError } from '../db/repositories/ConfigurationRepository.js';
 export const configRouter=Router();
 const administratorOnly = [authenticateToken, requireRole('admin')];
 function mutation(action:(req:any)=>Promise<void>) {

@@ -1,14 +1,14 @@
 /** Estado central autorizado para un dispositivo. Nunca devuelve datos demo ante una caída de PostgreSQL. */
 import { Router } from 'express';
-import { authenticateToken } from '../auth/authMiddleware';
-import { isIsolatedDemoEnabled } from '../auth/authPolicy';
-import { publicProfile } from '../auth/publicProfile';
-import { isDbConfigured } from '../db/connection';
-import { userRepository } from '../db/repositories/UserRepository';
-import { shiftRepository } from '../db/repositories/ShiftRepository';
-import { saleRepository } from '../db/repositories/SaleRepository';
-import { configurationRepository } from '../db/repositories/ConfigurationRepository';
-import * as initial from '../../mockData';
+import { authenticateToken } from '../auth/authMiddleware.js';
+import { isIsolatedDemoEnabled } from '../auth/authPolicy.js';
+import { publicProfile } from '../auth/publicProfile.js';
+import { isDbConfigured } from '../db/connection.js';
+import { userRepository } from '../db/repositories/UserRepository.js';
+import { shiftRepository } from '../db/repositories/ShiftRepository.js';
+import { saleRepository } from '../db/repositories/SaleRepository.js';
+import { configurationRepository } from '../db/repositories/ConfigurationRepository.js';
+import * as initial from '../../mockData.js';
 
 export const bootstrapRouter = Router();
 bootstrapRouter.get('/bootstrap', authenticateToken, async (req, res) => {

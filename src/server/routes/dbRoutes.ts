@@ -13,14 +13,14 @@ import {
   saleRepository,
   stockRepository,
   validateSaleIntegrity
-} from '../db';
-import { authenticateToken, requireRole } from '../auth/authMiddleware';
-import { UserCredentialValidationError } from '../db/repositories/UserRepository';
-import { publicProfile } from '../auth/publicProfile';
-import { isIsolatedDemoEnabled } from '../auth/authPolicy';
-import { INITIAL_SHIFTS, INITIAL_SALES } from '../../mockData';
+} from '../db/index.js';
+import { authenticateToken, requireRole } from '../auth/authMiddleware.js';
+import { UserCredentialValidationError } from '../db/repositories/UserRepository.js';
+import { publicProfile } from '../auth/publicProfile.js';
+import { isIsolatedDemoEnabled } from '../auth/authPolicy.js';
+import { INITIAL_SHIFTS, INITIAL_SALES } from '../../mockData.js';
 import { randomUUID } from 'crypto';
-import { DataIntegrityError, assertOperationId } from '../db/salesValidation';
+import { DataIntegrityError, assertOperationId } from '../db/salesValidation.js';
 
 export const dbRouter = Router();
 

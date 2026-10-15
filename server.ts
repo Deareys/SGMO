@@ -6,14 +6,14 @@
 import express, { Request, Response } from 'express';
 import path from 'path';
 import { GoogleGenAI, Type } from '@google/genai';
-import { dbRouter } from './src/server/routes/dbRoutes';
-import { authRouter } from './src/server/auth/authRoutes';
-import { browserSecurityMiddleware } from './src/server/auth/browserSecurity';
-import { bootstrapRouter } from './src/server/routes/bootstrapRoutes';
-import { configRouter } from './src/server/routes/configRoutes';
-import { paymentRouter, handleMercadoPagoWebhook } from './src/server/routes/paymentRoutes';
-import { authenticateToken, requireRole } from './src/server/auth/authMiddleware';
-import { isIsolatedDemoEnabled } from './src/server/auth/authPolicy';
+import { dbRouter } from './src/server/routes/dbRoutes.js';
+import { authRouter } from './src/server/auth/authRoutes.js';
+import { browserSecurityMiddleware } from './src/server/auth/browserSecurity.js';
+import { bootstrapRouter } from './src/server/routes/bootstrapRoutes.js';
+import { configRouter } from './src/server/routes/configRoutes.js';
+import { paymentRouter, handleMercadoPagoWebhook } from './src/server/routes/paymentRoutes.js';
+import { authenticateToken, requireRole } from './src/server/auth/authMiddleware.js';
+import { isIsolatedDemoEnabled } from './src/server/auth/authPolicy.js';
 
 const app = express();
 export default app;

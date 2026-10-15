@@ -3,11 +3,11 @@
  * PostgreSQL Repository: Stock, Waste & Restocks
  */
 
-import { query, withTransaction } from '../connection';
+import { query, withTransaction } from '../connection.js';
 import { ShiftWasteRecord, ShiftRestockRecord, ShiftStockItem } from '../../../types';
 import type { PoolClient } from 'pg';
 import { randomUUID } from 'crypto';
-import { assertOperationId, assertOperationQuantity, assertShiftMutationAccess, DataIntegrityError, type OperationActor } from '../salesValidation';
+import { assertOperationId, assertOperationQuantity, assertShiftMutationAccess, DataIntegrityError, type OperationActor } from '../salesValidation.js';
 
 export class StockRepository {
   /** Idempotencia incluye el registro y sus contadores; reintentar no suma merma dos veces. */

@@ -11,10 +11,10 @@
  *   5. Medios de pago válidos ('efectivo', 'mercado_pago', 'transferencia').
  */
 
-import { isDbConfigured, query } from './connection';
+import { isDbConfigured, query } from './connection.js';
 import type { PoolClient } from 'pg';
 import { ProductVariety, PaymentMethod } from '../../types';
-import { INITIAL_VARIETIES } from '../../mockData';
+import { INITIAL_VARIETIES } from '../../mockData.js';
 
 export const VALID_PAYMENT_METHODS: PaymentMethod[] = ['efectivo', 'mercado_pago', 'transferencia'];
 export const VALID_ITEM_TYPES = ['unidad', 'combo3', 'combo6', 'combo12', 'adicional'] as const;

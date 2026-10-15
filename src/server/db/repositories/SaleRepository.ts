@@ -3,10 +3,10 @@
  * PostgreSQL Repository: Sales Transactions & Batch Sync
  */
 
-import { query, withTransaction } from '../connection';
+import { query, withTransaction } from '../connection.js';
 import { SaleTransaction } from '../../../types';
 import type { PoolClient } from 'pg';
-import { assertOperationId, assertShiftMutationAccess, CANONICAL_BANK_SALE_SQL, DataIntegrityError, validateSaleIntegrity, type OperationActor } from '../salesValidation';
+import { assertOperationId, assertShiftMutationAccess, CANONICAL_BANK_SALE_SQL, DataIntegrityError, validateSaleIntegrity, type OperationActor } from '../salesValidation.js';
 
 export class SaleRepository {
   async getAll(): Promise<SaleTransaction[]> {

@@ -3,10 +3,10 @@
  */
 import { Router, type Request, type Response } from 'express';
 import crypto from 'node:crypto';
-import { authenticateToken, requireRole } from '../auth/authMiddleware';
-import { isIsolatedDemoEnabled } from '../auth/authPolicy';
-import { isDbConfigured, query } from '../db/connection';
-import { bankPaymentRepository, PaymentError, type BankPayment } from '../db/repositories/BankPaymentRepository';
+import { authenticateToken, requireRole } from '../auth/authMiddleware.js';
+import { isIsolatedDemoEnabled } from '../auth/authPolicy.js';
+import { isDbConfigured, query } from '../db/connection.js';
+import { bankPaymentRepository, PaymentError, type BankPayment } from '../db/repositories/BankPaymentRepository.js';
 
 export const paymentRouter = Router();
 const accessToken = () => process.env.MERCADOPAGO_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN;
