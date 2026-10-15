@@ -14,6 +14,7 @@ import { configRouter } from './src/server/routes/configRoutes.js';
 import { paymentRouter, handleMercadoPagoWebhook } from './src/server/routes/paymentRoutes.js';
 import { authenticateToken, requireRole } from './src/server/auth/authMiddleware.js';
 import { isIsolatedDemoEnabled } from './src/server/auth/authPolicy.js';
+import { describeGeminiFailure, type GeminiFailure } from './src/server/ai/geminiFailure.js';
 
 const app = express();
 export default app;
@@ -79,6 +80,8 @@ async function generateContentWithFallback(ai: GoogleGenAI, requestOptions: any)
         return response;
       } catch (err: any) {
         lastError = err;
+        // Credenciales, facturación y solicitudes inválidas no mejoran al cambiar de modelo.
+        if ([400, 401, 402, 403].includes(err?.status)) throw err;
         const errMsg = String(err?.message || err || '');
         const isTransient = errMsg.includes('503') || errMsg.includes('high demand') || errMsg.includes('429') || errMsg.includes('UNAVAILABLE') || errMsg.includes('overloaded');
         if (isTransient && attempt === 0) {
@@ -126,6 +129,8 @@ app.post('/api/ai/validate-voucher', authenticateToken, async (req: Request, res
 
     // Ausencia de OCR no autoriza a inventar un número de operación o importe leído.
     let extractionSucceeded = false;
+    let ocrFailure: GeminiFailure | { code: 'NOT_CONFIGURED' | 'IMAGE_REQUIRED' } | null =
+      ai ? { code: 'IMAGE_REQUIRED' } : { code: 'NOT_CONFIGURED' };
     let extractedData = {
       operationId: '',
       amount: 0,
@@ -139,6 +144,7 @@ app.post('/api/ai/validate-voucher', authenticateToken, async (req: Request, res
     };
 
     if (ai && imageBase64 && imageBase64.length > 50) {
+      ocrFailure = { code: 'INVALID_RESPONSE' };
       try {
         // Limpiar encabezado data URL si viene presente
         const cleanBase64 = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
@@ -205,10 +211,11 @@ Analizá minuciosamente la imagen del comprobante y extraé los siguientes datos
             isVisualAnomalyDetected: parsed.isVisualAnomalyDetected === true
           };
           extractionSucceeded = true;
+          ocrFailure = null;
         }
       } catch (geminiError: any) {
-        const errorMsg = String(geminiError?.message || geminiError || '');
-        console.warn('Gemini OCR no disponible temporalmente (' + (errorMsg.includes('503') ? 'pico de demanda 503' : 'modo contingencia') + '). Continuando con validación de seguridad local.');
+        ocrFailure = describeGeminiFailure(geminiError);
+        console.warn('Gemini OCR: ' + JSON.stringify(ocrFailure) + '. Requiere revisión manual.');
       }
     }
 
@@ -248,6 +255,7 @@ Analizá minuciosamente la imagen del comprobante y extraé los siguientes datos
     res.json({
       extractedData,
       extractionSucceeded,
+      ocrFailure,
       validationStatus,
       matchResults: {
         amountMatches,
