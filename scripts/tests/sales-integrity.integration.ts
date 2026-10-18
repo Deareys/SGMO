@@ -236,6 +236,45 @@ try {
     assert.equal((await shiftRepository.markPayout('SHIFT-TEST','comprobante-operativo',actor)).payoutStatus,'pagado');
     await assert.rejects(shiftRepository.markPayout('SHIFT-TEST','otro-comprobante',actor),conflict('PAYOUT_CONFLICT'));
   });
+  const baselineConfig = (await query("SELECT config_value FROM system_configs WHERE config_key='GLOBAL_PARAMS'")).rows[0].config_value;
+  const zeroConfig = { ...baselineConfig, housingCostPerPersonDaily:0, deductionRatePerMissingUnit:0 };
+  delete zeroConfig.wasteToleranceThreshold;
+  delete zeroConfig.wastePenaltyRateBelowOrEqual;
+  delete zeroConfig.wastePenaltyRateAbove;
+  await query('UPDATE commission_tiers SET is_active=FALSE');
+  const economicCases = [
+    { name:'vivienda cero',housing:0,override:null,exempt:false,rate:0.2,missing:0,cash:1500,expectedHousing:0,expectedCommission:300 },
+    { name:'tarifa plana cero con faltante',housing:0,override:null,exempt:false,rate:0.2,missing:1,cash:1500,expectedHousing:0,expectedCommission:300 },
+    { name:'excepción individual cero',housing:8000,override:0,exempt:false,rate:0.2,missing:0,cash:1500,expectedHousing:0,expectedCommission:300 },
+    { name:'excepción individual positiva',housing:8000,override:125,exempt:false,rate:0.2,missing:0,cash:1500,expectedHousing:125,expectedCommission:300 },
+    { name:'exención prioritaria',housing:8000,override:125,exempt:true,rate:0.2,missing:0,cash:1500,expectedHousing:0,expectedCommission:300 },
+    { name:'comisión cero',housing:0,override:null,exempt:false,rate:0,missing:0,cash:1500,expectedHousing:0,expectedCommission:0 },
+    { name:'efectivo faltante informado sin descuento nuevo',housing:0,override:null,exempt:false,rate:0.2,missing:0,cash:0,expectedHousing:0,expectedCommission:300 }
+  ];
+  for (const [index,economicCase] of economicCases.entries()) {
+    await check(`Liquidación conserva ${economicCase.name} y snapshot histórico`, async () => {
+      const shiftId=`SHIFT-ECONOMIC-${index}`;
+      await query("UPDATE system_configs SET config_value=$1 WHERE config_key='GLOBAL_PARAMS'",[JSON.stringify({ ...zeroConfig,housingCostPerPersonDaily:economicCase.housing })]);
+      await query('UPDATE users SET commission_rate=$2,housing_cost_override=$3,housing_cost_exempt=$4 WHERE id=$1',['USR-VEND-01',economicCase.rate,economicCase.override,economicCase.exempt]);
+      await shiftRepository.createShift(shiftDraft(shiftId),actor);
+      await saleRepository.createSale(sale(`SALE-ECONOMIC-${index}`,{ shiftId }),actor);
+      const counts={ cashDeclared:economicCase.cash,returnedItems:[{ varietyId:'VAR-CLASICO',count:29-economicCase.missing,wasteCount:0 }] };
+      const closed=await shiftRepository.closeAndReconcileShift(shiftId,counts,actor);
+      assert.equal(closed.housingCostDeduction,economicCase.expectedHousing);
+      assert.equal(closed.grossCommission,economicCase.expectedCommission);
+      assert.equal(closed.commissionRate,economicCase.rate);
+      assert.equal(closed.deductionsForMissingUnits,0);
+      assert.equal(closed.cashDifference,economicCase.cash-1500);
+      assert.equal(closed.finalPayoutAmount,Math.max(0,economicCase.expectedCommission-economicCase.expectedHousing));
+      const historical=(await query('SELECT settlement_snapshot FROM daily_shifts WHERE id=$1',[shiftId])).rows[0].settlement_snapshot;
+      await query("UPDATE system_configs SET config_value=jsonb_set(config_value,'{housingCostPerPersonDaily}','99999') WHERE config_key='GLOBAL_PARAMS'");
+      await query("UPDATE users SET housing_cost_override=77777 WHERE id='USR-VEND-01'");
+      const replay=await shiftRepository.closeAndReconcileShift(shiftId,counts,actor);
+      assert.equal(replay.housingCostDeduction,closed.housingCostDeduction);
+      assert.equal(replay.finalPayoutAmount,closed.finalPayoutAmount);
+      assert.deepEqual((await query('SELECT settlement_snapshot FROM daily_shifts WHERE id=$1',[shiftId])).rows[0].settlement_snapshot,historical);
+    });
+  }
   console.log(`RESULTADO: ${passed} pruebas SQL reales aprobadas sobre ${mode === '--wasm' ? 'WASM (concurrencia distribuida no demostrada)' : 'PostgreSQL local aislado'}.`);
 } finally {
   Pool.prototype.query = originalQuery; Pool.prototype.connect = originalConnect;

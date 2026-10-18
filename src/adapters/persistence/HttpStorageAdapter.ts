@@ -208,6 +208,8 @@ export class HttpStorageAdapter implements IStorageRepository {
     return this.localFallback.getCommissionTiers();
   }
 
+  getSystemConfig() { return this.localFallback.getState().systemConfig; }
+
   updateCommissionTiers(tiers: CommissionTier[]): Promise<void> {
     return this.localFallback.saveCommissionTiers(tiers);
   }

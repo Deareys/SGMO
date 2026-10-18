@@ -64,7 +64,7 @@ import {
   INITIAL_BEACH_REPORTS
 } from '../mockData';
 import { calculateCommissionForSales } from '../utils/commissionUtils';
-import { calculateWasteDeduction } from '../core/domain/settlementRules';
+import { calculateHousingDeduction, calculateWasteDeduction } from '../core/domain/settlementRules';
 import { soundAlerts } from '../utils/soundAlerts';
 import { authenticatedFetch, resetCsrfToken } from './apiClient';
 
@@ -212,6 +212,7 @@ export class StorageService {
           return {
             ...parsed,
             currentUser: null, // La identidad se restaura exclusivamente contra el servidor.
+            centralHydrated: false, // Una caché anterior no confirma la vigencia de esta carga.
             centralStatus: 'not_loaded',
             saleSyncStatus: 'idle',
             users: syncedUsers,
@@ -419,6 +420,17 @@ export class StorageService {
       this.saveState();
       return true;
     } catch { return false; }
+  }
+
+  /** Un solo acceso de UI sin adivinar cuentas ni probar roles sucesivos.
+   * La forma de la credencial selecciona el contrato; el servidor autentica
+   * y devuelve el rol real. Nunca se recortan ni guardan contraseñas.
+   */
+  public async loginWithCredentialAsync(identifier: string, credential: string): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
+    if (!identifier.trim()) return { success:false,error:'Ingresá tu código de usuario o correo.' };
+    if (/^\d{8}$/.test(credential)) return this.loginWithPinAsync(credential,identifier.trim());
+    if (credential.length >= 14 && credential.length <= 1024) return this.loginAsAdminAsync(identifier.trim(),credential);
+    return { success:false,error:'Ingresá un PIN de 8 dígitos o una contraseña de al menos 14 caracteres.' };
   }
 
   public async loginWithPinAsync(pin: string, userCode?: string): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
@@ -943,7 +955,8 @@ export class StorageService {
       appliedCommissionTierId: this.state.systemConfig?.commissionTiers?.[0]?.id,
       appliedCommissionTierName: this.state.systemConfig?.commissionTiers?.[0]?.name,
       grossCommission: 0,
-      housingCostDeduction: seller?.housingCostExempt ? 0 : (this.state.systemConfig?.housingCostPerPersonDaily || 8000),
+      housingCostDeduction: calculateHousingDeduction({ isHousingExempt:seller?.housingCostExempt,
+        housingDeductionOverride:seller?.housingCostOverride,housingCostPerPersonDaily:this.state.systemConfig?.housingCostPerPersonDaily }),
       housingCostExempt: !!seller?.housingCostExempt,
       deductionsForMissingUnits: 0,
       incentivesOrBonuses: 0,
@@ -1071,7 +1084,7 @@ export class StorageService {
       const liveCommission = calculateCommissionForSales(
         shift.totalGrossSales,
         this.state.systemConfig?.commissionTiers || [],
-        shift.commissionRate || 0.20
+        shift.commissionRate ?? 0.20
       );
       shift.commissionRate = liveCommission.rate;
       shift.appliedCommissionTierId = liveCommission.tier?.id;
@@ -1378,11 +1391,11 @@ export class StorageService {
             rateBelowOrEqual: config.wastePenaltyRateBelowOrEqual ?? 500,
             rateAbove: config.wastePenaltyRateAbove ?? 2500
           },
-          data.deductionMissingRatePerUnit || 1500
+          data.deductionMissingRatePerUnit ?? config?.deductionRatePerMissingUnit ?? 1500
         );
         deductions = wasteBreakdown.totalDeduction;
       } else {
-        const deductionRate = data.deductionMissingRatePerUnit || config?.deductionRatePerMissingUnit || 1500;
+        const deductionRate = data.deductionMissingRatePerUnit ?? config?.deductionRatePerMissingUnit ?? 1500;
         deductions = totalDifferenceUnits * deductionRate;
       }
     }
@@ -1391,13 +1404,14 @@ export class StorageService {
     // Deducción de costo de vivienda por persona diaria (salvo exención)
     const seller = this.state.users.find((u) => u.id === shift.sellerId);
     const isExempt = !!seller?.housingCostExempt;
-    const housingDeduction = isExempt ? 0 : (this.state.systemConfig?.housingCostPerPersonDaily || 8000);
+    const housingDeduction = calculateHousingDeduction({ isHousingExempt:isExempt,housingDeductionOverride:seller?.housingCostOverride,
+      housingCostPerPersonDaily:this.state.systemConfig?.housingCostPerPersonDaily });
 
     // Calcular comisión del vendedor según los tramos vigentes y el total de ventas acumulado en la jornada
     const commissionCalc = calculateCommissionForSales(
       shift.totalGrossSales,
       this.state.systemConfig?.commissionTiers || [],
-      shift.commissionRate || 0.20
+      shift.commissionRate ?? 0.20
     );
 
     shift.deductionsForMissingUnits = deductions;

@@ -4,17 +4,17 @@
 
 ## Diagnóstico vigente — 18 de octubre de 2026
 
-Informe y evidencia: [DIAGNOSTICO_GENERAL_2026_10_18.md](DIAGNOSTICO_GENERAL_2026_10_18.md). En esta tarea sólo se documentaron hallazgos; no se modificó código de ejecución ni datos operativos.
+Informe inicial: [DIAGNOSTICO_GENERAL_2026_10_18.md](DIAGNOSTICO_GENERAL_2026_10_18.md). La intervención posterior autorizada repara liquidaciones y acceso; su evidencia y límites están en [HITO_3_3_LIQUIDACIONES_Y_ACCESO.md](HITO_3_3_LIQUIDACIONES_Y_ACCESO.md).
 
 - [ ] **Alta — D-01:** preparar release de la rama reparada. Main/productivo siguen en `d291d5a`; el dominio público sirve la interfaz pero sus rutas API responden 404, no tiene variables principales Production ni tablas en la rama Neon productiva. La contingencia insegura de admin local permanece en main.
-- [ ] **Alta — D-02:** respetar valores económicos cero: `ShiftRepository.closeAndReconcileShift` usa `housingCostPerPersonDaily || 8000` y tarifa plana `deductionRatePerMissingUnit || 1500`, aunque la configuración admite cero. Agregar regresiones con cero, excepción individual y coherencia de comisión en UI/PDF; conservar snapshots y reglas acordadas.
-- [ ] **Alta — D-03:** aprovisionar cuenta propia del administrador con procedimiento privado y comprensible. Hay seis perfiles originales activos, cero cuentas aprovisionadas y cero sesiones utilizables; no reactivar cuentas QA para operar.
+- [x] **Código — D-02:** corregidos ceros, excepción individual y exención de vivienda, comisión y tarifa cero; PDF/recibo conservan efectivo declarado cero. Regresiones SQL y PDF verifican el cierre y su snapshot inmutable. Validación de la nueva revisión en CI/deployment: ver informe del hito.
+- [ ] **Alta — D-03:** el administrador real será el dueño del negocio. Formulario privado `/setup` preparado y probado con identidad efímera; falta que el dueño elija su contraseña en el entorno correcto. Sebas no necesita cuenta administrativa propia. No reactivar cuentas QA para operar.
 - [ ] **Alta — D-04/05:** comprobar origen estable, webhook real y ciclo completo de Mercado Pago; revisar facturación del proyecto Gemini y repetir extracción real. MP/OCR no se reejecutaron hoy con cuentas de negocio; el último OCR real del 15/10 respondió 402.
-- [ ] **Alta para playa — D-06:** demostrar reapertura/recarga sin señal y recuperación de cola/fotos. Siguen pendientes PWA, almacenamiento de imágenes separado y ensayo físico de campo.
+- [ ] **Alta para playa — D-06:** Chromium comprobó ventas con la terminal ya abierta sin señal, ACK al reconectar, reintento tras respuesta perdida y pendiente conservado al cerrar pestaña y abrir con señal. La reapertura completamente sin red sigue sin cargar; faltan PWA, autenticación offline definida, imágenes durables y ensayo en teléfonos físicos.
 - [ ] **Alcance — D-07:** centralizar o delimitar módulos locales de fábrica, gastos, radar, mantenimiento, traslados y temporadas; no presentarlos como registros compartidos.
 - [ ] **Operación — D-08:** reducir carga inicial, revisar filtrado SQL/paginación del bootstrap, acceso administrativo a migraciones, prueba de restauración y política de diferencias de caja.
 
-Verificación del 18/10: tipos, 177 pruebas, build y 35 regresiones aprobaron; `npm audit` reportó cero vulnerabilidades conocidas. Preview con acceso autorizado: health/base 200 y rutas privadas 401 sin sesión. Chromium local no pudo ejecutarse por falta del binario; la CI del 15/10 del mismo código permanece aprobada. Esto no certifica producción ni todos los casos de liquidación.
+La verificación del diagnóstico inicial usó 177 pruebas; el hito posterior amplía la cobertura e instala Chromium aislado. Los resultados de cada revisión se registran en el informe correspondiente. La CI del 15/10 no se usa para certificar código posterior.
 
 
 > **Sistema:** SGMO — Tequeños Costa  

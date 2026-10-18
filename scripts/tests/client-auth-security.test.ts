@@ -212,6 +212,31 @@ test('Semilla sin credenciales y acceso no enumera personas ni preselecciona cue
   assert.equal(markup.includes('value="VEND-01"'), false);
   for (const user of INITIAL_USERS) assert.equal(markup.includes(user.name), false);
   assert.match(markup, /autoComplete="username"/i);
+  assert.equal((markup.match(/<form\b/g)||[]).length,1);
+  assert.equal(markup.includes('PIN Personal (8d)'),false);
+  assert.equal(markup.includes('Ingresar a Administración'),false);
+  assert.match(markup,/id="login-credential"/);
+});
+
+test('ingreso único envía sólo el contrato PIN y recibe el rol del servidor', async () => {
+  responseFactory=async()=>loginResponse(worker);
+  assert.equal((await service.loginWithCredentialAsync(worker.userCode!,testWorkerPin)).success,true);
+  assert.equal(requests.length,1);
+  assert.deepEqual(JSON.parse(String(requests[0].input?.body)),{userCode:worker.userCode,pin:testWorkerPin});
+  assert.equal(service.getState().currentUser?.role,'seller');
+});
+
+test('ingreso único admite contraseña sin elegir perfil ni intentar un PIN primero', async () => {
+  responseFactory=async()=>loginResponse(administrator);
+  assert.equal((await service.loginWithCredentialAsync(administrator.userCode!,testAdminPassword)).success,true);
+  assert.equal(requests.length,1);
+  assert.deepEqual(JSON.parse(String(requests[0].input?.body)),{identifier:administrator.userCode,password:testAdminPassword});
+});
+
+test('credencial incompleta no consulta cuentas ni envía intentos de roles alternativos', async () => {
+  for(const credential of ['1234','abcdefgh','']) assert.equal((await service.loginWithCredentialAsync('CUENTA',credential)).success,false);
+  assert.equal(requests.length,0);
+  assert.equal(service.getState().currentUser,null);
 });
 
 test('Login central elimina credenciales incluso si un servidor defectuoso las devuelve', async () => {

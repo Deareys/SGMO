@@ -597,7 +597,7 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
       {activeTab === 'commissions' && (
         <CommissionTiersTab
           tiers={state.systemConfig?.commissionTiers || []}
-          housingCostDaily={state.systemConfig?.housingCostPerPersonDaily || 8000}
+          housingCostDaily={state.systemConfig?.housingCostPerPersonDaily ?? 8000}
           onAddTier={async (tierData) => {
             await storageService.addCommissionTier(tierData);
             notifySuccess(`Nuevo tramo "${tierData.name}" agregado con éxito`);
@@ -2060,7 +2060,7 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) 
     pin: '',
     password: '',
     assignedHouseId: user?.assignedHouseId || houses[0]?.id || '',
-    commissionRate: user?.commissionRate || 0.20,
+    commissionRate: user?.commissionRate ?? 0.20,
     housingCostExempt: !!user?.housingCostExempt,
     notes: user?.notes || ''
   });

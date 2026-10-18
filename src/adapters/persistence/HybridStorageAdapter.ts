@@ -166,6 +166,8 @@ export class HybridStorageAdapter implements IStorageRepository {
     return this.local.getCommissionTiers();
   }
 
+  getSystemConfig() { return this.local.getSystemConfig(); }
+
   updateCommissionTiers(tiers: CommissionTier[]): Promise<void> {
     return this.local.updateCommissionTiers(tiers);
   }

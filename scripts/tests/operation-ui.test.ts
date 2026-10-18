@@ -6,11 +6,23 @@ import React from 'react';
 import { CloseShiftUseCase } from '../../src/core/use-cases/CloseShiftUseCase';
 import type { IStorageRepository } from '../../src/core/ports/IStorageRepository';
 import { INITIAL_SHIFTS, INITIAL_USERS, INITIAL_VARIETIES, INITIAL_SALES } from '../../src/mockData';
-import { StorageService } from '../../src/services/storageService';
+import { StorageService, type AppState } from '../../src/services/storageService';
 import { SellerTerminalView } from '../../src/components/SellerTerminalView';
 import { PlanningDispatchView } from '../../src/components/PlanningDispatchView';
+import { ReconciliationClosingView } from '../../src/components/ReconciliationClosingView';
 
 const initialShift = INITIAL_SHIFTS[0];
+
+test('El arqueo histórico conserva efectivo declarado cero y queda de sólo lectura', () => {
+  const state: AppState = sellerState();
+  state.shifts = [{ ...state.shifts[0], status: 'conciliada', cashExpected: 1500, cashDeclared: 0,
+    housingCostExempt: false, housingCostDeduction: 0, commissionRate: 0 }];
+  const html = renderToStaticMarkup(React.createElement(ReconciliationClosingView, { state }));
+  const cashInput = html.match(/<input\b[^>]*aria-label="Efectivo Entregado en Mano \(\$\)"[^>]*>/)?.[0];
+  assert.ok(cashInput);
+  assert.match(cashInput, /value="0"/);
+  assert.match(cashInput, /disabled=""/);
+});
 
 test('Un cierre rechazado no emite PDF ni presenta un cierre guardado', async () => {
   let pdfCalls = 0;

@@ -88,7 +88,7 @@ jobs:
       - run: npm run build
       - name: Install isolated browser QA runtime
         run: |
-          npm install --prefix "$RUNNER_TEMP/sgmo-browser-runtime" playwright@1.56.1
+          npm install --prefix "$RUNNER_TEMP/sgmo-browser-runtime" playwright@1.56.1 @electric-sql/pglite@0.3.14
           "$RUNNER_TEMP/sgmo-browser-runtime/node_modules/.bin/playwright" install --with-deps chromium
       - name: Browser smoke with ephemeral demo accounts
         run: node scripts/tests/browser-auth.smoke.cjs
@@ -96,6 +96,13 @@ jobs:
           SGMO_PLAYWRIGHT_MODULES: ${{ runner.temp }}/sgmo-browser-runtime/node_modules
           SGMO_BROWSER_QA_DIR: ${{ runner.temp }}/sgmo-browser-report
           SGMO_BROWSER_QA_PORT: '3102'
+      - name: Browser owner onboarding, independent sessions and offline recovery
+        run: node scripts/tests/browser-central.smoke.cjs
+        env:
+          SGMO_PLAYWRIGHT_MODULES: ${{ runner.temp }}/sgmo-browser-runtime/node_modules
+          SGMO_PGLITE_ROOT: ${{ runner.temp }}/sgmo-browser-runtime/node_modules/@electric-sql/pglite
+          SGMO_BROWSER_QA_DIR: ${{ runner.temp }}/sgmo-browser-report/central
+          SGMO_BROWSER_CENTRAL_PORT: '3103'
       - name: Preserve browser QA evidence
         if: always()
         uses: actions/upload-artifact@v4

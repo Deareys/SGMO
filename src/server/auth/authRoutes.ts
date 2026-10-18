@@ -157,8 +157,14 @@ authRouter.post('/bootstrap-admin', pinRateLimiter, async (req: Request, res: Re
       || body.identifier.length > 254 || !validateAdminPassword(body.newPassword).isValid) {
     return res.status(400).json({ success: false, code: 'INVALID_CREDENTIAL_FORMAT', message: 'Datos de aprovisionamiento inválidos.' });
   }
+  const hasOwnerProfile = body.ownerName !== undefined || body.ownerEmail !== undefined;
+  if (hasOwnerProfile && (typeof body.ownerName !== 'string' || !body.ownerName.trim() || body.ownerName.trim().length > 120
+      || typeof body.ownerEmail !== 'string' || body.ownerEmail.trim().length > 160 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.ownerEmail.trim()))) {
+    return res.status(400).json({ success: false, code: 'INVALID_OWNER_PROFILE', message: 'Nombre o correo del propietario inválidos.' });
+  }
   try {
-    const provisioned = await userRepository.bootstrapInitialAdmin(body.identifier.trim(), body.newPassword);
+    const provisioned = await userRepository.bootstrapInitialAdmin(body.identifier.trim(), body.newPassword,
+      hasOwnerProfile ? { name: body.ownerName.trim(), email: body.ownerEmail.trim() } : undefined);
     if (!provisioned) {
       return res.status(403).json({ success: false, code: 'BOOTSTRAP_DISABLED', message: 'Aprovisionamiento inicial no disponible.' });
     }

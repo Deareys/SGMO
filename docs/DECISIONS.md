@@ -8,6 +8,16 @@
 
 ## Actualización vigente — 13 de octubre de 2026
 
+### ADR-021: liquidaciones coherentes y acceso sin selector — 18 de octubre de 2026
+
+Sebas autorizó reparar las liquidaciones, retirar el selector de perfiles del ingreso, preparar el administrador **del dueño del negocio** y probar sesiones independientes y cortes de red. Las correcciones respetan valores cero y distinguen datos ausentes. Vivienda: exención → cero; excepción individual → su importe, incluido cero; costo diario central → su importe, incluido cero; valor predeterminado sólo si falta la configuración. La comisión cero y la tarifa de faltante cero se conservan también en UI/PDF. Los cierres históricos no se recalculan.
+
+La fórmula operativa vigente sigue siendo `max(0, comisión + incentivo − faltantes − vivienda)`; el faltante de efectivo se informa por separado. Alinear cálculos auxiliares con esa fórmula no autoriza a introducir descuentos nuevos. Otra política exige validación del dueño. El login unificado decide únicamente el contrato de credencial (PIN de ocho dígitos o contraseña) y el servidor confirma identidad/rol; nunca se autentica por apariencia del código ni se enumeran usuarios.
+
+Al recargar se invalida `centralHydrated`, aunque la caché conserve datos y pendientes: confirmar `/me` valida identidad, no la vigencia del catálogo/ventas. El arranque espera la nueva carga central sin eliminar la cola ni utilizar el perfil local para autenticar.
+
+El propietario elegirá su contraseña privadamente durante el aprovisionamiento inicial; no se crea una cuenta personal de Sebas ni se publica una contraseña del negocio. Las pruebas usarán cuentas/entornos efímeros. La preparación productiva mantiene base/credenciales separadas y verifica el código antes de su promoción. Estado y prompts: `HITO_3_3_LIQUIDACIONES_Y_ACCESO.md`.
+
 ### ADR-020: imports ejecutables en Node ESM — 15 de octubre de 2026
 
 Se confirmó que el backend emitido con la configuración ESM del proyecto no iniciaba en Node nativo por imports relativos sin extensión y directorios sin `index.js`; tsx ocultaba esa incompatibilidad. Los especificadores del grafo ejecutable ahora señalan archivos `.js`, que TypeScript y el bundler resuelven a sus fuentes `.ts`. No cambia el framework ni la lógica del negocio. Una prueba compila el grafo, lo carga con Node sin cargador de desarrollo y solicita health por HTTP. La reparación local aprobó; su confirmación en el preview se registra en `HITO_3_2_ENSAYO.md`.

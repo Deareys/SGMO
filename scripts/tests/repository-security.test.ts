@@ -184,6 +184,22 @@ test('identificador ambiguo no selecciona una cuenta arbitraria', async () => {
   assert.ok(statements.at(-1)?.sql.includes('FOR UPDATE'));
 });
 
+test('bootstrap guarda identidad del dueño junto con su credencial y revierte si falla la revocación', async () => {
+  reset();
+  await assert.rejects(repository.bootstrapInitialAdmin('UNIT-ADMIN', adminPassword(), { name: 'Dueño', email: 'sin-correo' }), UserCredentialValidationError);
+  assert.equal(statements.length, 0);
+  identifierRows = [{ ...publicProfile, role: 'admin', isProvisioned: false }];
+  assert.equal(await repository.bootstrapInitialAdmin('UNIT-ADMIN', adminPassword(), { name: ' Dueño QA ', email: ' owner@example.invalid ' }), true);
+  const update = statements.find(({ sql }) => sql.includes('UPDATE users'))!;
+  assert.deepEqual(update.parameters.slice(3), ['Dueño QA', 'owner@example.invalid']);
+  assert.deepEqual(transactionCommands(), ['BEGIN', 'COMMIT']);
+  reset();
+  identifierRows = [{ ...publicProfile, role: 'admin', isProvisioned: false }];
+  rejectRevocation = true;
+  await assert.rejects(repository.bootstrapInitialAdmin('UNIT-ADMIN', adminPassword(), { name: 'Dueño QA', email: 'owner@example.invalid' }));
+  assert.deepEqual(transactionCommands(), ['BEGIN', 'ROLLBACK']);
+});
+
 // Crear con un ID previo antes usaba UPSERT y eludía controles económicos de update.
 test('create con ID existente no reemplaza rol, comisión, credenciales ni estado de la cuenta', async () => {
   reset(); userExistsForCreate = true;

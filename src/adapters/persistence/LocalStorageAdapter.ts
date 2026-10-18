@@ -160,6 +160,8 @@ export class LocalStorageAdapter implements IStorageRepository {
     return this.service.getCommissionTiers();
   }
 
+  getSystemConfig() { return this.service.getState().systemConfig; }
+
   updateCommissionTiers(tiers: CommissionTier[]): Promise<void> {
     return this.service.saveCommissionTiers(tiers);
   }

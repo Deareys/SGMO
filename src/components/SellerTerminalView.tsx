@@ -629,13 +629,13 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
     return calculateCommissionForSales(
       activeShift.totalGrossSales,
       state.systemConfig?.commissionTiers || [],
-      activeShift.commissionRate || currentUser.commissionRate || 0.20
+      activeShift.commissionRate ?? currentUser.commissionRate ?? 0.20
     );
   }, [activeShift, state.systemConfig?.commissionTiers, currentUser.commissionRate]);
 
   const myCommissionRate = dynamicCommissionCalc
     ? dynamicCommissionCalc.rate
-    : (activeShift?.commissionRate || currentUser.commissionRate || 0.10);
+    : (activeShift?.commissionRate ?? currentUser.commissionRate ?? 0.10);
 
   const myEarnedCommission = dynamicCommissionCalc
     ? dynamicCommissionCalc.grossCommission

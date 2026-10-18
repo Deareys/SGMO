@@ -48,6 +48,7 @@ export class CalculateSettlementUseCase {
     const sales = this.storageRepo.getSalesForShift(shiftId);
     const wastes = this.storageRepo.getWasteRecords(shiftId);
     const tiers = this.storageRepo.getCommissionTiers();
+    const config = this.storageRepo.getSystemConfig();
 
     // 2. Acumuladores de venta
     let totalSalesAmount = 0;
@@ -95,7 +96,7 @@ export class CalculateSettlementUseCase {
     const commissionCalc = calculateCommissionForSales(
       totalSalesAmount,
       tiers,
-      user?.commissionRate || 0.20
+      user?.commissionRate ?? config.defaultCommissionRate ?? 0.20
     );
 
     // 5. Liquidación económica final
@@ -103,8 +104,14 @@ export class CalculateSettlementUseCase {
       totalSalesAmount,
       grossCommission: commissionCalc.grossCommission,
       housingDeductionOverride: user?.housingCostOverride,
+      housingCostPerPersonDaily: config.housingCostPerPersonDaily,
       isHousingExempt: user?.housingCostExempt,
+      incentivesOrBonuses: shift.incentivesOrBonuses ?? 0,
       missingUnitsCount: inventoryBalance.missingUnitsCount,
+      missingUnitPenaltyRate: config.deductionRatePerMissingUnit,
+      wastePenaltyTiers: config.wasteToleranceThreshold === undefined ? undefined : {
+        thresholdUnits:config.wasteToleranceThreshold,rateBelowOrEqual:config.wastePenaltyRateBelowOrEqual ?? 500,
+        rateAbove:config.wastePenaltyRateAbove ?? 2500 },
       cashExpected: totalCashSales,
       cashHandedIn
     });

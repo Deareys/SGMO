@@ -3,7 +3,7 @@
  * Tequeños Costa — Venta Ambulante en Zonas Costeras
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { storageService, AppState } from './services/storageService';
 import { UserProfile } from './types';
 import { PinLoginScreen } from './components/PinLoginScreen';
@@ -20,6 +20,8 @@ import { AdminConfigView } from './components/AdminConfigView';
 import { FactoryProductionView } from './components/FactoryProductionView';
 import { GeneralVouchersRepositoryView } from './components/GeneralVouchersRepositoryView';
 import { AuditAlertsModal } from './components/AuditAlertsModal';
+
+const InitialOwnerSetup = lazy(() => import('./components/InitialOwnerSetup'));
 
 export const App: React.FC = () => {
   const [state, setState] = useState<AppState>(storageService.getState());
@@ -88,6 +90,9 @@ export const App: React.FC = () => {
 
   // Si no hay usuario autenticado, renderizar exclusivamente la pantalla de ingreso con PIN
   if (!state.currentUser) {
+    if (window.location.pathname === '/setup') {
+      return <Suspense fallback={<p role="status" className="p-6">Preparando activación…</p>}><InitialOwnerSetup /></Suspense>;
+    }
     return <PinLoginScreen onLoginSuccess={handleLoginSuccess} />;
   }
 

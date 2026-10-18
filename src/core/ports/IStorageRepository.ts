@@ -17,7 +17,8 @@ import {
   CommissionTier,
   OperationalExpense,
   ProductionOrder,
-  CartIncident
+  CartIncident,
+  SystemConfig
 } from '../domain/types';
 
 export interface IStorageRepository {
@@ -67,6 +68,7 @@ export interface IStorageRepository {
 
   // Tramos de Comisión y Costos
   getCommissionTiers(): CommissionTier[];
+  getSystemConfig(): SystemConfig;
   updateCommissionTiers(tiers: CommissionTier[]): Promise<void>;
   getOperatingCosts(): OperationalExpense[];
 

@@ -8,7 +8,7 @@ import { DailyShift, ShiftStockItem, ShiftStatus } from '../../../types';
 import type { PoolClient } from 'pg';
 import { randomUUID } from 'crypto';
 import { calculateCommissionForSales } from '../../../core/domain/commissionRules.js';
-import { calculateWasteDeduction } from '../../../core/domain/settlementRules.js';
+import { calculateHousingDeduction, calculateWasteDeduction } from '../../../core/domain/settlementRules.js';
 import { assertOperationId, assertOperationQuantity, assertOperationMoney, CANONICAL_BANK_SALE_SQL, assertShiftMutationAccess, DataIntegrityError, type OperationActor } from '../salesValidation.js';
 
 function countIdentity(items: Array<{ varietyId: string; count: number; wasteCount?: number }>): string {
@@ -321,21 +321,23 @@ export class ShiftRepository {
         await client.query(`UPDATE shift_stock_items SET sold_units=$3,returned_units=$4,waste_units=$5,difference_units=$6
           WHERE shift_id=$1 AND variety_id=$2`, [shiftId,item.variety_id,sold,count.count,waste,difference]);
       }
-      const seller = await client.query('SELECT commission_rate::float, housing_cost_exempt FROM users WHERE id=$1 FOR SHARE', [shift.seller_id]);
+      const seller = await client.query('SELECT commission_rate::float, housing_cost_exempt, housing_cost_override::float FROM users WHERE id=$1 FOR SHARE', [shift.seller_id]);
       const configResult = await client.query("SELECT config_value FROM system_configs WHERE config_key='GLOBAL_PARAMS' FOR SHARE");
       const config = configResult.rows[0]?.config_value;
       if (!config) throw new DataIntegrityError('MISSING_FINANCIAL_POLICY', 'Configurar las políticas centrales antes de liquidar.', 409);
       const tiers = await client.query(`SELECT id,name,min_sales::float AS "minSales",max_sales::float AS "maxSales",rate::float,is_active AS "isActive"
         FROM commission_tiers WHERE is_active=TRUE ORDER BY min_sales FOR SHARE`);
       const commission = calculateCommissionForSales(gross, tiers.rows, seller.rows[0]?.commission_rate ?? 0.20);
-      const housing = seller.rows[0]?.housing_cost_exempt ? 0 : (config.housingCostPerPersonDaily || 8000);
+      const housing = calculateHousingDeduction({ isHousingExempt:!!seller.rows[0]?.housing_cost_exempt,
+        housingDeductionOverride:seller.rows[0]?.housing_cost_override,housingCostPerPersonDaily:config.housingCostPerPersonDaily });
       const deduction = calculateWasteDeduction(differenceTotal, config.wasteToleranceThreshold !== undefined ? {
         thresholdUnits: config.wasteToleranceThreshold, rateBelowOrEqual: config.wastePenaltyRateBelowOrEqual ?? 500,
-        rateAbove: config.wastePenaltyRateAbove ?? 2500 } : undefined, config.deductionRatePerMissingUnit || 1500);
+        rateAbove: config.wastePenaltyRateAbove ?? 2500 } : undefined, config.deductionRatePerMissingUnit ?? 1500);
       // Conserva la fórmula de la UI activa: diferencia de caja se informa por separado.
       const finalPayout = Math.max(0, commission.grossCommission + bonus - deduction.totalDeduction - housing);
       const snapshot = { version: 1, closingIdentity, formula: 'commission+bonus-missing-housing', configuration: config,
-        tiers: tiers.rows, seller: { commissionRate: seller.rows[0]?.commission_rate, housingCostExempt: !!seller.rows[0]?.housing_cost_exempt },
+        tiers: tiers.rows, seller: { commissionRate: seller.rows[0]?.commission_rate, housingCostExempt: !!seller.rows[0]?.housing_cost_exempt,
+          housingCostOverride:seller.rows[0]?.housing_cost_override ?? null },
         commission, deduction, cashDifference: closingData.cashDeclared! - cash, actorId: actor?.userId ?? shift.coordinator_id };
       await client.query(`UPDATE daily_shifts SET status='conciliada',end_time=CURRENT_TIMESTAMP,
         cash_declared=$2,cash_expected=$3,cash_difference=$2::numeric-$3::numeric,total_gross_sales=$4,total_cash_sales=$3,

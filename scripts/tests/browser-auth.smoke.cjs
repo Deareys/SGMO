@@ -12,7 +12,7 @@ const path = require('node:path');
 require('tsx/cjs');
 const { validateWorkerPin } = require('../../src/server/auth/cryptoUtils.ts');
 const runtimeSearchPaths = [process.env.SGMO_PLAYWRIGHT_MODULES, process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES].filter(Boolean);
-const { chromium } = require(require.resolve('playwright', { paths: [process.cwd(), ...runtimeSearchPaths] }));
+const { chromium } = require(require.resolve('playwright', { paths: runtimeSearchPaths.length ? runtimeSearchPaths : [process.cwd()] }));
 
 const repositoryRoot = path.resolve(__dirname, '../..');
 const port = Number(process.env.SGMO_BROWSER_QA_PORT || '3102');
@@ -108,7 +108,11 @@ async function assertVisible(locator) {
 }
 
 async function pressPin(page, credential) {
+  await page.getByLabel('PIN o contraseña', { exact:true }).fill('');
+  const keyboard=page.locator('details');
+  if (!await keyboard.evaluate(element=>element.open)) await keyboard.locator('summary').click();
   for (const digit of credential) await page.getByRole('button', { name: digit, exact: true }).click();
+  await page.getByRole('button', { name:'Ingresar',exact:true }).click();
 }
 
 async function currentUserId(page) {
@@ -147,17 +151,17 @@ async function main() {
   page.on('pageerror', (error) => pageErrors.push(redact(error.message)));
   await page.goto(origin, { waitUntil: 'networkidle' });
 
-  await assertValue(page.getByLabel('Código de usuario:'), '');
+  await assertValue(page.getByLabel('Código de usuario o correo'), '');
   assert.equal(await page.locator('select').count(), 0);
-  await assertVisible(page.getByRole('button', { name: '1', exact: true }));
+  await assertVisible(page.getByText('Teclado numérico para PIN', { exact: true }));
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true,
     'Acceso móvil desborda horizontalmente');
   await page.screenshot({ path: path.join(outputDirectory, 'login-mobile-390x844.png'), fullPage: true });
-  checks.push('Acceso móvil: identificador vacío, sin listado público, teclado visible y sin desborde horizontal');
+  checks.push('Acceso móvil: identificador vacío, sin perfiles públicos, teclado desplegable y sin desborde horizontal');
 
   let loginRequests = 0;
   page.on('request', (request) => { if (request.url().endsWith('/api/auth/login')) loginRequests++; });
-  await page.getByLabel('Código de usuario:').pressSequentially('VEND-01');
+  await page.getByLabel('Código de usuario o correo').pressSequentially('VEND-01');
   assert.equal(loginRequests, 0, 'Escribir userCode no debe ingresar dígitos al PIN');
   let incorrectPin = factoryPin;
   while (incorrectPin === workerPin) incorrectPin = generatePin();
@@ -196,17 +200,16 @@ async function main() {
   const revoked = await logoutResponse;
   assert.equal(revoked.status(), 200);
   await revoked.finished();
-  await assertVisible(page.getByLabel('Código de usuario:'));
+  await assertVisible(page.getByLabel('Código de usuario o correo'));
   assert.equal(await page.evaluate(() => localStorage.getItem('SGMO_AUTH_TOKEN')), null);
   await assertEventually(async () => assert.equal((await context.cookies()).some((cookie) => cookie.name === 'sgmo-session'), false));
   assert.equal((await context.request.get(`${origin}/api/auth/me`)).status(), 401);
-  await page.getByRole('button', { name: 'Administración', exact: true }).click();
   await assertValue(page.locator('input[type="text"]'), '');
   await assertValue(page.locator('input[type="password"]'), '');
   await page.screenshot({ path: path.join(outputDirectory, 'login-admin-mobile-blank.png'), fullPage: true });
   await page.locator('input[type="text"]').fill('ADM-01');
   await page.locator('input[type="password"]').fill(administratorPassword);
-  await page.getByRole('button', { name: 'Ingresar a Administración', exact: true }).click();
+  await page.getByRole('button', { name: 'Ingresar', exact: true }).click();
   await waitForIdentity(page, 'USR-ADMIN-1');
   await assertNoLocalCredentials(page);
   checks.push('Logout elimina token; admin sin preselección y login correcto central');
@@ -250,14 +253,13 @@ async function main() {
   const productionPage = await productionContext.newPage();
   productionPage.on('pageerror', (error) => pageErrors.push(redact(error.message)));
   await productionPage.goto(origin, { waitUntil: 'networkidle' });
-  await productionPage.getByLabel('Código de usuario:').fill('VEND-01');
+  await productionPage.getByLabel('Código de usuario o correo').fill('VEND-01');
   await pressPin(productionPage, workerPin);
   await assertVisible(productionPage.locator('.bg-rose-50').first());
   assert.equal(await currentUserId(productionPage), null);
-  await productionPage.getByRole('button', { name: 'Administración', exact: true }).click();
   await productionPage.locator('input[type="text"]').fill('ADM-01');
   await productionPage.locator('input[type="password"]').fill(administratorPassword);
-  await productionPage.getByRole('button', { name: 'Ingresar a Administración', exact: true }).click();
+  await productionPage.getByRole('button', { name: 'Ingresar', exact: true }).click();
   await assertVisible(productionPage.locator('.bg-rose-50').first());
   assert.equal(await currentUserId(productionPage), null);
   checks.push('Producción sin DB rechaza trabajador/admin demo, aun con SGMO_AUTH_MODE=demo');

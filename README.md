@@ -4,6 +4,8 @@ Aplicación React/TypeScript + Express + PostgreSQL para gestión de venta ambul
 
 ## Empezar a revisar
 
+- [Hito 3.3: liquidaciones, acceso único, dueño y ensayos sin señal](docs/HITO_3_3_LIQUIDACIONES_Y_ACCESO.md)
+- [Cómo probar los cambios y preparar producción, paso a paso](docs/PRUEBAS_HITO_3_3_Y_PRODUCCION.md)
 - [Hito 3.2: base de ensayo y preview](docs/HITO_3_2_ENSAYO.md)
 - [Diagnóstico general vigente — 18/10/2026](docs/DIAGNOSTICO_GENERAL_2026_10_18.md)
 - [Repetir el ensayo paso a paso](docs/PRUEBA_MANUAL_ENSAYO.md)

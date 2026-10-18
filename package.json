@@ -14,6 +14,7 @@
     "test:auth:legacy": "node --import tsx scripts/run-demo-security.ts",
     "test:auth:postgres": "node --import tsx scripts/tests/postgres-auth.integration.ts --postgres",
     "test:auth:sql": "node --import tsx scripts/tests/postgres-auth.integration.ts --wasm",
+    "verify:deployment": "node scripts/verify-deployment.mjs",
     "db:migrate": "node --env-file=.env --import tsx scripts/migrate-database.ts"
   },
   "dependencies": {

@@ -268,7 +268,11 @@ export class UserRepository {
    * la comprobación global y la escritura; el advisory lock serializa dos bootstraps.
    * No sirve como restablecimiento o reapertura de un administrador existente.
    */
-  async bootstrapInitialAdmin(identifier: string, password: string): Promise<boolean> {
+  async bootstrapInitialAdmin(identifier: string, password: string, owner?: { name: string; email: string }): Promise<boolean> {
+    if (owner && (typeof owner.name !== 'string' || !owner.name.trim() || owner.name.trim().length > 120
+        || typeof owner.email !== 'string' || owner.email.trim().length > 160 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(owner.email.trim()))) {
+      throw new UserCredentialValidationError('Nombre o correo del propietario inválidos.');
+    }
     const credential = this.prepareCredential('admin', undefined, password);
     return withTransaction(async (client) => {
       await client.query("SELECT pg_advisory_xact_lock(hashtext('sgmo.initial-admin'))");
@@ -281,9 +285,10 @@ export class UserRepository {
         UPDATE users SET password_hash = $1, password_salt = $2,
           pin_hash = NULL, pin_salt = NULL, credential_type = 'password_14',
           is_provisioned = TRUE, failed_attempts = 0, locked_until = NULL,
-          failed_attempt_window_started_at = NULL, updated_at = CURRENT_TIMESTAMP
+          failed_attempt_window_started_at = NULL, updated_at = CURRENT_TIMESTAMP,
+          name = COALESCE($4, name), email = COALESCE($5, email)
         WHERE id = $3
-      `, [credential.passwordHash, credential.passwordSalt, administrator.id]);
+      `, [credential.passwordHash, credential.passwordSalt, administrator.id, owner?.name.trim() ?? null, owner?.email.trim() ?? null]);
       await this.revokeUserSessions(client, administrator.id);
       return true;
     });

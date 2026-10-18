@@ -69,6 +69,26 @@ test('Recarga no agrega turnos/zonas mock a caché central pequeña', () => {
   assert.deepEqual(restored.getState().zones.map((zone) => zone.id), ['only-central-zone']);
 });
 
+test('Recarga conserva pendientes pero exige bootstrap nuevo incluso después de validar la sesión', async () => {
+  const pending = pendingSale('reload-durable');
+  storage.set(stateKey, JSON.stringify({ ...service.getState(), ...snapshot(), currentUser: worker,
+    centralOwnerUserId: worker.id, centralHydrated: true, centralStatus: 'ready', sales: [pending] }));
+  writeQueue([pending]);
+  const restored = new StorageService();
+  assert.equal(restored.getState().currentUser, null);
+  assert.equal(restored.getState().centralHydrated, false);
+  assert.equal(restored.getState().sales[0].id, pending.id);
+  assert.equal(readQueue()[0].id, pending.id);
+  responder = async url => {
+    assert.equal(url, '/api/auth/me');
+    return Response.json({ success: true, user: worker, session: { role: worker.role, expiresAt: new Date(Date.now() + 60000).toISOString() } });
+  };
+  assert.equal(await restored.restoreSession(), true);
+  assert.equal(restored.getState().currentUser?.id, worker.id);
+  assert.equal(restored.getState().centralHydrated, false);
+  assert.equal(readQueue()[0].id, pending.id);
+});
+
 test('Hydration adopta datos centrales y conserva pendientes propios por ID', async () => {
   service.getState().currentUser = worker;
   const pending = pendingSale('pending-local');

@@ -1,5 +1,5 @@
 {
-  "exclude": ["node_modules", "dist", "build", ".backup_*/**"],
+  "exclude": ["node_modules", "dist", "build", "public/assets", ".backup_*/**"],
   "compilerOptions": {
     "target": "ES2022",
     "experimentalDecorators": true,

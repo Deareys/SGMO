@@ -2,6 +2,12 @@
 
 Fecha: 13 de octubre de 2026. Hitos 1.2.2 y 1.3.
 
+## Ampliación Hito 3.3 — 18/10/2026
+
+El job SQL ejecuta ahora 24 casos de operaciones/liquidación en PostgreSQL 16, incluidos ceros, excepción individual y snapshot inmutable. El job browser instala Playwright 1.56.1 y PGlite 0.3.14 en un runtime externo y ejecuta ambos smokes: autenticación y `browser-central.smoke.cjs`. El nuevo smoke usa formulario `/setup`, dos contextos/cookies independientes, API real y SQL WASM efímero; comprueba cortes offline, ACK, respuesta perdida tras COMMIT, recuperación después de cerrar pestaña y ausencia de duplicados. No sustituye el job PostgreSQL multiproceso ni llama a proveedores.
+
+El artefacto browser incluye `central/central-summary.json` y capturas operativas sin contraseñas. Nueve escenarios centrales pasaron localmente el 18/10, incluido el recibo con ceros; la recarga debe esperar una carga central nueva. El límite de abrir una pestaña completamente sin red se comprueba y registra como no soportado, no como PWA aprobada. Los resultados remotos de esta revisión se registran en [el informe del Hito 3.3](HITO_3_3_LIQUIDACIONES_Y_ACCESO.md) y el PR 2; una ejecución histórica no certifica el cambio nuevo.
+
 ## Flujo automatizado
 
 `.github/workflows/ci.yml` se ejecuta en push a `main`/`codex/**`, pull requests y ejecución manual. Utiliza Node 22, permisos de GitHub limitados a `contents: read` y no guarda credenciales de checkout. No despliega ni accede a Neon, Mercado Pago o Gemini.
