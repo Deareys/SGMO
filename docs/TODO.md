@@ -2,6 +2,20 @@
 
 > **Actualización 13/10/2026:** el contenido histórico puede describir prototipo/localStorage o contratos sustituidos. Para alcance vigente, pruebas y pendientes leer [HITOS_Y_PROMPTS_MVP.md](HITOS_Y_PROMPTS_MVP.md), [GUIA_SEBAS.md](GUIA_SEBAS.md), [CI.md](CI.md) y los módulos nuevos. “Implementado” no certifica producción ni datos compartidos de todas las pantallas.
 
+## Diagnóstico vigente — 18 de octubre de 2026
+
+Informe y evidencia: [DIAGNOSTICO_GENERAL_2026_10_18.md](DIAGNOSTICO_GENERAL_2026_10_18.md). En esta tarea sólo se documentaron hallazgos; no se modificó código de ejecución ni datos operativos.
+
+- [ ] **Alta — D-01:** preparar release de la rama reparada. Main/productivo siguen en `d291d5a`; el dominio público sirve la interfaz pero sus rutas API responden 404, no tiene variables principales Production ni tablas en la rama Neon productiva. La contingencia insegura de admin local permanece en main.
+- [ ] **Alta — D-02:** respetar valores económicos cero: `ShiftRepository.closeAndReconcileShift` usa `housingCostPerPersonDaily || 8000` y tarifa plana `deductionRatePerMissingUnit || 1500`, aunque la configuración admite cero. Agregar regresiones con cero, excepción individual y coherencia de comisión en UI/PDF; conservar snapshots y reglas acordadas.
+- [ ] **Alta — D-03:** aprovisionar cuenta propia del administrador con procedimiento privado y comprensible. Hay seis perfiles originales activos, cero cuentas aprovisionadas y cero sesiones utilizables; no reactivar cuentas QA para operar.
+- [ ] **Alta — D-04/05:** comprobar origen estable, webhook real y ciclo completo de Mercado Pago; revisar facturación del proyecto Gemini y repetir extracción real. MP/OCR no se reejecutaron hoy con cuentas de negocio; el último OCR real del 15/10 respondió 402.
+- [ ] **Alta para playa — D-06:** demostrar reapertura/recarga sin señal y recuperación de cola/fotos. Siguen pendientes PWA, almacenamiento de imágenes separado y ensayo físico de campo.
+- [ ] **Alcance — D-07:** centralizar o delimitar módulos locales de fábrica, gastos, radar, mantenimiento, traslados y temporadas; no presentarlos como registros compartidos.
+- [ ] **Operación — D-08:** reducir carga inicial, revisar filtrado SQL/paginación del bootstrap, acceso administrativo a migraciones, prueba de restauración y política de diferencias de caja.
+
+Verificación del 18/10: tipos, 177 pruebas, build y 35 regresiones aprobaron; `npm audit` reportó cero vulnerabilidades conocidas. Preview con acceso autorizado: health/base 200 y rutas privadas 401 sin sesión. Chromium local no pudo ejecutarse por falta del binario; la CI del 15/10 del mismo código permanece aprobada. Esto no certifica producción ni todos los casos de liquidación.
+
 
 > **Sistema:** SGMO — Tequeños Costa  
 > **Versión:** 0.6.0  
