@@ -169,7 +169,7 @@ try {
     proxy.once('error', reject); proxy.listen(0, '127.0.0.1', resolveListening);
   });
   let first = await startWorker();
-  const second = await startWorker();
+  let second = await startWorker();
   const clients = [new BrowserClient(), new BrowserClient()];
   await Promise.all([clients[0].initialize(first.origin), clients[1].initialize(second.origin)]);
   let winningAdmin = 0;
@@ -247,6 +247,13 @@ try {
   });
 
   await check('Contraseña personal: recuperación requiere admin reautenticado y confirmación de identidad', async () => {
+    // Los escenarios anteriores prueban deliberadamente el bloqueo por IP. Esa
+    // instancia conserva su Map aunque la cuenta SQL ya no esté bloqueada. Para
+    // medir consumo competitivo (no el limiter), arrancar procesos limpios con
+    // las mismas sesiones/cuentas centrales. No se relaja ningún límite real.
+    await stopWorker(first.process); await stopWorker(second.process);
+    first = await startWorker(); second = await startWorker();
+    await Promise.all([admin.initialize(first.origin), clients[0].initialize(first.origin), clients[1].initialize(second.origin)]);
     assert.equal((await admin.request(first.origin, '/api/users', { id: 'HTTP-PASSWORD', userCode: 'HTTP-PASSWORD',
       name: 'Contraseña HTTP efímera', role: 'seller', commissionRate: 0, isActive: true })).status, 201);
     assert.equal((await admin.request(first.origin, '/api/auth/password-activations', {
