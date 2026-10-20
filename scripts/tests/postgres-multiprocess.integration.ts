@@ -264,8 +264,9 @@ try {
     const token = issued.body.activation.token; secrets.push(token);
     const results = await Promise.all(clients.map((client, index) => client.request(index ? second.origin : first.origin,
       '/api/auth/complete-password-activation', { token, newPassword: personalPassword, confirmPassword: personalPassword })));
-    assert.equal(results.filter(result => result.status === 200).length, 1);
-    assert.equal(results.filter(result => result.status === 400).length, 1);
+    const consumptionStatuses = results.map(result => `${result.status}:${result.body.code ?? 'OK'}`).join(',');
+    assert.equal(results.filter(result => result.status === 200).length, 1, `Consumo simultáneo: ${consumptionStatuses}`);
+    assert.equal(results.filter(result => result.status === 400).length, 1, `Consumo simultáneo: ${consumptionStatuses}`);
     for (const client of clients) assert.equal((await client.request(first.origin, '/api/auth/me')).status, 401);
     for (const client of clients) assert.equal((await client.request(first.origin, '/api/auth/login', {
       identifier: 'HTTP-PASSWORD', password: personalPassword })).status, 200);
@@ -289,6 +290,13 @@ try {
   console.log(`RESULTADO: ${outcomes.length} grupos PostgreSQL HTTP multiproceso aprobados.`);
 } catch (error) {
   console.error(`FAIL ${currentTest}; ${error instanceof Error ? error.name : 'Error'}.`);
+  // Sólo diagnóstico de asserts: nunca serializar bodies, SQL, credenciales o driver errors.
+  if (error instanceof assert.AssertionError) {
+    const frame = error.stack?.match(/postgres-multiprocess\.integration\.ts:\d+:\d+/)?.[0];
+    const primitive = (value: unknown) => typeof value === 'number' || typeof value === 'boolean' ? value : '[omitido]';
+    console.error(JSON.stringify({ frame, actual: primitive(error.actual), expected: primitive(error.expected), operator: error.operator,
+      message: secrets.reduce((message, secret) => message.replaceAll(secret, '[REDACTED]'), error.message).slice(0, 350) }));
+  }
   process.exitCode = 1;
 } finally {
   transportAvailable = true;
