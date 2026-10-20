@@ -1,5 +1,17 @@
 # CHANGELOG.md — Registro Histórico de Cambios
 
+## Entrega MVP en revisión — 2026-10-13
+
+- Recuperadas reparaciones de seguridad y suites perdidas en la exportación de Studio, conservando PORT configurable.
+- Sesión de navegador con cookie HttpOnly, CSRF/origen; TLS PostgreSQL remoto verificado.
+- Bootstrap central por rol; cola de ventas con UUID, ACK explícito, reintentos e integridad transaccional.
+- Despacho, reposición, merma, conteo, cierre, devolución y registro de pago confirmados en servidor.
+- Catálogo, precios, comisiones, casas, carritos, zonas e inventario inicial explícito persistidos.
+- OCR sin campos ficticios; integración de banco/webhooks separada y vinculada a venta central.
+- Build de frontend público separado del bundle servidor; entrypoint Express para Vercel, versión de health y CI desechable.
+- Guía para Sebas y prompts por hito. Evidencia final y límites en el informe de entrega; no se ejecutaron migraciones remotas ni se certificó producción.
+
+
 > Todos los cambios notables en este proyecto serán documentados en este archivo.
 > Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 

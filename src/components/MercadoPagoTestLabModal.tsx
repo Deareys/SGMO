@@ -39,6 +39,7 @@ import { ProductVariety } from '../types';
 
 interface MercadoPagoTestLabModalProps {
   isOpen: boolean;
+  demoMode?: boolean;
   onClose: () => void;
   varieties: ProductVariety[];
   onUseVoucherInTerminal?: (base64Image: string, expectedAmount: number, operationId: string) => void;
@@ -46,6 +47,7 @@ interface MercadoPagoTestLabModalProps {
 
 export const MercadoPagoTestLabModal: React.FC<MercadoPagoTestLabModalProps> = ({
   isOpen,
+  demoMode = false,
   onClose,
   varieties,
   onUseVoucherInTerminal
@@ -93,11 +95,11 @@ export const MercadoPagoTestLabModal: React.FC<MercadoPagoTestLabModalProps> = (
 
   // Cargar estado inicial
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && demoMode) {
       loadStatus();
       loadRecentPayments();
     }
-  }, [isOpen]);
+  }, [isOpen, demoMode]);
 
   const loadStatus = async () => {
     setIsLoadingStatus(true);
@@ -156,21 +158,18 @@ export const MercadoPagoTestLabModal: React.FC<MercadoPagoTestLabModalProps> = (
 
   // Crear Link de Checkout Sandbox
   const handleCreatePreference = async () => {
-    setIsCreatingPref(true);
-    setPreferenceResult(null);
-
-    const res = await createMercadoPagoPreference({
-      title: voucherLabel,
-      amount: voucherAmount,
-      quantity: 1,
-      payerEmail: 'comprador.prueba@testuser.com'
-    });
-
-    setPreferenceResult(res);
-    setIsCreatingPref(false);
+    setPreferenceResult({ success: false, message: 'Los enlaces oficiales requieren una venta guardada y confirmada en el servidor. Generá el enlace desde la Terminal de Ventas.' });
   };
 
   if (!isOpen) return null;
+  if (!demoMode) return (
+    <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
+      <div role="dialog" aria-modal="true" className="bg-white border-2 border-slate-300 rounded-2xl p-6 max-w-md text-slate-950 space-y-4">
+        <p>El laboratorio de simulaciones está disponible únicamente en un entorno demo aislado. Los comprobantes de prueba no acreditan pagos.</p>
+        <button type="button" onClick={onClose} className="min-h-12 px-4 border-2 border-slate-900 rounded-xl font-bold">Cerrar</button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fadeIn">
@@ -194,12 +193,12 @@ export const MercadoPagoTestLabModal: React.FC<MercadoPagoTestLabModalProps> = (
                         ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
                         : 'bg-amber-100 text-amber-900 border border-amber-300'
                     }`}>
-                      {mpStatus.configured ? 'Cuenta Sandbox Conectada' : 'Modo Simulación'}
+                      {mpStatus.configured ? 'Configuración detectada' : 'Modo Simulación'}
                     </span>
                   )}
                 </div>
                 <p className="text-xs text-slate-600 font-medium">
-                  Generador de comprobantes oficiales con OCR, links de cobro sandbox y resolución de dudas sobre transferencias.
+                  SIMULACIÓN SIN VALIDEZ BANCARIA. Generador de imágenes para comprobar la lectura OCR; no acredita pagos.
                 </p>
               </div>
             </div>
@@ -546,7 +545,8 @@ export const MercadoPagoTestLabModal: React.FC<MercadoPagoTestLabModalProps> = (
                   <button
                     type="button"
                     onClick={handleCreatePreference}
-                    disabled={isCreatingPref}
+                    disabled={true}
+                    title="Generá el enlace en la Terminal después de registrar y sincronizar una venta."
                     className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl shadow-md flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-50"
                   >
                     {isCreatingPref ? (
@@ -554,7 +554,7 @@ export const MercadoPagoTestLabModal: React.FC<MercadoPagoTestLabModalProps> = (
                     ) : (
                       <ExternalLink className="w-4 h-4" />
                     )}
-                    <span>{isCreatingPref ? 'Creando en MP...' : 'Generar Link de Pago'}</span>
+                    <span>{'Requiere una venta central: ir a Terminal'}</span>
                   </button>
                 </div>
 

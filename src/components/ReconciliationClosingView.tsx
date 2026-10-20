@@ -29,6 +29,7 @@ import confetti from 'canvas-confetti';
 import { AppState, storageService } from '../services/storageService';
 import { DailyShift } from '../types';
 import { calculateCommissionForSales } from '../utils/commissionUtils';
+import { calculateHousingDeduction } from '../core/domain/settlementRules';
 import { downloadLiquidationPdf, generateLiquidationFilename } from '../utils/liquidationPdfGenerator';
 
 interface ReconciliationClosingViewProps {
@@ -37,6 +38,7 @@ interface ReconciliationClosingViewProps {
 
 export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps> = ({ state }) => {
   const { shifts, currentUser, houses } = state;
+  const canConfirmSettlement = currentUser.role === 'admin' || currentUser.role === 'coordinator';
 
   // Filtrar jornadas activas o del día (si es vendedor, solo sus propias jornadas)
   const activeOrRecentShifts = shifts.filter((s) => {
@@ -51,9 +53,11 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
   );
 
   const selectedShift = shifts.find((s) => s.id === selectedShiftId) || activeOrRecentShifts[0];
+  const historicalSettlement = selectedShift?.status === 'conciliada' || selectedShift?.status === 'liquidada';
 
   // Estados del Formulario de Cierre Físico
-  const [cashDeclared, setCashDeclared] = useState<number>(selectedShift ? selectedShift.cashExpected : 0);
+  const [cashDeclared, setCashDeclared] = useState<number>(selectedShift
+    ? (historicalSettlement ? selectedShift.cashDeclared ?? selectedShift.cashExpected : selectedShift.cashExpected) : 0);
   const [gasPercentEnd, setGasPercentEnd] = useState<number>(65);
   
   // Stock devuelto contado
@@ -69,6 +73,9 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
   const [receiptShift, setReceiptShift] = useState<DailyShift | null>(null);
   const [downloadSuccessMessage, setDownloadSuccessMessage] = useState<string | null>(null);
   const [historySearch, setHistorySearch] = useState<string>('');
+  const [pendingOperation, setPendingOperation] = useState<'closing' | 'payout' | null>(null);
+  const operationInFlight = React.useRef(false);
+  const [operationError, setOperationError] = useState<string | null>(null);
 
   // Función principal para descargar el comprobante en PDF real
   const handleDownloadPdf = (shiftToDownload: DailyShift) => {
@@ -85,18 +92,18 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
   // Inicializar conteos al cambiar de jornada seleccionada
   React.useEffect(() => {
     if (selectedShift) {
-      setCashDeclared(selectedShift.cashExpected);
+      setCashDeclared(historicalSettlement ? selectedShift.cashDeclared ?? selectedShift.cashExpected : selectedShift.cashExpected);
       const initial: Record<string, { count: number; waste: number }> = {};
       selectedShift.stockItems.forEach((item) => {
-        const estReturned = Math.max(0, item.deliveredUnits + item.reSuppliedUnits - item.soldUnits);
+        const estReturned = Math.max(0, item.deliveredUnits + item.reSuppliedUnits - item.soldUnits - (item.wasteUnits || 0));
         initial[item.varietyId] = {
-          count: item.returnedUnits || estReturned,
+          count: historicalSettlement ? item.returnedUnits ?? 0 : item.returnedUnits || estReturned,
           waste: item.wasteUnits || 0
         };
       });
       setReturnedCounts(initial);
     }
-  }, [selectedShiftId]);
+  }, [selectedShiftId, selectedShift?.status]);
 
   // Cálculo de comisión para la jornada actual (o valores históricos congelados si ya fue cerrada)
   const commissionDetails = useMemo(() => {
@@ -116,7 +123,7 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
     const calc = calculateCommissionForSales(
       selectedShift.totalGrossSales,
       state.systemConfig?.commissionTiers || [],
-      selectedShift.commissionRate || 0.20
+      selectedShift.commissionRate ?? 0.20
     );
     return {
       rate: calc.rate,
@@ -128,10 +135,17 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
     };
   }, [selectedShift, state.systemConfig?.commissionTiers]);
 
+  const settlementSeller = state.users.find(user => user.id === selectedShift?.sellerId);
+  const housingIsExempt = historicalSettlement ? !!selectedShift?.housingCostExempt
+    : (settlementSeller?.housingCostExempt ?? !!selectedShift?.housingCostExempt);
+  const housingDeduction = historicalSettlement ? (selectedShift?.housingCostDeduction ?? 0)
+    : calculateHousingDeduction({ isHousingExempt:housingIsExempt,housingDeductionOverride:settlementSeller?.housingCostOverride,
+      housingCostPerPersonDaily:state.systemConfig?.housingCostPerPersonDaily });
+
   // Manejar Cierre y Conciliación
-  const handlePerformClosing = (e: React.FormEvent) => {
+  const handlePerformClosing = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedShift) return;
+    if (!selectedShift || operationInFlight.current || !canConfirmSettlement) return;
 
     const returnedItems = selectedShift.stockItems.map((item) => ({
       varietyId: item.varietyId,
@@ -139,42 +153,65 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
       wasteCount: returnedCounts[item.varietyId]?.waste || 0
     }));
 
-    const reconciled = storageService.closeAndReconcileShift({
-      shiftId: selectedShift.id,
-      cashDeclared,
-      gasPercentEnd,
-      returnedItems,
-      deductionMissingRatePerUnit: deductionMissingRate,
-      bonusIncentive,
-      notes: closingNotes,
-      coordinatorSignature: currentUser.name
-    });
-
-    setReceiptShift(reconciled);
-    setShowReceiptModal(true);
-
+    operationInFlight.current = true;
+    setPendingOperation('closing');
+    setOperationError(null);
     try {
-      confetti({
-        particleCount: 50,
-        spread: 70,
-        origin: { y: 0.6 }
+      const reconciled = await storageService.closeAndReconcileShift({
+        shiftId: selectedShift.id,
+        cashDeclared,
+        gasPercentEnd,
+        returnedItems,
+        deductionMissingRatePerUnit: deductionMissingRate,
+        bonusIncentive,
+        notes: closingNotes,
+        coordinatorSignature: currentUser.name
       });
-    } catch (e) {}
+
+      if (!reconciled) throw new Error('El servidor no confirmó el cierre. Conservamos los datos para reintentar.');
+      setReceiptShift(reconciled);
+      setShowReceiptModal(true);
+
+      try {
+        confetti({
+          particleCount: 50,
+          spread: 70,
+          origin: { y: 0.6 }
+        });
+      } catch (e) {}
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : 'No se pudo guardar el cierre. Conservamos los datos para reintentar.');
+    } finally {
+      operationInFlight.current = false;
+      setPendingOperation(null);
+    }
   };
 
   // Pagar Comisión
-  const handlePayCommission = (shiftId: string) => {
-    const proof = `PAGO-EFVO-${new Date().toLocaleTimeString('es-AR').slice(0, 5)}`;
-    storageService.paySellerCommission(shiftId, proof);
-    const updated = storageService.getState().shifts.find((s) => s.id === shiftId);
-    if (updated) {
+  const handlePayCommission = async (shiftId: string) => {
+    if (operationInFlight.current || !canConfirmSettlement) return;
+    if (!window.confirm('¿Ya entregaste el importe de la comisión? Esta acción registra un pago manual; no mueve dinero ni verifica un banco.')) return;
+    operationInFlight.current = true;
+    setPendingOperation('payout');
+    setOperationError(null);
+    try {
+      const proof = `PAGO-EFVO-${new Date().toISOString()}`;
+      await storageService.paySellerCommission(shiftId, proof);
+      const updated = storageService.getState().shifts.find((shift) => shift.id === shiftId);
+      if (!updated || updated.payoutStatus === 'pendiente') throw new Error('El servidor no confirmó el registro del pago.');
       setReceiptShift(updated);
       setShowReceiptModal(true);
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : 'No se pudo registrar el pago.');
+    } finally {
+      operationInFlight.current = false;
+      setPendingOperation(null);
     }
   };
 
   return (
     <div className="space-y-6 pb-12">
+      {operationError && <p role="alert" className="bg-rose-50 border-2 border-rose-500 text-rose-900 p-3 rounded-xl">{operationError}</p>}
       
       {/* Encabezado */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
@@ -207,7 +244,7 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
           return (
             <div
               key={s.id}
-              onClick={() => setSelectedShiftId(s.id)}
+              onClick={() => { if (!operationInFlight.current) setSelectedShiftId(s.id); }}
               className={`p-4 rounded-2xl border cursor-pointer transition-all ${
                 isSelected
                   ? 'bg-slate-800 border-amber-500 ring-1 ring-amber-500 shadow-lg'
@@ -303,6 +340,7 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
             </div>
 
             <form onSubmit={handlePerformClosing} className="space-y-5">
+              <fieldset disabled={pendingOperation !== null} className="contents">
               
               {/* 1. Conteo Físico de Tequeños Devueltos */}
               <div className="space-y-3">
@@ -369,7 +407,7 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
                             <label className="block text-[10px] text-slate-400 mb-0.5">Devueltos Intactos</label>
                             <input
                               type="number"
-                              disabled={selectedShift.status === 'liquidada'}
+                              disabled={historicalSettlement}
                               value={currentReturned}
                               onChange={(e) => {
                                 setReturnedCounts({
@@ -389,7 +427,7 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
                             <label className="block text-[10px] text-slate-400 mb-0.5">Merma / Rotos</label>
                             <input
                               type="number"
-                              disabled={selectedShift.status === 'liquidada'}
+                              disabled={historicalSettlement}
                               value={currentWaste}
                               onChange={(e) => {
                                 setReturnedCounts({
@@ -452,7 +490,8 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
                     <label className="block text-[11px] text-slate-400 mb-1">Efectivo Entregado en Mano ($)</label>
                     <input
                       type="number"
-                      disabled={selectedShift.status === 'liquidada'}
+                      disabled={historicalSettlement}
+                      aria-label="Efectivo Entregado en Mano ($)"
                       value={cashDeclared}
                       onChange={(e) => setCashDeclared(Number(e.target.value))}
                       className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2 text-xs font-mono font-black text-white focus:outline-none focus:border-amber-400"
@@ -483,7 +522,7 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
                 <div className="flex items-center space-x-2">
                   <input
                     type="number"
-                    disabled={selectedShift.status === 'liquidada'}
+                    disabled={historicalSettlement}
                     value={gasPercentEnd}
                     onChange={(e) => setGasPercentEnd(Number(e.target.value))}
                     className="w-16 bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-xs text-white font-bold text-center"
@@ -498,14 +537,16 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
               {selectedShift.status === 'en_curso' && (
                 <button
                   type="submit"
+                  disabled={pendingOperation !== null || !canConfirmSettlement}
                   className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black text-sm rounded-xl shadow-xl shadow-amber-500/20 flex items-center justify-center space-x-2 transition-all cursor-pointer"
                 >
                   <CheckCircle2 className="w-5 h-5" />
-                  <span>Realizar Cierre de Jornada & Calcular Liquidación</span>
+                  <span>{!canConfirmSettlement ? 'El cierre lo confirma coordinación' : pendingOperation === 'closing' ? 'Confirmando cierre…' : 'Realizar Cierre de Jornada & Calcular Liquidación'}</span>
                 </button>
               )}
 
-            </form>
+              </fieldset>
+</form>
           </div>
 
           {/* Columna Derecha: Liquidación de Comisión y Pago Final (5 cols) */}
@@ -561,18 +602,18 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
 
               {/* Deducción por Costo de Vivienda */}
               <div className={`flex justify-between items-center p-2.5 rounded-xl border ${
-                selectedShift.housingCostExempt
+                housingIsExempt
                   ? 'bg-emerald-950/20 border-emerald-800/40 text-emerald-300'
                   : 'bg-slate-950/70 border-slate-800 text-slate-300'
               }`}>
                 <span>Costo Diario de Vivienda:</span>
                 <span className="font-mono font-bold">
-                  {selectedShift.housingCostExempt ? (
+                  {housingIsExempt ? (
                     <span className="text-[11px] bg-emerald-900/60 px-2 py-0.5 rounded text-emerald-300">
                       $0 (Exento por Admin)
                     </span>
                   ) : (
-                    `-$${(selectedShift.housingCostDeduction || state.systemConfig?.housingCostPerPersonDaily || 8000).toLocaleString()}`
+                    `-$${housingDeduction.toLocaleString()}`
                   )}
                 </span>
               </div>
@@ -618,10 +659,11 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
               <button
                 type="button"
                 onClick={() => handlePayCommission(selectedShift.id)}
+                disabled={pendingOperation !== null || !canConfirmSettlement || selectedShift.status === 'en_curso'}
                 className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-600/20 flex items-center justify-center space-x-2 transition-all cursor-pointer"
               >
                 <Coins className="w-4 h-4" />
-                <span>Pagar Comisión & Emitir Comprobante</span>
+                <span>{!canConfirmSettlement ? 'El pago lo registra coordinación' : pendingOperation === 'payout' ? 'Confirmando registro…' : 'Registrar Comisión Entregada & Emitir Comprobante'}</span>
               </button>
             ) : (
               <div className="space-y-3">
@@ -838,7 +880,7 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
                 </div>
                 <div className="flex justify-between text-slate-300">
                   <span className="text-slate-400">Efectivo Recaudado:</span>
-                  <span>${receiptShift.totalCashSales.toLocaleString()} (Decl: ${(receiptShift.cashDeclared || receiptShift.cashExpected).toLocaleString()})</span>
+                  <span>${receiptShift.totalCashSales.toLocaleString()} (Decl: ${(receiptShift.cashDeclared ?? receiptShift.cashExpected).toLocaleString()})</span>
                 </div>
                 <div className="flex justify-between text-slate-300">
                   <span className="text-slate-400">Mercado Pago / Transferencia:</span>
@@ -880,7 +922,7 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Deducción Vivienda:</span>
                   <span className="text-rose-400 font-bold">
-                    {receiptShift.housingCostExempt ? '$0 (Exento autorizado)' : `-$${(receiptShift.housingCostDeduction || 8000).toLocaleString()}`}
+                    {receiptShift.housingCostExempt ? '$0 (Exento autorizado)' : `-$${(receiptShift.housingCostDeduction ?? 0).toLocaleString()}`}
                   </span>
                 </div>
                 {receiptShift.deductionsForMissingUnits > 0 && (

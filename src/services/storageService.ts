@@ -64,16 +64,29 @@ import {
   INITIAL_BEACH_REPORTS
 } from '../mockData';
 import { calculateCommissionForSales } from '../utils/commissionUtils';
-import { calculateWasteDeduction } from '../core/domain/settlementRules';
+import { calculateHousingDeduction, calculateWasteDeduction } from '../core/domain/settlementRules';
 import { soundAlerts } from '../utils/soundAlerts';
+import { authenticatedFetch, resetCsrfToken } from './apiClient';
 
 const STORAGE_KEY = 'SGMO_TEQUENOS_COSTA_V2';
 const OFFLINE_QUEUE_KEY = 'SGMO_OFFLINE_SALES_QUEUE';
+const PENDING_OPERATIONS_KEY = 'SGMO_PENDING_OPERATIONS';
+const PENDING_SALE_PREFIX = 'SGMO_PENDING_SALE_V1_';
 const AUTH_TOKEN_KEY = 'SGMO_AUTH_TOKEN';
 const AUTH_USER_KEY = 'SGMO_AUTH_USER';
+const LOGOUT_PENDING_KEY = 'SGMO_LOGOUT_PENDING';
 
 export interface AppState {
   currentUser: UserProfile | null;
+  centralStatus?: 'not_loaded' | 'loading' | 'ready' | 'offline' | 'error' | 'demo';
+  centralError?: string;
+  centralOwnerUserId?: string;
+  centralHydrated?: boolean;
+  demoMode?: boolean;
+  lastCentralSyncAt?: string;
+  saleSyncStatus?: 'idle' | 'pending' | 'syncing' | 'error';
+  saleSyncError?: string;
+  operationSyncError?: string;
   selectedHouseId: string;
   isOnline: boolean;
   activeSeason: string;
@@ -102,14 +115,46 @@ export interface AppState {
   transfers: StockTransfer[];
 }
 
+export interface CentralSnapshot {
+  users: UserProfile[];
+  shifts: DailyShift[];
+  sales: SaleTransaction[];
+  varieties: ProductVariety[];
+  houses: OperationalHouse[];
+  carts: SellingCart[];
+  zones: BeachZone[];
+  systemConfig: SystemConfig;
+}
+
+export interface SaleSyncResult {
+  success: boolean;
+  acknowledgedIds: string[];
+  pending: number;
+  error?: string;
+}
+
 type Listener = (state: AppState) => void;
 
-class StorageService {
+/** Credenciales de entrada transitorias: nunca forman parte del perfil/cache. */
+export type UserCredentialInput = Partial<UserProfile> & { password?: string };
+
+export class StorageService {
+  private authRevision = 0;
+  private logoutRequest: Promise<{ success: boolean; error?: string }> | null = null;
   private state: AppState;
   private listeners: Set<Listener> = new Set();
+  private saleSyncPromise: Promise<SaleSyncResult> | null = null;
+  private isStagingOperation = false;
+  private hydrationPromise: Promise<boolean> | null = null;
 
   constructor() {
     this.state = this.loadInitialState();
+    // Remove legacy bearer/profile; the server's HttpOnly cookie is the only browser identity.
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(AUTH_USER_KEY);
+      localStorage.removeItem(AUTH_TOKEN_KEY);
+      this.saveState(); // Elimina credenciales heredadas sin borrar ventas/stock.
+    }
     
     // Escuchar eventos de red en navegador
     if (typeof window !== 'undefined') {
@@ -125,25 +170,17 @@ class StorageService {
         try {
           const parsed = JSON.parse(stored);
           
-          // Sincronizar PINs específicos de cada usuario para pruebas
-          const syncedUsers = (parsed.users || INITIAL_USERS).map((u: any) => {
-            const initialMatch = INITIAL_USERS.find((iu) => iu.id === u.id);
-            if (initialMatch && (!u.pin || (u.pin === '1234' && initialMatch.pin !== '1234'))) {
-              return { ...u, pin: initialMatch.pin };
-            }
-            return u;
-          });
+          // Los perfiles locales contienen metadatos; nunca son fuente de
+          // autenticación ni deben conservar credenciales del prototipo anterior.
+          const syncedUsers = (parsed.users || []).map((user: UserProfile) =>
+            this.withoutCredentials(user)
+          );
 
-          // Asegurar que las jornadas activas de todos los vendedores estén disponibles
-          const storedShifts = parsed.shifts || [];
-          const existingShiftIds = new Set(storedShifts.map((s: any) => s.id));
-          const syncedShifts = [
-            ...storedShifts,
-            ...INITIAL_SHIFTS.filter((s) => !existingShiftIds.has(s.id))
-          ];
+          // No agregar jornadas de demostración a una caché real.
+          const syncedShifts = parsed.shifts || [];
 
           // Asegurar que las bases operativas tengan siempre currentStock, consumablesStock, coordinatorIds y residentUserIds definidos
-          const syncedHouses = (parsed.houses || INITIAL_HOUSES).map((h: any) => ({
+          const syncedHouses = (parsed.houses || []).map((h: any) => ({
             ...h,
             coordinatorIds: Array.isArray(h.coordinatorIds) ? h.coordinatorIds : [],
             residentUserIds: Array.isArray(h.residentUserIds) ? h.residentUserIds : [],
@@ -159,7 +196,7 @@ class StorageService {
           }));
 
           // Asegurar que los carritos tengan suppliesLevel y gasLevelPercent definidos
-          const syncedCarts = (parsed.carts || INITIAL_CARTS).map((c: any) => ({
+          const syncedCarts = (parsed.carts || []).map((c: any) => ({
             ...c,
             gasLevelPercent: c.gasLevelPercent ?? 100,
             suppliesLevel: c.suppliesLevel || {
@@ -174,7 +211,10 @@ class StorageService {
 
           return {
             ...parsed,
-            currentUser: null, // Siempre requerir autenticación por PIN al iniciar la aplicación
+            currentUser: null, // La identidad se restaura exclusivamente contra el servidor.
+            centralHydrated: false, // Una caché anterior no confirma la vigencia de esta carga.
+            centralStatus: 'not_loaded',
+            saleSyncStatus: 'idle',
             users: syncedUsers,
             shifts: syncedShifts,
             houses: syncedHouses,
@@ -189,59 +229,80 @@ class StorageService {
                   ? parsed.systemConfig.commissionTiers
                   : INITIAL_COMMISSION_TIERS
             },
-            supplyCategories: parsed.supplyCategories || INITIAL_SUPPLY_CATEGORIES,
-            suppliers: parsed.suppliers || INITIAL_SUPPLIERS,
-            recipes: parsed.recipes || INITIAL_RECIPES,
-            productionOrders: parsed.productionOrders || INITIAL_PRODUCTION_ORDERS,
-            factoryIncidents: parsed.factoryIncidents || INITIAL_FACTORY_INCIDENTS,
-            zones: parsed.zones && parsed.zones.length >= 5 ? parsed.zones : INITIAL_ZONES,
-            beachReports: parsed.beachReports || INITIAL_BEACH_REPORTS,
+            supplyCategories: parsed.supplyCategories || [],
+            suppliers: parsed.suppliers || [],
+            recipes: parsed.recipes || [],
+            productionOrders: parsed.productionOrders || [],
+            factoryIncidents: parsed.factoryIncidents || [],
+            zones: parsed.zones || [],
+            beachReports: parsed.beachReports || [],
             activeSeason: parsed.activeSeason || 'Temporada 2026-2027',
             availableSeasons: parsed.availableSeasons || ['Temporada 2026-2027', 'Temporada 2027-2028', 'Temporada 2028-2029']
           };
         } catch (e) {
-          console.error('Error parseando almacenamiento local, cargando semillas iniciales', e);
+          console.error('No se pudo interpretar el almacenamiento local.');
         }
       }
     }
 
     return {
-      currentUser: null, // Inicio en pantalla de login PIN
-      selectedHouseId: 'HOUSE-NORTE',
+      currentUser: null,
+      centralStatus: 'not_loaded',
+      centralHydrated: false,
+      saleSyncStatus: 'idle',
+      demoMode: false,
+      selectedHouseId: '',
       isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
       activeSeason: 'Temporada 2026-2027',
       availableSeasons: ['Temporada 2026-2027', 'Temporada 2027-2028', 'Temporada 2028-2029'],
-      systemConfig: INITIAL_SYSTEM_CONFIG,
-      supplyCategories: INITIAL_SUPPLY_CATEGORIES,
-      suppliers: INITIAL_SUPPLIERS,
-      users: INITIAL_USERS,
-      varieties: INITIAL_VARIETIES,
-      rawMaterials: INITIAL_RAW_MATERIALS,
-      recipes: INITIAL_RECIPES,
-      productionOrders: INITIAL_PRODUCTION_ORDERS,
-      factoryIncidents: INITIAL_FACTORY_INCIDENTS,
+      systemConfig: structuredClone(INITIAL_SYSTEM_CONFIG),
+      supplyCategories: [],
+      suppliers: [],
+      users: [],
+      varieties: [],
+      rawMaterials: [],
+      recipes: [],
+      productionOrders: [],
+      factoryIncidents: [],
       materialPurchases: [],
-      productionBatches: INITIAL_PRODUCTION_BATCHES,
-      houses: INITIAL_HOUSES,
-      zones: INITIAL_ZONES,
-      carts: INITIAL_CARTS,
-      incidents: INITIAL_INCIDENTS,
-      shifts: INITIAL_SHIFTS,
-      sales: INITIAL_SALES,
-      beachReports: INITIAL_BEACH_REPORTS,
-      expenses: INITIAL_EXPENSES,
-      alerts: INITIAL_ALERTS,
-      auditLogs: INITIAL_AUDIT_LOGS,
-      transfers: INITIAL_TRANSFERS
+      productionBatches: [],
+      houses: [],
+      zones: [],
+      carts: [],
+      incidents: [],
+      shifts: [],
+      sales: [],
+      beachReports: [],
+      expenses: [],
+      alerts: [],
+      auditLogs: [],
+      transfers: []
     };
   }
 
+  /** Retira credenciales de perfiles/cache; permite enviarlas solo como entrada HTTP. */
+  private withoutCredentials<Profile extends Partial<UserProfile>>(profile: Profile): Profile {
+    const safeProfile = { ...profile };
+    for (const credentialField of [
+      'pin', 'password', 'pinHash', 'pinSalt', 'passwordHash', 'passwordSalt',
+      'pin_hash', 'pin_salt', 'password_hash', 'password_salt'
+    ]) {
+      delete (safeProfile as Record<string, unknown>)[credentialField];
+    }
+    return safeProfile;
+  }
+
   private saveState(): void {
+    if (this.isStagingOperation) return;
+    this.state.users = this.state.users.map((user) => this.withoutCredentials(user));
+    if (this.state.currentUser) {
+      this.state.currentUser = this.withoutCredentials(this.state.currentUser);
+    }
     if (typeof window !== 'undefined') {
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
       } catch (e) {
-        console.error('Error guardando en localStorage', e);
+        this.state.saleSyncError = 'No se pudo guardar la caché operativa. Las ventas durables siguen pendientes; evitá recargar hasta confirmar la sincronización.';
       }
     }
     this.notify();
@@ -263,12 +324,113 @@ class StorageService {
     return this.state;
   }
 
+  /**
+   * Carga el snapshot autorizado para la sesión. Una caída central conserva caché
+   * y cola existentes; nunca trae semillas locales ni adopta otro usuario.
+   */
+  public refreshCentralState(): Promise<boolean> {
+    if (this.hydrationPromise) return this.hydrationPromise;
+    this.hydrationPromise = this.loadCentralSnapshot().finally(() => { this.hydrationPromise = null; });
+    return this.hydrationPromise;
+  }
+
+  private async loadCentralSnapshot(): Promise<boolean> {
+    const sessionUser = this.state.currentUser;
+    if (!sessionUser) return false;
+    this.state.centralStatus = 'loading';
+    this.state.centralError = undefined;
+    this.notify();
+    try {
+      const response = await authenticatedFetch('/api/bootstrap');
+      const payload = await response.json();
+      if (!response.ok || payload.success !== true || (!payload.configured && payload.demoMode !== true)) {
+        throw new Error(payload.message || 'No se pudo cargar la operación central.');
+      }
+      const snapshot = payload.state as CentralSnapshot;
+      for (const property of ['users', 'shifts', 'sales', 'varieties', 'houses', 'carts', 'zones'] as const) {
+        if (!Array.isArray(snapshot?.[property])) throw new Error('La carga central está incompleta.');
+      }
+      if (!snapshot.systemConfig || !Array.isArray(snapshot.systemConfig.commissionTiers)) {
+        throw new Error('El servidor no confirmó la configuración operativa.');
+      }
+      if (this.state.currentUser?.id !== sessionUser.id) return false;
+      const pendingSales = this.readOfflineQueue().filter((sale) =>
+        sessionUser.role !== 'seller' || sale.sellerId === sessionUser.id);
+      const centralSales = new Map<string, SaleTransaction>(snapshot.sales.map((sale) => [sale.id, { ...sale, syncStatus: 'synced' as const }]));
+      // Mientras no hay ACK, retener la versión local y su estado pendiente.
+      for (const sale of pendingSales) centralSales.set(sale.id, { ...sale, syncStatus: 'pending' });
+      const localShifts = new Map(this.state.shifts.map((shift) => [shift.id, shift]));
+      const pendingShiftIds = new Set(pendingSales.map((sale) => sale.shiftId));
+      this.state.shifts = snapshot.shifts.map((shift) =>
+        this.state.centralOwnerUserId === sessionUser.id && pendingShiftIds.has(shift.id)
+          ? localShifts.get(shift.id) || shift : shift);
+      this.state.users = snapshot.users.map((user) => this.withoutCredentials(user));
+      this.state.sales = [...centralSales.values()];
+      this.state.varieties = snapshot.varieties;
+      this.state.houses = snapshot.houses;
+      this.state.carts = snapshot.carts;
+      this.state.zones = snapshot.zones;
+      this.state.systemConfig = snapshot.systemConfig;
+      this.state.centralHydrated = true;
+      this.state.centralOwnerUserId = sessionUser.id;
+      this.state.demoMode = payload.demoMode === true;
+      this.state.centralStatus = this.state.demoMode ? 'demo' : 'ready';
+      this.state.lastCentralSyncAt = new Date().toISOString();
+      if (!this.state.houses.some((house) => house.id === this.state.selectedHouseId)) {
+        this.state.selectedHouseId = sessionUser.assignedHouseId || this.state.houses[0]?.id || '';
+      }
+      this.saveState();
+      return true;
+    } catch {
+      if (this.state.currentUser?.id !== sessionUser.id) return false;
+      this.state.centralStatus = this.state.isOnline ? 'error' : 'offline';
+      this.state.centralError = 'No se pudo actualizar la operación central. Se conserva la caché y las ventas pendientes.';
+      this.notify();
+      return false;
+    }
+  }
+
   // --- Inicio y Cierre de Sesión por PIN Personal ---
   public getAuthToken(): string | null {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem(AUTH_TOKEN_KEY);
-    }
+    // Compatibility for callers that still inspect this method. Cookies are never readable here.
     return null;
+  }
+
+  /** A reload requires a fresh central validation; cached profiles never create a session. */
+  public async restoreSession(): Promise<boolean> {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
+    if (typeof window !== 'undefined' && localStorage.getItem(LOGOUT_PENDING_KEY)) {
+      await this.logout();
+      return false;
+    }
+    const revision = this.authRevision;
+    try {
+      const response = await authenticatedFetch('/api/auth/me');
+      const result = await response.json();
+      if (revision !== this.authRevision) return false;
+      if (!response.ok || result.success !== true || !result.user?.id || result.user.isActive !== true
+          || !['admin', 'coordinator', 'seller', 'factory_worker'].includes(result.user.role)
+          || !result.session?.expiresAt || !Number.isFinite(new Date(result.session.expiresAt).getTime())
+          || new Date(result.session.expiresAt).getTime() <= Date.now() || result.session.role !== result.user.role) {
+        if (response.status === 401) { this.state.currentUser = null; this.saveState(); }
+        return false;
+      }
+      this.state.currentUser = this.withoutCredentials(result.user);
+      if (result.user.assignedHouseId) this.state.selectedHouseId = result.user.assignedHouseId;
+      this.saveState();
+      return true;
+    } catch { return false; }
+  }
+
+  /** Un solo acceso de UI sin adivinar cuentas ni probar roles sucesivos.
+   * La forma de la credencial selecciona el contrato; el servidor autentica
+   * y devuelve el rol real. Nunca se recortan ni guardan contraseñas.
+   */
+  public async loginWithCredentialAsync(identifier: string, credential: string): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
+    if (!identifier.trim()) return { success:false,error:'Ingresá tu código de usuario o correo.' };
+    if (/^\d{8}$/.test(credential)) return this.loginWithPinAsync(credential,identifier.trim());
+    if (Array.from(credential).length >= 12 && credential.length <= 1024) return this.loginAsAdminAsync(identifier.trim(),credential);
+    return { success:false,error:'Ingresá un PIN de 8 dígitos o una contraseña de al menos 12 caracteres.' };
   }
 
   public async loginWithPinAsync(pin: string, userCode?: string): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
@@ -281,99 +443,60 @@ class StorageService {
       return { success: false, error: 'El PIN personal debe contener exactamente 8 dígitos numéricos.' };
     }
 
-    // 1. Intentar autenticar contra el backend central
-    try {
-      const bodyPayload = { userCode: userCode.trim(), pin: cleanPin };
-
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyPayload)
-      });
-
-      const data = await response.json();
-
-      if (response.ok && data.success && data.user) {
-        if (typeof window !== 'undefined' && data.token) {
-          localStorage.setItem(AUTH_TOKEN_KEY, data.token);
-          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(data.user));
-        }
-
-        this.state.currentUser = data.user;
-        if (data.user.assignedHouseId) {
-          this.state.selectedHouseId = data.user.assignedHouseId;
-        }
-
-        this.addAuditLog('LOGIN_USUARIO', 'usuarios', data.user.id, `Inicio de sesión exitoso de ${data.user.name} (${data.user.role}) verificado en backend`);
-        this.saveState();
-        return { success: true, user: data.user };
-      } else if (response.status === 429) {
-        return { success: false, error: data.message || 'Demasiados intentos fallidos. Acceso bloqueado temporalmente.' };
-      } else if (response.status === 401) {
-        return { success: false, error: data.message || 'PIN incorrecto o cuenta no aprovisionada.' };
-      } else if (!response.ok) {
-        return { success: false, error: data.message || 'Error al validar credenciales en el servidor.' };
-      }
-    } catch (networkError) {
-      console.warn('Backend inalcanzable para autenticación, procediendo con contingencia local:', networkError);
-    }
-
-    // 2. Modo contingencia sin conexión (Offline)
-    return this.loginWithPin(cleanPin, userCode);
+    return this.authenticateWithServer({ userCode: userCode.trim(), pin: cleanPin });
   }
 
   public async loginAsAdminAsync(identifier: string, password: string): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
-    if (!identifier || !password) {
+    if (!identifier?.trim() || !password) {
       return { success: false, error: 'Debe ingresar identificador y contraseña.' };
     }
+    return this.authenticateWithServer({ identifier: identifier.trim(), password });
+  }
 
+  /**
+   * Sólo una respuesta central con perfil y vigencia habilita la sesión cookie.
+   * Caídas de red, HTML de hosting estático, respuestas incompletas o errores
+   * del servidor se rechazan; la venta offline de sesiones activas no cambia.
+   */
+  private async authenticateWithServer(credentials: { userCode: string; pin: string } | { identifier: string; password: string }): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
     try {
-      const response = await fetch('/api/auth/login', {
+      if (this.logoutRequest && !(await this.logoutRequest).success) {
+        return { success: false, error: 'El cierre anterior requiere conexión antes de iniciar otra sesión.' };
+      }
+      const response = await authenticatedFetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier, password })
+        body: JSON.stringify(credentials)
       });
-
-      const data = await response.json();
-
-      if (response.ok && data.success && data.user) {
-        if (typeof window !== 'undefined' && data.token) {
-          localStorage.setItem(AUTH_TOKEN_KEY, data.token);
-          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(data.user));
-        }
-
-        this.state.currentUser = data.user;
-        this.addAuditLog('LOGIN_USUARIO', 'usuarios', data.user.id, `Inicio de sesión exitoso de Administrador ${data.user.name} verificado en backend`);
-        this.saveState();
-        return { success: true, user: data.user };
-      } else if (response.status === 429) {
-        return { success: false, error: data.message || 'Demasiados intentos fallidos. Acceso bloqueado temporalmente.' };
-      } else if (response.status === 401) {
-        return { success: false, error: data.message || 'Credenciales de administrador incorrectas.' };
+      const result = await response.json();
+      if (!response.ok) {
+        return { success: false, error: result.message || 'No se pudo validar el acceso en el servidor.' };
       }
-    } catch (networkError) {
-      console.warn('Backend inalcanzable para autenticación admin:', networkError);
-    }
+      if (result.success !== true || !result.user?.id || result.user.isActive !== true
+          || !['admin', 'coordinator', 'seller', 'factory_worker'].includes(result.user.role)
+          || typeof result.expiresAt !== 'string' || !Number.isFinite(new Date(result.expiresAt).getTime())
+          || new Date(result.expiresAt).getTime() <= Date.now() || 'token' in result) {
+        return { success: false, error: 'El servidor no confirmó una sesión válida.' };
+      }
 
-    // Contingencia local admin
-    const cleanId = identifier.trim().toLowerCase();
-    const admin = this.state.users.find(
-      (u) =>
-        u.role === 'admin' &&
-        u.isActive !== false &&
-        (u.id.toLowerCase() === cleanId ||
-          u.email?.toLowerCase() === cleanId ||
-          (u.userCode && u.userCode.toLowerCase() === cleanId))
-    );
-
-    if (admin) {
-      this.state.currentUser = admin;
-      this.addAuditLog('LOGIN_USUARIO', 'usuarios', admin.id, `Inicio de sesión offline de Administrador ${admin.name}`);
+      const safeUser = this.withoutCredentials(result.user as UserProfile);
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem(AUTH_TOKEN_KEY);
+        localStorage.removeItem(AUTH_USER_KEY);
+        localStorage.removeItem(LOGOUT_PENDING_KEY);
+      }
+      this.authRevision++;
+      this.state.currentUser = safeUser;
+      if (safeUser.assignedHouseId) {
+        this.state.selectedHouseId = safeUser.assignedHouseId;
+      }
+      this.addAuditLog('LOGIN_USUARIO', 'usuarios', safeUser.id, `Inicio de sesión de ${safeUser.name} (${safeUser.role}) verificado en backend`);
       this.saveState();
-      return { success: true, user: admin };
+      return { success: true, user: safeUser };
+    } catch {
+      // No registrar respuestas o errores que puedan incluir datos de entrada.
+      return { success: false, error: 'No se pudo conectar con el servidor. Para iniciar sesión necesitás conexión.' };
     }
-
-    return { success: false, error: 'Credenciales de administrador incorrectas o no sincronizadas.' };
   }
 
   public setCurrentUser(user: UserProfile | null): void {
@@ -381,59 +504,45 @@ class StorageService {
       this.logout();
       return;
     }
-    this.state.currentUser = user;
+    // Este adaptador puede refrescar la identidad existente, pero no autenticar
+    // una cuenta ni elevar su rol desde un perfil/cache local.
+    const authenticatedUser = this.state.currentUser;
+    if (!authenticatedUser || authenticatedUser.id !== user.id || authenticatedUser.role !== user.role) {
+      return;
+    }
+    this.state.currentUser = this.withoutCredentials(user);
     if (user.assignedHouseId) {
       this.state.selectedHouseId = user.assignedHouseId;
     }
     this.saveState();
   }
 
-  public loginWithPin(pin: string, userCode: string): { success: boolean; user?: UserProfile; error?: string } {
-    if (!userCode || !userCode.trim()) {
-      return { success: false, error: 'Debe especificar el código de usuario (userCode) o identificador de cuenta.' };
-    }
-
-    const cleanPin = (pin || '').trim();
-    if (!/^\d{8}$/.test(cleanPin)) {
-      return { success: false, error: 'El PIN debe contener exactamente 8 dígitos numéricos.' };
-    }
-
-    const cleanCode = userCode.trim().toLowerCase();
-    const user = this.state.users.find(
-      (u) =>
-        u.isActive !== false &&
-        ((u.userCode && u.userCode.toLowerCase() === cleanCode) || u.id.toLowerCase() === cleanCode) &&
-        u.pin === cleanPin
-    );
-
-    if (!user) {
-      return { success: false, error: 'Código de usuario o PIN incorrecto.' };
-    }
-
-    this.state.currentUser = user;
-    if (user.assignedHouseId) {
-      this.state.selectedHouseId = user.assignedHouseId;
-    }
-    this.addAuditLog('LOGIN_USUARIO', 'usuarios', user.id, `Inicio de sesión exitoso de ${user.name} (${user.role}) mediante PIN`);
-    this.saveState();
-    return { success: true, user };
+  /** @deprecated La autenticación requiere loginWithPinAsync y servidor disponible. */
+  public loginWithPin(_pin: string, _userCode: string): { success: boolean; user?: UserProfile; error?: string } {
+    return { success: false, error: 'El inicio de sesión local está deshabilitado. Usá la autenticación central con conexión.' };
   }
 
-  public logout(): void {
-    const token = this.getAuthToken();
-    if (token) {
-      fetch('/api/auth/logout', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        }
-      }).catch(() => {});
-    }
-
+  /** Sólo después del ACK de cambio: el servidor ya revocó cookie/sesiones; no toca la cola de ventas. */
+  public clearSessionAfterPasswordChange(): void {
+    this.authRevision++;
+    this.state.currentUser = null;
+    this.state.centralHydrated = false;
     if (typeof window !== 'undefined') {
       localStorage.removeItem(AUTH_TOKEN_KEY);
       localStorage.removeItem(AUTH_USER_KEY);
+      localStorage.removeItem(LOGOUT_PENDING_KEY);
+    }
+    resetCsrfToken();
+    this.saveState();
+  }
+
+  public logout(): Promise<{ success: boolean; error?: string }> {
+    if (this.logoutRequest) return this.logoutRequest;
+    this.authRevision++;
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(AUTH_TOKEN_KEY);
+      localStorage.removeItem(AUTH_USER_KEY);
+      localStorage.setItem(LOGOUT_PENDING_KEY, 'true');
     }
 
     if (this.state.currentUser) {
@@ -441,6 +550,19 @@ class StorageService {
     }
     this.state.currentUser = null;
     this.saveState();
+    this.logoutRequest = (async () => {
+      try {
+        const response = await authenticatedFetch('/api/auth/logout', { method: 'POST' });
+        const result = await response.json();
+        if (!response.ok || result.success !== true) throw new Error('Revocación pendiente');
+        if (typeof window !== 'undefined') localStorage.removeItem(LOGOUT_PENDING_KEY);
+        resetCsrfToken();
+        return { success: true };
+      } catch {
+        return { success: false, error: 'Saliste de esta pantalla, pero el servidor todavía no confirmó el cierre. Reconectate para completar la revocación.' };
+      } finally { this.logoutRequest = null; }
+    })();
+    return this.logoutRequest;
   }
 
   public setSelectedHouse(houseId: string): void {
@@ -637,8 +759,117 @@ class StorageService {
     return transfer;
   }
 
+  /** Ejecuta el cálculo previo sin publicar ni guardar sus efectos económicos. */
+  private calculateOperationDraft<Result>(calculate: () => Result): Result {
+    const liveState = this.state;
+    this.state = structuredClone(liveState);
+    this.isStagingOperation = true;
+    try { return calculate(); }
+    finally { this.state = liveState; this.isStagingOperation = false; }
+  }
+
+  private requireCentralOperation(roles: UserRole[]): UserProfile {
+    const user = this.state.currentUser;
+    if (!user || !roles.includes(user.role)) throw new Error('Tu rol no puede confirmar esta operación.');
+    if (!this.state.isOnline) throw new Error('Esta operación requiere conexión con la base central.');
+    if (!this.state.centralHydrated || this.state.centralOwnerUserId !== user.id) {
+      throw new Error('Primero cargá la operación central de tu sesión.');
+    }
+    return user;
+  }
+
+  private readPendingOperations(): Array<{ key: string; userId: string; url: string; method: 'POST' | 'PUT'; payload: unknown }> {
+    const pending = JSON.parse(localStorage.getItem(PENDING_OPERATIONS_KEY) || '[]');
+    if (!Array.isArray(pending) || pending.some((operation) => !operation || typeof operation.key !== 'string')) {
+      throw new Error('Hay operaciones sin recuperar. No borrar la caché.');
+    }
+    return pending;
+  }
+
+  private async persistShiftOperation(url: string, method: 'POST' | 'PUT', payload: unknown, semanticInput: unknown = payload): Promise<Record<string, any>> {
+    const sessionUserId = this.state.currentUser?.id;
+    if (!sessionUserId) throw new Error('Se requiere una sesión activa.');
+    // Un reintento conserva el DTO exacto, incluyendo ID/timestamp. Si se perdió
+    // la respuesta, el servidor puede reconocer la operación ya persistida.
+    const intentKey = JSON.stringify([sessionUserId, method, url, semanticInput]);
+    const pending = this.readPendingOperations();
+    let intent = pending.find((operation) => operation.key === intentKey);
+    if (!intent) {
+      intent = { key: intentKey, userId: sessionUserId, url, method, payload };
+      pending.push(intent);
+      localStorage.setItem(PENDING_OPERATIONS_KEY, JSON.stringify(pending));
+    }
+    this.state.operationSyncError = undefined;
+    let response: Response;
+    let result: Record<string, any>;
+    try {
+      response = await authenticatedFetch(url, {
+        method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(intent.payload)
+      });
+      result = await response.json();
+    } catch {
+      this.state.operationSyncError = 'La operación no se confirmó. Se conserva su identificador para reintentar sin duplicar.';
+      this.notify();
+      throw new Error(this.state.operationSyncError);
+    }
+    if (!response.ok || result.success !== true) {
+      if (response.status >= 400 && response.status < 500 && response.status !== 409) {
+        localStorage.setItem(PENDING_OPERATIONS_KEY, JSON.stringify(this.readPendingOperations().filter((operation) => operation.key !== intentKey)));
+      }
+      this.state.operationSyncError = result.message || result.error || 'La base central rechazó la operación.';
+      this.notify();
+      throw new Error(this.state.operationSyncError);
+    }
+    if (this.state.currentUser?.id !== sessionUserId) {
+      throw new Error('La sesión cambió mientras se confirmaba la operación. Actualizá la operación central.');
+    }
+    if (!result.shift?.id) throw new Error('El servidor no confirmó la jornada actualizada.');
+    localStorage.setItem(PENDING_OPERATIONS_KEY, JSON.stringify(this.readPendingOperations().filter((operation) => operation.key !== intentKey)));
+    this.state.shifts = [result.shift, ...this.state.shifts.filter((shift) => shift.id !== result.shift.id)];
+    this.saveState();
+    // Casas/carritos/catálogo se adoptan desde sus fuentes centrales, no desde
+    // el borrador que descuenta congeladores sólo en el dispositivo.
+    await this.refreshCentralState();
+    return result;
+  }
+
+  public async dispatchSellerShift(data: Parameters<StorageService['draftDispatchSellerShift']>[0]): Promise<DailyShift> {
+    this.requireCentralOperation(['admin', 'coordinator']);
+    const draft = this.calculateOperationDraft(() => this.draftDispatchSellerShift(data));
+    const result = await this.persistShiftOperation('/api/shifts', 'POST', draft, data);
+    return result.shift;
+  }
+
+  public async closeAndReconcileShift(data: Parameters<StorageService['draftCloseAndReconcileShift']>[0]): Promise<DailyShift | undefined> {
+    this.requireCentralOperation(['admin', 'coordinator']);
+    const pending = this.readOfflineQueue().some((sale) => sale.shiftId === data.shiftId);
+    if (pending) {
+      const sync = await this.flushOfflineQueue();
+      if (!sync.success || this.readOfflineQueue().some((sale) => sale.shiftId === data.shiftId)) {
+        throw new Error('Hay ventas sin confirmar. Sincronizalas antes de cerrar la jornada.');
+      }
+    }
+    const result = await this.persistShiftOperation(`/api/shifts/${encodeURIComponent(data.shiftId)}/close`, 'PUT', data);
+    return result.shift;
+  }
+
+  public async recordShiftWaste(...parameters: Parameters<StorageService['draftRecordShiftWaste']>): Promise<ShiftWasteRecord | undefined> {
+    this.requireCentralOperation(['admin', 'coordinator', 'seller']);
+    const record = this.calculateOperationDraft(() => this.draftRecordShiftWaste(...parameters));
+    if (!record) throw new Error('No se encontró la jornada de merma.');
+    const result = await this.persistShiftOperation(`/api/shifts/${encodeURIComponent(record.shiftId)}/waste`, 'POST', record, parameters);
+    return result.record;
+  }
+
+  public async addShiftRestock(data: Parameters<StorageService['draftAddShiftRestock']>[0]): Promise<{ shift: DailyShift; restockRecords: ShiftRestockRecord[] }> {
+    this.requireCentralOperation(['admin', 'coordinator']);
+    const draft = this.calculateOperationDraft(() => this.draftAddShiftRestock(data));
+    const result = await this.persistShiftOperation(`/api/shifts/${encodeURIComponent(data.shiftId)}/restock`, 'POST', { records: draft.restockRecords }, data);
+    return { shift: result.shift, restockRecords: result.records };
+  }
+
   // --- 3. Planificación y Despacho Matutino (Check-out) ---
-  public dispatchSellerShift(data: {
+  private draftDispatchSellerShift(data: {
     sellerId: string;
     cartId: string;
     zoneId: string;
@@ -661,7 +892,7 @@ class StorageService {
     const zone = this.state.zones.find((z) => z.id === data.zoneId);
     const house = this.state.houses.find((h) => h.id === data.houseId);
 
-    const shiftId = `SHIFT-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(this.state.shifts.length + 1).padStart(2, '0')}`;
+    const shiftId = `SHIFT-${crypto.randomUUID()}`;
 
     let totalUnits = 0;
     const stockItems: ShiftStockItem[] = data.stockToDeliver.map((item) => {
@@ -738,7 +969,8 @@ class StorageService {
       appliedCommissionTierId: this.state.systemConfig?.commissionTiers?.[0]?.id,
       appliedCommissionTierName: this.state.systemConfig?.commissionTiers?.[0]?.name,
       grossCommission: 0,
-      housingCostDeduction: seller?.housingCostExempt ? 0 : (this.state.systemConfig?.housingCostPerPersonDaily || 8000),
+      housingCostDeduction: calculateHousingDeduction({ isHousingExempt:seller?.housingCostExempt,
+        housingDeductionOverride:seller?.housingCostOverride,housingCostPerPersonDaily:this.state.systemConfig?.housingCostPerPersonDaily }),
       housingCostExempt: !!seller?.housingCostExempt,
       deductionsForMissingUnits: 0,
       incentivesOrBonuses: 0,
@@ -775,12 +1007,31 @@ class StorageService {
     gpsLocation?: { lat: number; lng: number; zoneName?: string };
   }): SaleTransaction {
     const shift = this.state.shifts.find((s) => s.id === saleData.shiftId);
+    const sessionUser = this.state.currentUser;
+    if (!sessionUser || !this.state.centralHydrated || this.state.centralOwnerUserId !== sessionUser.id) {
+      throw new Error('No hay una operación central cargada para esta sesión.');
+    }
+    if (!shift || shift.status !== 'en_curso' || (sessionUser.role === 'seller' && shift.sellerId !== sessionUser.id)) {
+      throw new Error('La venta requiere una jornada activa autorizada.');
+    }
+    if (!['seller', 'coordinator', 'admin'].includes(sessionUser.role)) throw new Error('Tu rol no puede registrar ventas.');
+    if (!Number.isInteger(saleData.quantityUnitsEquivalent) || saleData.quantityUnitsEquivalent <= 0
+        || !Number.isFinite(saleData.totalAmount) || saleData.totalAmount <= 0) {
+      throw new Error('La venta requiere unidades enteras e importe válido.');
+    }
+    if (saleData.voucherPhotoUrl && saleData.voucherPhotoUrl.length > 2_000_000) {
+      throw new Error('El comprobante es demasiado grande. Reducí la imagen antes de registrar la venta.');
+    }
+    const stockForVariety = shift.stockItems.find((item) => item.varietyId === saleData.varietyId);
+    const remainingUnits = stockForVariety ? stockForVariety.deliveredUnits + stockForVariety.reSuppliedUnits
+      - stockForVariety.soldUnits - stockForVariety.returnedUnits - stockForVariety.wasteUnits : 0;
+    if (saleData.quantityUnitsEquivalent > remainingUnits) throw new Error('No hay stock disponible para registrar esta venta.');
     const sellerId = shift ? shift.sellerId : (this.state.currentUser?.id || 'USR-SELLER');
     const sellerName = shift ? shift.sellerName : (this.state.currentUser?.name || 'Vendedor');
     const variety = this.state.varieties.find((v) => v.id === saleData.varietyId);
     const varietyName = variety ? variety.name : 'Tequeño';
 
-    const saleId = `TX-${Date.now()}-${Math.floor(Math.random() * 100)}`;
+    const saleId = `TX-${crypto.randomUUID()}`;
     const isOnline = this.state.isOnline;
 
     const newSale: SaleTransaction = {
@@ -799,16 +1050,19 @@ class StorageService {
       beachSector: saleData.beachSector,
       voucherPhotoUrl: saleData.voucherPhotoUrl,
       voucherExtractedData: saleData.voucherExtractedData,
-      validationStatus: saleData.validationStatus || (saleData.paymentMethod === 'efectivo' ? 'validada' : 'pendiente_revision'),
-      mpApiVerification: saleData.mpApiVerification,
+      validationStatus: saleData.paymentMethod === 'efectivo' ? 'validada'
+        : saleData.validationStatus && saleData.validationStatus !== 'validada' ? saleData.validationStatus : 'pendiente_revision',
+      // El comprobante o una respuesta local no acreditan dinero. Solo el
+      // snapshot central devuelve evidencia bancaria verificada y persistida.
+      mpApiVerification: undefined,
       gpsLocation: saleData.gpsLocation,
-      isOfflineCreated: !isOnline
+      isOfflineCreated: !isOnline,
+      syncStatus: 'pending'
     };
 
-    // Si está offline, guardar en cola de sincronización local
-    if (!isOnline) {
-      this.enqueueOfflineSale(newSale);
-    }
+    // Persistir antes de modificar totales: también una venta con red puede
+    // fallar al enviar. No asumir respaldo central por navigator.onLine.
+    this.enqueueOfflineSale(newSale);
 
     // Actualizar ventas en la jornada
     if (shift) {
@@ -844,7 +1098,7 @@ class StorageService {
       const liveCommission = calculateCommissionForSales(
         shift.totalGrossSales,
         this.state.systemConfig?.commissionTiers || [],
-        shift.commissionRate || 0.20
+        shift.commissionRate ?? 0.20
       );
       shift.commissionRate = liveCommission.rate;
       shift.appliedCommissionTierId = liveCommission.tier?.id;
@@ -900,67 +1154,106 @@ class StorageService {
       saleId,
       `Venta de ${newSale.itemType} (${newSale.quantityUnitsEquivalent} u) por $${newSale.totalAmount} vía ${newSale.paymentMethod}${locText} (${sellerName})`
     );
+    this.state.saleSyncStatus = 'pending';
     this.saveState();
+    if (isOnline) void this.flushOfflineQueue();
     return newSale;
   }
 
   // --- Offline Queue Handling ---
-  private enqueueOfflineSale(sale: SaleTransaction): void {
-    if (typeof window === 'undefined') return;
-    try {
-      const existing = JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || '[]');
-      existing.push(sale);
-      localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(existing));
-    } catch (e) {
-      console.error('Error guardando en cola offline', e);
+  private readOfflineQueue(): SaleTransaction[] {
+    if (typeof window === 'undefined') return [];
+    const pendingSales = JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || '[]');
+    if (!Array.isArray(pendingSales) || pendingSales.some((sale) => !sale || typeof sale.id !== 'string')) {
+      throw new Error('La cola de ventas necesita recuperación. No borrar ni reiniciar.');
     }
+    const salesById = new Map<string, SaleTransaction>(pendingSales.map((sale: SaleTransaction) => [sale.id, sale]));
+    // Cada venta nueva también posee una clave propia. Dos pestañas pueden
+    // pisar el índice compartido, pero no una venta de UUID diferente.
+    if (typeof localStorage.key === 'function') {
+      for (let index = 0; index < localStorage.length; index++) {
+        const key = localStorage.key(index);
+        if (!key?.startsWith(PENDING_SALE_PREFIX)) continue;
+        const sale = JSON.parse(localStorage.getItem(key) || 'null') as SaleTransaction;
+        if (!sale?.id || key !== `${PENDING_SALE_PREFIX}${sale.id}`) {
+          throw new Error('Una venta local requiere recuperación. No borrar la caché.');
+        }
+        salesById.set(sale.id, sale);
+      }
+    }
+    return [...salesById.values()];
+  }
+
+  /** Fallo de cuota/JSON impide registrar la venta antes de alterar caja o stock. */
+  private enqueueOfflineSale(sale: SaleTransaction): void {
+    if (typeof window === 'undefined') throw new Error('El dispositivo no dispone de almacenamiento durable.');
+    const pendingSales = this.readOfflineQueue();
+    const existingIndex = pendingSales.findIndex((pendingSale) => pendingSale.id === sale.id);
+    if (existingIndex === -1) pendingSales.push(sale);
+    else pendingSales[existingIndex] = sale;
+    // La escritura individual es obligatoria. El índice es reconstruible y
+    // su fallo no convierte una venta durable en una operación desconocida.
+    localStorage.setItem(`${PENDING_SALE_PREFIX}${sale.id}`, JSON.stringify(sale));
+    try { localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(pendingSales)); }
+    catch { this.state.saleSyncError = 'El índice local no se actualizó; las ventas se conservaron individualmente.'; }
   }
 
   public getOfflineQueueCount(): number {
-    if (typeof window === 'undefined') return 0;
-    try {
-      const queue = JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || '[]');
-      return queue.length;
-    } catch (e) {
-      return 0;
-    }
+    try { return this.readOfflineQueue().length; }
+    catch { return 0; } // Los flujos de escritura/reset consultan la cola estricta.
   }
 
-  public async flushOfflineQueue(): Promise<void> {
-    if (typeof window === 'undefined') return;
-    try {
-      const queue = JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || '[]');
-      if (queue.length > 0) {
-        console.log(`Sincronizando ${queue.length} ventas locales pendientes con el servidor central...`);
-        try {
-          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-          const token = this.getAuthToken();
-          if (token) {
-            headers['Authorization'] = `Bearer ${token}`;
-          }
+  /** Un solo envío activo por instancia; cada ACK se aplica sobre la cola actual. */
+  public flushOfflineQueue(): Promise<SaleSyncResult> {
+    if (this.saleSyncPromise) return this.saleSyncPromise;
+    this.saleSyncPromise = this.synchronizePendingSales().finally(() => { this.saleSyncPromise = null; });
+    return this.saleSyncPromise;
+  }
 
-          const res = await fetch('/api/sales/sync-batch', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ sales: queue })
-          });
-          if (res.ok) {
-            localStorage.removeItem(OFFLINE_QUEUE_KEY);
-            this.addAuditLog(
-              'SINCRONIZACION_OFFLINE',
-              'venta',
-              'SYNC_BATCH',
-              `Se sincronizaron automáticamente ${queue.length} ventas offline con la base de datos central.`
-            );
-          } else {
-            console.warn('El servidor no pudo procesar el lote offline (posible base no configurada), conservando datos locales.');
-          }
-        } catch (netErr) {
-          console.warn('Sin conexión para vaciar cola offline; conservando datos en almacenamiento local.');
-        }
+  private async synchronizePendingSales(): Promise<SaleSyncResult> {
+    const sessionUser = this.state.currentUser;
+    const noSession = !sessionUser;
+    if (typeof window === 'undefined' || noSession) {
+      return { success: false, acknowledgedIds: [], pending: this.getOfflineQueueCount(), error: 'Se requiere una sesión activa.' };
+    }
+    try {
+      const queue = this.readOfflineQueue();
+      const snapshot = queue.filter((sale) => sessionUser.role !== 'seller' || sale.sellerId === sessionUser.id).slice(0, 500);
+      if (snapshot.length === 0) return { success: true, acknowledgedIds: [], pending: queue.length };
+      const versions = new Map(snapshot.map((sale) => [sale.id, JSON.stringify(sale)]));
+      this.state.saleSyncStatus = 'syncing';
+      this.state.saleSyncError = undefined;
+      this.notify();
+      const response = await authenticatedFetch('/api/sales/sync-batch', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sales: snapshot })
+      });
+      const result = await response.json();
+      if (!response.ok || result.success !== true || !Array.isArray(result.acknowledgedIds)
+          || result.acknowledgedIds.some((id: unknown) => typeof id !== 'string' || !versions.has(id as string))) {
+        throw new Error('El servidor no confirmó los identificadores del lote.');
       }
-    } catch (e) {
-      console.error('Error sincronizando cola offline', e);
+      const acknowledged = new Set<string>(result.acknowledgedIds);
+      const retained = this.readOfflineQueue().filter((sale) =>
+        !acknowledged.has(sale.id) || versions.get(sale.id) !== JSON.stringify(sale));
+      // Escribir un array vacío conserva un resultado inequívoco y no elimina
+      // ventas nuevas que llegaron mientras el request estaba en vuelo.
+      localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(retained));
+      for (const saleId of acknowledged) {
+        const durableKey = `${PENDING_SALE_PREFIX}${saleId}`;
+        if (localStorage.getItem(durableKey) === versions.get(saleId)) localStorage.removeItem(durableKey);
+      }
+      const retainedIds = new Set(retained.map((sale) => sale.id));
+      this.state.sales = this.state.sales.map((sale) =>
+        acknowledged.has(sale.id) && !retainedIds.has(sale.id) ? { ...sale, syncStatus: 'synced' } : sale);
+      this.state.saleSyncStatus = retained.length ? 'pending' : 'idle';
+      this.state.lastCentralSyncAt = new Date().toISOString();
+      this.saveState();
+      return { success: true, acknowledgedIds: [...acknowledged], pending: retained.length };
+    } catch {
+      this.state.saleSyncStatus = 'error';
+      this.state.saleSyncError = 'No se confirmaron las ventas pendientes. Se conservan en este dispositivo para reintentar.';
+      this.notify();
+      return { success: false, acknowledgedIds: [], pending: this.getOfflineQueueCount(), error: this.state.saleSyncError };
     }
   }
 
@@ -974,14 +1267,16 @@ class StorageService {
     const sale = this.state.sales.find((s) => s.id === saleId);
     if (!sale) return;
 
+    if (sale.paymentMethod !== 'efectivo' && status === 'validada') {
+      throw new Error('La acreditación bancaria solo puede confirmarse desde la API central. Actualizá la operación para ver la evidencia verificada.');
+    }
     const previousStatus = sale.validationStatus;
     sale.validationStatus = status;
     if (extractedData) {
       sale.voucherExtractedData = { ...sale.voucherExtractedData, ...extractedData };
     }
-    if (mpVerification) {
-      sale.mpApiVerification = mpVerification;
-    }
+    // mpVerification recibido por un componente no es autoridad bancaria.
+    // La evidencia solo se adopta en refreshCentralState desde el servidor.
 
     // Actualizar resumen en la jornada
     const shift = this.state.shifts.find((s) => s.id === sale.shiftId);
@@ -991,7 +1286,8 @@ class StorageService {
       this.state.sales
         .filter((s) => s.shiftId === shift.id && (s.paymentMethod === 'mercado_pago' || s.paymentMethod === 'transferencia'))
         .forEach((s) => {
-          if (s.validationStatus === 'validada') {
+          if (s.validationStatus === 'validada' && s.mpApiVerification?.matchedInApi === true
+              && s.mpApiVerification?.isLiveApi === true && s.mpApiVerification?.apiStatus === 'approved') {
             validated += s.totalAmount;
           } else {
             pending += s.totalAmount;
@@ -1000,6 +1296,8 @@ class StorageService {
       shift.mpValidatedAmount = validated;
       shift.mpPendingOrSuspiciousAmount = pending;
     }
+
+    if (sale.syncStatus === 'pending') this.enqueueOfflineSale(sale);
 
     this.addAuditLog(
       'VALIDACION_COMPROBANTE',
@@ -1020,7 +1318,7 @@ class StorageService {
   }
 
   // --- 6. Cierre de Jornada, Conciliación y Liquidación ---
-  public closeAndReconcileShift(data: {
+  private draftCloseAndReconcileShift(data: {
     shiftId: string;
     cashDeclared: number;
     gasPercentEnd: number;
@@ -1107,11 +1405,11 @@ class StorageService {
             rateBelowOrEqual: config.wastePenaltyRateBelowOrEqual ?? 500,
             rateAbove: config.wastePenaltyRateAbove ?? 2500
           },
-          data.deductionMissingRatePerUnit || 1500
+          data.deductionMissingRatePerUnit ?? config?.deductionRatePerMissingUnit ?? 1500
         );
         deductions = wasteBreakdown.totalDeduction;
       } else {
-        const deductionRate = data.deductionMissingRatePerUnit || config?.deductionRatePerMissingUnit || 1500;
+        const deductionRate = data.deductionMissingRatePerUnit ?? config?.deductionRatePerMissingUnit ?? 1500;
         deductions = totalDifferenceUnits * deductionRate;
       }
     }
@@ -1120,13 +1418,14 @@ class StorageService {
     // Deducción de costo de vivienda por persona diaria (salvo exención)
     const seller = this.state.users.find((u) => u.id === shift.sellerId);
     const isExempt = !!seller?.housingCostExempt;
-    const housingDeduction = isExempt ? 0 : (this.state.systemConfig?.housingCostPerPersonDaily || 8000);
+    const housingDeduction = calculateHousingDeduction({ isHousingExempt:isExempt,housingDeductionOverride:seller?.housingCostOverride,
+      housingCostPerPersonDaily:this.state.systemConfig?.housingCostPerPersonDaily });
 
     // Calcular comisión del vendedor según los tramos vigentes y el total de ventas acumulado en la jornada
     const commissionCalc = calculateCommissionForSales(
       shift.totalGrossSales,
       this.state.systemConfig?.commissionTiers || [],
-      shift.commissionRate || 0.20
+      shift.commissionRate ?? 0.20
     );
 
     shift.deductionsForMissingUnits = deductions;
@@ -1168,25 +1467,11 @@ class StorageService {
     return shift;
   }
 
-  public paySellerCommission(shiftId: string, paymentProof: string): void {
-    const shift = this.state.shifts.find((s) => s.id === shiftId);
-    if (!shift) return;
-
-    shift.status = 'liquidada';
-    shift.payoutStatus = 'pagado';
-    shift.payoutTimestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
-    shift.payoutPaymentProof = paymentProof;
-
-    this.addAuditLog(
-      'LIQUIDACION_PAGADA',
-      'liquidacion',
-      shift.id,
-      `Pago de comisión a ${shift.sellerName} por $${shift.finalPayoutAmount.toLocaleString()} (${paymentProof})`
-    );
-    this.saveState();
+  public async paySellerCommission(shiftId: string, paymentProof: string): Promise<void> {
+    this.requireCentralOperation(['admin', 'coordinator']);
+    await this.persistShiftOperation(`/api/shifts/${encodeURIComponent(shiftId)}/payout`, 'PUT', { paymentProof });
   }
 
-  // Helper para etiqueta legible de merma
   public getWasteReasonLabel(reason: string): string {
     const labels: Record<string, string> = {
       producto_danado: 'Producto dañado',
@@ -1200,7 +1485,7 @@ class StorageService {
   }
 
   // Registro puntual de merma en jornada (roturas, caídas a arena, quemados, etc.)
-  public recordShiftWaste(
+  private draftRecordShiftWaste(
     shiftId: string,
     varietyId: string,
     units: number,
@@ -1255,7 +1540,7 @@ class StorageService {
   }
 
   // Reabastecimiento / Entrega adicional durante la jornada (Restock)
-  public addShiftRestock(data: {
+  private draftAddShiftRestock(data: {
     shiftId: string;
     items: { varietyId: string; quantity: number }[];
     originLocation?: string;
@@ -1364,27 +1649,9 @@ class StorageService {
   }
 
   // Registro de sobrantes devueltos a la base
-  public recordShiftLeftovers(shiftId: string, returnedCounts: Record<string, number>): void {
-    const shift = this.state.shifts.find((s) => s.id === shiftId);
-    if (!shift) return;
-
-    let totalReturned = 0;
-    shift.stockItems.forEach((item) => {
-      if (returnedCounts[item.varietyId] !== undefined) {
-        item.returnedUnits = returnedCounts[item.varietyId];
-      }
-      item.differenceUnits = (item.deliveredUnits + item.reSuppliedUnits) - item.soldUnits - item.returnedUnits - item.wasteUnits;
-      totalReturned += item.returnedUnits || 0;
-    });
-    shift.totalUnitsReturned = totalReturned;
-
-    this.addAuditLog(
-      'REGISTRO_SOBRANTES',
-      'stock',
-      shiftId,
-      `Registro de sobrantes: ${totalReturned} unidades contabilizadas al cierre (${shift.sellerName}).`
-    );
-    this.saveState();
+  public async recordShiftLeftovers(shiftId: string, returnedCounts: Record<string, number>): Promise<void> {
+    this.requireCentralOperation(['admin', 'coordinator', 'seller']);
+    await this.persistShiftOperation(`/api/shifts/${encodeURIComponent(shiftId)}/leftovers`, 'POST', { returnedItems: Object.entries(returnedCounts).map(([varietyId, count]) => ({ varietyId, count })) });
   }
 
   // --- 7. Reporte de Incidencias de Carritos e Insumos ---
@@ -1503,248 +1770,150 @@ class StorageService {
   }
 
   // --- 10. Gestión de Usuarios ---
-  public createUser(userData: Omit<UserProfile, 'id'>): UserProfile {
-    const id = `USR-${Date.now()}`;
-    const newUser: UserProfile = { ...userData, id, isActive: true };
+  /** Crea en el servidor antes de publicar el perfil local; falla cerrado sin sesión admin. */
+  public async createUser(userData: Omit<UserProfile, 'id'> & { password?: string }): Promise<UserProfile> {
+    const id = `USR-${crypto.randomUUID()}`;
+    const newUser = await this.persistUserChange('/api/users', 'POST', { ...userData, id });
     this.state.users = [...this.state.users, newUser];
-    this.addAuditLog('CREAR_USUARIO', 'usuarios', id, `Creación de usuario: ${newUser.name} con rol ${newUser.role}`);
+    this.addAuditLog('CREAR_USUARIO', 'usuarios', newUser.id, `Creación de usuario: ${newUser.name} con rol ${newUser.role} confirmada en backend`);
     this.saveState();
-
-    // Sincronizar con el backend si hay token
-    const token = this.getAuthToken();
-    if (token) {
-      fetch('/api/users', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(newUser)
-      }).catch((err) => console.warn('Sync POST /api/users error:', err));
-    }
-
     return newUser;
   }
 
-  public updateUser(userId: string, data: Partial<UserProfile>): void {
-    const user = this.state.users.find((u) => u.id === userId);
-    if (!user) return;
-    const oldRole = user.role;
-    Object.assign(user, data);
-    this.addAuditLog(
-      'ACTUALIZAR_USUARIO',
-      'usuarios',
-      userId,
-      `Modificación de perfil de ${user.name}. Rol: ${user.role} (anterior: ${oldRole})`
-    );
-    // Si se editó el usuario activo actual, reflejar cambios
-    if (this.state.currentUser && this.state.currentUser.id === userId) {
-      this.state.currentUser = { ...user };
-    }
-    this.saveState();
-
-    // Sincronizar con el backend si hay token
-    const token = this.getAuthToken();
-    if (token) {
-      fetch(`/api/users/${userId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(data)
-      }).catch((err) => console.warn('Sync PUT /api/users error:', err));
+  /** Una actualización rechazada no modifica el perfil, rol ni credenciales locales. */
+  public async updateUser(userId: string, updates: UserCredentialInput): Promise<void> {
+    const previousUser = this.state.users.find((user) => user.id === userId);
+    if (!previousUser) throw new Error('No se encontró el perfil a modificar.');
+    const updatedUser = await this.persistUserChange(`/api/users/${encodeURIComponent(userId)}`, 'PUT', updates);
+    if (updatedUser.id !== userId) throw new Error('El servidor no confirmó el perfil solicitado.');
+    this.state.users = this.state.users.map((user) => user.id === userId ? updatedUser : user);
+    this.addAuditLog('ACTUALIZAR_USUARIO', 'usuarios', userId,
+      `Modificación de perfil de ${updatedUser.name}. Rol: ${updatedUser.role} (anterior: ${previousUser.role}) confirmada en backend`);
+    // Cambiar las credenciales/rol de la sesión activa requiere autenticación
+    // central nueva; no adoptar un rol nuevo desde metadatos locales.
+    if (this.state.currentUser?.id === userId) {
+      this.logout();
+    } else {
+      this.saveState();
     }
   }
 
-  public toggleUserActive(userId: string): void {
-    const user = this.state.users.find((u) => u.id === userId);
-    if (!user) return;
-    user.isActive = !user.isActive;
-    this.addAuditLog(
-      'ESTADO_USUARIO',
-      'usuarios',
-      userId,
-      `Usuario ${user.name} marcado como ${user.isActive ? 'activo' : 'inactivo'}`
-    );
-    this.saveState();
+  /** PIN/password solo viajan en esta petición, jamás al caché o registro de auditoría. */
+  private async persistUserChange(url: string, method: 'POST' | 'PUT', input: UserCredentialInput): Promise<UserProfile> {
+    if (this.state.currentUser?.role !== 'admin') {
+      throw new Error('Se requiere una sesión de administrador validada por el servidor.');
+    }
+    let response: Response;
+    let result: { success?: boolean; user?: UserProfile; error?: string; message?: string };
+    try {
+      response = await authenticatedFetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input)
+      });
+      result = await response.json();
+    } catch {
+      throw new Error('No se pudo conectar con el servidor. El perfil no se guardó.');
+    }
+    if (!response.ok || result.success !== true) {
+      throw new Error(result.error || result.message || 'El servidor rechazó la modificación del perfil.');
+    }
+    if (!result.user?.id) {
+      throw new Error('El servidor no confirmó un perfil actualizado.');
+    }
+    return this.withoutCredentials(result.user);
+  }
+
+  public async toggleUserActive(userId: string): Promise<void> {
+    const user = this.state.users.find((profile) => profile.id === userId);
+    if (!user) throw new Error('No se encontró el perfil a modificar.');
+    await this.updateUser(userId, { isActive: !user.isActive });
   }
 
   // --- 11. Configuración General Exclusiva de Administrador ---
-  public updateSystemConfig(configData: Partial<SystemConfig>): void {
-    this.state.systemConfig = {
-      ...this.state.systemConfig,
-      ...configData,
-      updatedAt: new Date().toISOString().replace('T', ' ').substring(0, 16),
-      updatedBy: this.state.currentUser?.name || 'Administrador'
-    };
-    this.addAuditLog(
-      'ACTUALIZAR_CONFIG_SISTEMA',
-      'produccion',
-      'SYSTEM_CONFIG',
-      `Parámetros globales actualizados. Costo vivienda: $${this.state.systemConfig.housingCostPerPersonDaily}, Comisión base: ${(this.state.systemConfig.defaultCommissionRate * 100)}%`
-    );
+  /** Configuración administrativa: caché sólo después del ACK del servidor. */
+  private async persistConfiguration(endpoint: string, method: string, payload: unknown): Promise<void> {
+    if (!this.state.currentUser || this.state.currentUser.role !== 'admin') throw new Error('Se requiere administrador.');
+    if (!this.state.isOnline) throw new Error('Los cambios de configuración necesitan conexión.');
+    const response = await authenticatedFetch(endpoint, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const result = await response.json();
+    if (!response.ok || !result.success || !result.catalog) throw new Error(result.message || 'El servidor no confirmó el cambio.');
+    const catalog = result.catalog;
+    this.state.systemConfig = catalog.systemConfig;
+    this.state.houses = catalog.houses;
+    this.state.carts = catalog.carts;
+    this.state.varieties = catalog.varieties;
+    this.state.zones = catalog.zones;
     this.saveState();
   }
 
-  // --- 11.b) Gestión de Tramos de Comisión / Recompensas (Admin) ---
-  public getCommissionTiers(): CommissionTier[] {
-    return this.state.systemConfig?.commissionTiers || INITIAL_COMMISSION_TIERS;
+  public async updateSystemConfig(configData: Partial<SystemConfig>): Promise<void> {
+    await this.persistConfiguration('/api/settings', 'PUT', { ...this.state.systemConfig, ...configData });
   }
-
-  public saveCommissionTiers(tiers: CommissionTier[]): void {
-    if (!this.state.systemConfig) {
-      this.state.systemConfig = { ...INITIAL_SYSTEM_CONFIG };
-    }
-    this.state.systemConfig.commissionTiers = [...tiers];
-    this.state.systemConfig.updatedAt = new Date().toISOString().replace('T', ' ').substring(0, 16);
-    this.state.systemConfig.updatedBy = this.state.currentUser?.name || 'Administrador';
-    this.addAuditLog(
-      'ACTUALIZAR_TRAMOS_COMISION',
-      'configuracion',
-      'COMMISSION_TIERS',
-      `Configuración de tramos de comisión actualizada (${tiers.length} tramos guardados).`
-    );
-    this.saveState();
+  public getCommissionTiers(): CommissionTier[] { return this.state.systemConfig?.commissionTiers || []; }
+  public async saveCommissionTiers(tiers: CommissionTier[]): Promise<void> {
+    await this.updateSystemConfig({ commissionTiers: tiers });
   }
-
-  public addCommissionTier(tierData: Omit<CommissionTier, 'id'>): CommissionTier {
-    const id = `TIER-${Date.now()}`;
-    const newTier: CommissionTier = {
-      ...tierData,
-      id
-    };
-    const currentTiers = this.getCommissionTiers();
-    this.saveCommissionTiers([...currentTiers, newTier]);
+  public async addCommissionTier(tierData: Omit<CommissionTier, 'id'>): Promise<CommissionTier> {
+    const newTier = { ...tierData, id: `TIER-${crypto.randomUUID()}` };
+    await this.saveCommissionTiers([...this.getCommissionTiers(), newTier]);
     return newTier;
   }
-
-  public updateCommissionTier(tierId: string, updates: Partial<CommissionTier>): void {
-    const currentTiers = this.getCommissionTiers();
-    const updated = currentTiers.map((t) => (t.id === tierId ? { ...t, ...updates } : t));
-    this.saveCommissionTiers(updated);
+  public async updateCommissionTier(tierId: string, updates: Partial<CommissionTier>): Promise<void> {
+    await this.saveCommissionTiers(this.getCommissionTiers().map(tier => tier.id === tierId ? { ...tier, ...updates } : tier));
   }
-
-  public deleteCommissionTier(tierId: string): void {
-    const currentTiers = this.getCommissionTiers();
-    const filtered = currentTiers.filter((t) => t.id !== tierId);
-    this.saveCommissionTiers(filtered);
+  public async deleteCommissionTier(tierId: string): Promise<void> {
+    // Desactivar conserva el tramo para lectura histórica y auditoría.
+    await this.updateCommissionTier(tierId, { isActive: false });
   }
-
-  public toggleCommissionTier(tierId: string): void {
-    const currentTiers = this.getCommissionTiers();
-    const updated = currentTiers.map((t) => (t.id === tierId ? { ...t, isActive: !t.isActive } : t));
-    this.saveCommissionTiers(updated);
+  public async toggleCommissionTier(tierId: string): Promise<void> {
+    const tier = this.getCommissionTiers().find(candidate => candidate.id === tierId);
+    if (!tier) throw new Error('Tramo no encontrado.');
+    await this.updateCommissionTier(tierId, { isActive: !tier.isActive });
   }
-
-  public resetCommissionTiersToDefault(): void {
-    this.saveCommissionTiers(INITIAL_COMMISSION_TIERS);
+  public async resetCommissionTiersToDefault(): Promise<void> { await this.saveCommissionTiers(structuredClone(INITIAL_COMMISSION_TIERS)); }
+  public async saveZones(zones: BeachZone[]): Promise<void> { await this.persistConfiguration('/api/zones', 'PUT', zones); }
+  public async adjustHouseStock(houseId: string, varietyId: string, quantity: number, reason: string): Promise<void> {
+    await this.persistConfiguration(`/api/houses/${encodeURIComponent(houseId)}/stock`, 'PUT', { varietyId, quantity, reason });
   }
-
-  // --- 11.a) Gestión de Carritos (Admin) ---
-  public createCart(cartData: Omit<SellingCart, 'id'>): SellingCart {
-    const id = `CART-${Date.now()}`;
-    const newCart: SellingCart = {
-      ...cartData,
-      id,
-      isActive: true,
-      gasLevelPercent: cartData.gasLevelPercent ?? 100,
-      suppliesLevel: cartData.suppliesLevel || {
-        napkins: 'alto',
-        cones: 'alto',
-        trays: 'alto',
-        sauces: 'alto'
-      },
-      totalDaysInUse: cartData.totalDaysInUse ?? 0,
-      lastMaintenanceDate: cartData.lastMaintenanceDate || new Date().toISOString().slice(0, 10)
-    };
-    this.state.carts = [...this.state.carts, newCart];
-    this.addAuditLog('CREAR_CARRITO', 'carrito', id, `Nuevo carrito agregado: ${newCart.code}`);
-    this.saveState();
-    return newCart;
+  public async createCart(cartData: Omit<SellingCart, 'id'>): Promise<SellingCart> {
+    const id = `CART-${crypto.randomUUID()}`;
+    await this.persistConfiguration('/api/carts', 'POST', { id, attributes: cartData });
+    return this.state.carts.find(cart => cart.id === id)!;
   }
-
-  public updateCart(cartId: string, data: Partial<SellingCart>): void {
-    const cart = this.state.carts.find((c) => c.id === cartId);
-    if (!cart) return;
-    Object.assign(cart, data);
-    this.addAuditLog('EDITAR_CARRITO', 'carrito', cartId, `Carrito ${cart.code} actualizado. Estado: ${cart.status}`);
-    this.saveState();
+  public async updateCart(cartId: string, updates: Partial<SellingCart>): Promise<void> {
+    await this.persistConfiguration(`/api/carts/${encodeURIComponent(cartId)}`, 'PATCH', updates);
   }
-
-  public toggleCartActive(cartId: string): void {
-    const cart = this.state.carts.find((c) => c.id === cartId);
-    if (!cart) return;
-    cart.isActive = cart.isActive === undefined ? false : !cart.isActive;
-    this.addAuditLog('ESTADO_CARRITO', 'carrito', cartId, `Carrito ${cart.code} ${cart.isActive ? 'activado' : 'desactivado'}`);
-    this.saveState();
+  public async toggleCartActive(cartId: string): Promise<void> {
+    const cart = this.state.carts.find(candidate => candidate.id === cartId);
+    if (!cart) throw new Error('Carrito no encontrado.');
+    await this.updateCart(cartId, { isActive: !cart.isActive });
   }
-
-  // --- 11.b) Gestión de Productos y Variedades (Admin) ---
-  public createVariety(data: Omit<ProductVariety, 'id'>): ProductVariety {
-    const id = `VAR-${Date.now()}`;
-    const newVar: ProductVariety = { ...data, id, isAvailable: true, isActive: true };
-    this.state.varieties = [...this.state.varieties, newVar];
-    this.addAuditLog('CREAR_VARIEDAD', 'produccion', id, `Nueva variedad agregada: ${newVar.name} ($${newVar.basePriceIndividual})`);
-    this.saveState();
-    return newVar;
+  public async createVariety(attributes: Omit<ProductVariety, 'id'>): Promise<ProductVariety> {
+    const id = `VAR-${crypto.randomUUID()}`;
+    await this.persistConfiguration('/api/varieties', 'POST', { id, attributes });
+    return this.state.varieties.find(variety => variety.id === id)!;
   }
-
-  public updateVariety(varietyId: string, data: Partial<ProductVariety>): void {
-    const variety = this.state.varieties.find((v) => v.id === varietyId);
-    if (!variety) return;
-    Object.assign(variety, data);
-    this.addAuditLog('EDITAR_VARIEDAD', 'produccion', varietyId, `Variedad ${variety.name} actualizada.`);
-    this.saveState();
+  public async updateVariety(id: string, updates: Partial<ProductVariety>): Promise<void> {
+    await this.persistConfiguration(`/api/varieties/${encodeURIComponent(id)}`, 'PATCH', updates);
   }
-
-  public toggleVarietyActive(varietyId: string): void {
-    const variety = this.state.varieties.find((v) => v.id === varietyId);
-    if (!variety) return;
-    variety.isActive = variety.isActive === undefined ? false : !variety.isActive;
-    this.addAuditLog('ESTADO_VARIEDAD', 'produccion', varietyId, `Variedad ${variety.name} ${variety.isActive ? 'activada' : 'desactivada'}`);
-    this.saveState();
+  public async toggleVarietyActive(id: string): Promise<void> {
+    const variety = this.state.varieties.find(candidate => candidate.id === id);
+    if (!variety) throw new Error('Variedad no encontrada.');
+    await this.updateVariety(id, { isActive: !variety.isActive });
   }
-
-  // --- 11.c) Gestión de Casas / Bases Operativas (Admin) ---
-  public createHouse(data: Omit<OperationalHouse, 'id'>): OperationalHouse {
-    const id = `HOUSE-${Date.now()}`;
-    const newHouse: OperationalHouse = {
-      ...data,
-      id,
-      isActive: true,
-      coordinatorIds: data.coordinatorIds || [],
-      residentUserIds: data.residentUserIds || [],
-      currentStock: data.currentStock || [],
-      consumablesStock: data.consumablesStock || {
-        gasTanksAvailable: 4,
-        gasTanksInUse: 2,
-        napkinPacks: 20,
-        traysCount: 30,
-        paperConesCount: 300,
-        sauceBottlesCount: 15
-      }
-    };
-    this.state.houses = [...this.state.houses, newHouse];
-    this.addAuditLog('CREAR_CASA', 'stock', id, `Nueva base operativa creada: ${newHouse.name}`);
-    this.saveState();
-    return newHouse;
+  public async createHouse(attributes: Omit<OperationalHouse, 'id'>): Promise<OperationalHouse> {
+    const id = `HOUSE-${crypto.randomUUID()}`;
+    await this.persistConfiguration('/api/houses', 'POST', { id, attributes });
+    return this.state.houses.find(house => house.id === id)!;
   }
-
-  public updateHouse(houseId: string, data: Partial<OperationalHouse>): void {
-    const house = this.state.houses.find((h) => h.id === houseId);
-    if (!house) return;
-    Object.assign(house, data);
-    this.addAuditLog('EDITAR_CASA', 'stock', houseId, `Base ${house.name} actualizada.`);
-    this.saveState();
+  public async updateHouse(id: string, updates: Partial<OperationalHouse>): Promise<void> {
+    await this.persistConfiguration(`/api/houses/${encodeURIComponent(id)}`, 'PATCH', updates);
   }
-
-  public toggleHouseActive(houseId: string): void {
-    const house = this.state.houses.find((h) => h.id === houseId);
-    if (!house) return;
-    house.isActive = house.isActive === undefined ? false : !house.isActive;
-    this.addAuditLog('ESTADO_CASA', 'stock', houseId, `Base ${house.name} ${house.isActive ? 'activada' : 'desactivada'}`);
-    this.saveState();
+  public async toggleHouseActive(id: string): Promise<void> {
+    const house = this.state.houses.find(candidate => candidate.id === id);
+    if (!house) throw new Error('Casa no encontrada.');
+    await this.updateHouse(id, { isActive: !house.isActive });
   }
 
   // --- 11.d) Gestión de Insumos y Categorías (Admin) ---
@@ -2056,6 +2225,16 @@ class StorageService {
 
   // --- Reset a datos iniciales de fábrica ---
   public resetToFactorySeed(): void {
+    if (this.state.currentUser?.role !== 'admin') {
+      throw new Error('Solo el administrador puede reiniciar una demostración local.');
+    }
+    if (!this.state.demoMode) {
+      throw new Error('El reinicio de datos de producción está deshabilitado.');
+    }
+    if (this.readOfflineQueue().length || this.readPendingOperations().length || this.state.sales.some((sale) => sale.syncStatus === 'pending')) {
+      throw new Error('Hay ventas pendientes. Sincronizalas antes de reiniciar; no se borró ningún dato.');
+    }
+    void this.logout();
     this.state = {
       currentUser: null,
       selectedHouseId: 'HOUSE-NORTE',

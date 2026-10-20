@@ -1,5 +1,26 @@
 # TODO.md — Backlog Técnico y Plan de Mejoras Priorizado
 
+> **Actualización 13/10/2026:** el contenido histórico puede describir prototipo/localStorage o contratos sustituidos. Para alcance vigente, pruebas y pendientes leer [HITOS_Y_PROMPTS_MVP.md](HITOS_Y_PROMPTS_MVP.md), [GUIA_SEBAS.md](GUIA_SEBAS.md), [CI.md](CI.md) y los módulos nuevos. “Implementado” no certifica producción ni datos compartidos de todas las pantallas.
+
+## Diagnóstico vigente — 18 de octubre de 2026
+
+Actualización 20/10: contraseñas personales, activación presencial, cambio propio y recuperación excepcional del dueño implementados en el [Hito 3.4](HITO_3_4_CONTRASENAS_Y_PRODUCCION.md). Migración 009 aplicada sólo a ensayo después de copia y comprobación de integridad. El [plan ordenado de producción](CONTRASENAS_Y_SALIDA_A_PRODUCCION.md) prevalece sobre tareas históricas de autenticación ya sustituidas. No se integró esta rama automáticamente en main.
+
+Actions [39419629886](https://github.com/Deareys/SGMO/actions/runs/39419629886), `cf27d832…`, aprobado: 193 pruebas, 35 históricas, SQL PostgreSQL 16, nueve grupos HTTP de dos procesos y tres suites Chromium. **Pendiente operativo:** alta privada del dueño, aceptación en teléfonos, proveedores, alcance offline/local y preparación productiva. El dominio público antiguo y la base productiva vacía siguen siendo bloqueantes; no equivale a un fallo del preview reparado.
+
+Informe inicial: [DIAGNOSTICO_GENERAL_2026_10_18.md](DIAGNOSTICO_GENERAL_2026_10_18.md). La intervención posterior autorizada repara liquidaciones y acceso; su evidencia y límites están en [HITO_3_3_LIQUIDACIONES_Y_ACCESO.md](HITO_3_3_LIQUIDACIONES_Y_ACCESO.md).
+
+- [ ] **Alta — D-01:** preparar release de la rama reparada. Main/productivo siguen en `d291d5a`; el dominio público sirve la interfaz pero sus rutas API responden 404, no tiene variables principales Production ni tablas en la rama Neon productiva. La contingencia insegura de admin local permanece en main.
+- [x] **Código — D-02:** corregidos ceros, excepción individual y exención de vivienda, comisión y tarifa cero; PDF/recibo conservan efectivo declarado cero. Regresiones SQL y PDF verifican el cierre y su snapshot inmutable. Validación de la nueva revisión en CI/deployment: ver informe del hito.
+- [ ] **Alta — D-03:** el administrador real será el dueño del negocio. Formulario privado `/setup` preparado y probado con identidad efímera; falta que el dueño elija su contraseña en el entorno correcto. Sebas no necesita cuenta administrativa propia. No reactivar cuentas QA para operar.
+- [ ] **Alta — D-04/05:** comprobar origen estable, webhook real y ciclo completo de Mercado Pago; revisar facturación del proyecto Gemini y repetir extracción real. MP/OCR no se reejecutaron hoy con cuentas de negocio; el último OCR real del 15/10 respondió 402.
+- [ ] **Alta para playa — D-06:** Chromium comprobó ventas con la terminal ya abierta sin señal, ACK al reconectar, reintento tras respuesta perdida y pendiente conservado al cerrar pestaña y abrir con señal. La reapertura completamente sin red sigue sin cargar; faltan PWA, autenticación offline definida, imágenes durables y ensayo en teléfonos físicos.
+- [ ] **Alcance — D-07:** centralizar o delimitar módulos locales de fábrica, gastos, radar, mantenimiento, traslados y temporadas; no presentarlos como registros compartidos.
+- [ ] **Operación — D-08:** reducir carga inicial, revisar filtrado SQL/paginación del bootstrap, acceso administrativo a migraciones, prueba de restauración y política de diferencias de caja.
+
+La verificación del diagnóstico inicial usó 177 pruebas; el hito posterior amplía la cobertura e instala Chromium aislado. Los resultados de cada revisión se registran en el informe correspondiente. La CI del 15/10 no se usa para certificar código posterior.
+
+
 > **Sistema:** SGMO — Tequeños Costa  
 > **Versión:** 0.6.0  
 > **Criterio de Priorización:** Seguridad y Disponibilidad > Integridad de Datos > Experiencia de Usuario > Optimizaciones Secundarias.
@@ -19,6 +40,20 @@
 - [ ] Hito 2.1: hidratar perfiles/estado desde PostgreSQL; no depender de IDs/nombres de semillas locales para restablecer cuentas existentes. Usar GET /api/users como fuente central actual.
 - [ ] Hito 2.1: `resetToFactorySeed()` elimina ventas y cola pendiente; impedir pérdidas con respaldo/confirmación de sincronización y revocar sesión central. No cambiado en este hito.
 - [ ] Hito 2.1: reanudación de sesión tras recarga offline sin inventar autenticación local.
+
+## Prioridades vigentes de esta entrega
+
+- **Actualización 15/10 — Hito 3.2:** base `sgmo-pruebas` respaldada e inicializada; preview accesible y arranque ESM corregido; login, permisos, venta compartida/idempotente y cierre comprobados por HTTP y SQL. Mercado Pago consulta oficial 200. OCR llega a Gemini pero devuelve 402 de facturación. Webhook del proveedor y ensayo desde teléfonos siguen pendientes. Evidencia y próximos hitos: [HITO_3_2_ENSAYO.md](HITO_3_2_ENSAYO.md); pasos: [PRUEBA_MANUAL_ENSAYO.md](PRUEBA_MANUAL_ENSAYO.md).
+- [x] Código: cookies/CSRF/TLS, venta y stock centrales, cola ACK, ledger banco/webhooks, configuración, CI y packaging Vercel. Evidencia/limitaciones: [INFORME_ENTREGA_MVP.md](INFORME_ENTREGA_MVP.md).
+- [x] Verificar Actions PostgreSQL/Chromium de la revisión y preview HTTPS con base aislada. Código `aec673f`, Actions `38680069628` aprobado.
+- [x] Respaldar/identificar y aplicar migraciones 001–008 exclusivamente en la rama Neon de ensayo, con verificación SQL. Production no se modificó.
+- [ ] Aprovisionar cuentas propias; las credenciales QA se retiraron y las semillas permanecen sin claves predeterminadas.
+- [ ] Configurar precios/catálogo/alias/cuenta/stock reales y probar Mercado Pago/OCR oficial con dos dispositivos.
+- [ ] Resolver fórmula de faltante de efectivo con el negocio; conservar snapshot y comprobante de liquidación reproducible.
+- [ ] PWA, IndexedDB/almacenamiento de imágenes y QA de playa; actualmente sólo sesión/turno ya cargados operan con red intermitente.
+- [ ] Centralizar módulos locales de fábrica/gastos/traslados/mantenimiento/radar y revisión manual; evitar usarlos como fuente compartida hasta ese hito.
+
+La lista histórica siguiente documenta hallazgos previos, no el estado literal del código entregado.
 
 ## 1. NIVEL 1: CRÍTICO (Seguridad y Arquitectura de Despliegue)
 

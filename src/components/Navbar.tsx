@@ -47,6 +47,7 @@ interface NavbarProps {
   onOpenAudit: () => void;
   onResetSeed: () => void;
   onLogout: () => void;
+  onChangePassword?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -63,7 +64,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAlerts,
   onOpenAudit,
   onResetSeed,
-  onLogout
+  onLogout,
+  onChangePassword
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSoundOn, setIsSoundOn] = useState(soundAlerts.isEnabled());
@@ -277,6 +279,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
 
               {/* Botón Salir (Desktop) */}
+              <button type="button" onClick={onChangePassword} className="hidden sm:flex min-h-12 px-3 items-center rounded-xl border-2 border-slate-300 text-sm font-bold">Mi contraseña</button>
               <button
                 type="button"
                 onClick={onLogout}
@@ -425,6 +428,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span>Auditoría</span>
               </button>
 
+              <button type="button" onClick={() => { setIsMobileMenuOpen(false); onChangePassword?.(); }} className="min-h-12 p-3 rounded-xl border-2 border-slate-300 text-slate-950 font-bold">Mi contraseña</button>
               <button
                 type="button"
                 onClick={() => {

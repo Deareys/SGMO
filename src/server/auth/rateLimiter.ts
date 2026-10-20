@@ -2,7 +2,7 @@
  * SGMO — Tequeños Costa
  * Control de Tasa (Rate Limiter) en Memoria para Intentos de Autenticación
  *
- * Protege contra fuerza bruta sobre PINs de 4 dígitos (10.000 combinaciones posibles).
+ * Control complementario por origen, local a esta instancia; el bloqueo por cuenta reside en PostgreSQL.
  * Bloquea temporalmente tras 5 intentos fallidos consecutivos durante 15 minutos.
  */
 
@@ -21,16 +21,23 @@ const WINDOW_MS = 15 * 60 * 1000; // 15 minutos
 const BLOCK_DURATION_MS = 15 * 60 * 1000; // 15 minutos de bloqueo
 
 export function getClientIp(req: Request): string {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string') {
-    return forwarded.split(',')[0].trim();
-  }
-  return req.socket.remoteAddress || '127.0.0.1';
+  // Express aplica trust proxy únicamente si fue configurado con proxies confiables.
+  // Un encabezado aportado directamente por el cliente nunca define el origen.
+  return req.ip || req.socket.remoteAddress || 'unknown';
 }
 
 export function pinRateLimiter(req: Request, res: Response, next: NextFunction): void {
   const ip = getClientIp(req);
   const now = Date.now();
+  if (attemptsByIp.size >= 10000) {
+    for (const [origin, attempt] of attemptsByIp) {
+      if (now - attempt.firstAttempt > WINDOW_MS && (!attempt.blockedUntil || attempt.blockedUntil <= now)) attemptsByIp.delete(origin);
+    }
+    if (!attemptsByIp.has(ip) && attemptsByIp.size >= 10000) {
+      res.status(429).json({ success: false, code: 'TOO_MANY_ATTEMPTS', message: 'Acceso limitado temporalmente.', retryAfter: 900 });
+      return;
+    }
+  }
   const record = attemptsByIp.get(ip);
 
   if (record) {
@@ -58,6 +65,13 @@ export function pinRateLimiter(req: Request, res: Response, next: NextFunction):
 export function recordFailedAttempt(req: Request): { remainingAttempts: number; isBlocked: boolean } {
   const ip = getClientIp(req);
   const now = Date.now();
+  // Limitar memoria sin permitir que nuevas direcciones desalojen bloqueos activos.
+  if (attemptsByIp.size >= 10000) {
+    for (const [origin, attempt] of attemptsByIp) {
+      if (now - attempt.firstAttempt > WINDOW_MS && (!attempt.blockedUntil || attempt.blockedUntil <= now)) attemptsByIp.delete(origin);
+    }
+    if (!attemptsByIp.has(ip) && attemptsByIp.size >= 10000) return { remainingAttempts: 0, isBlocked: true };
+  }
   let record = attemptsByIp.get(ip);
 
   if (!record || now - record.firstAttempt > WINDOW_MS) {

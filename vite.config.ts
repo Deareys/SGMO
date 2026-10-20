@@ -5,6 +5,8 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
+    // public contiene el frontend generado para Vercel; evitar recopiar bundles anteriores.
+    publicDir: false as const,
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

@@ -58,7 +58,12 @@ export const VoucherValidationView: React.FC<VoucherValidationViewProps> = ({ st
 
   // Acciones de Validación
   const handleUpdateStatus = (saleId: string, newStatus: VoucherValidationStatus) => {
-    storageService.updateVoucherStatus(saleId, newStatus);
+    try {
+      storageService.updateVoucherStatus(saleId, newStatus);
+      setReverifyMessage('Marca de revisión guardada en este dispositivo. La evidencia bancaria sólo se confirma desde el servidor.');
+    } catch (error) {
+      setReverifyMessage(error instanceof Error ? error.message : 'No se pudo aplicar la marca de revisión.');
+    }
   };
 
   // Re-consultar API Mercado Pago en Vivo para el comprobante seleccionado
@@ -79,41 +84,16 @@ export const VoucherValidationView: React.FC<VoucherValidationViewProps> = ({ st
       .filter(Boolean) as string[];
 
     const result = await verifyMercadoPagoPayment({
+      saleId: selectedSale.id,
       operationId: opId,
       expectedAmount: selectedSale.totalAmount,
       existingOperationIds: otherOpIds
     });
 
-    const newStatus: VoucherValidationStatus = (result.verified && result.status === 'approved')
-      ? 'validada'
-      : result.isDuplicate
-      ? 'sospechosa'
-      : result.status === 'not_found'
-      ? 'inconsistente'
-      : 'pendiente_revision';
-
-    storageService.updateVoucherStatus(
-      selectedSale.id,
-      newStatus,
-      {
-        ...selectedSale.voucherExtractedData,
-        operationId: opId,
-        senderName: result.payerName || selectedSale.voucherExtractedData?.senderName
-      },
-      {
-        matchedInApi: result.verified,
-        mpTransactionId: result.operationId,
-        apiStatus: result.status,
-        verifiedAt: new Date().toISOString(),
-        payerName: result.payerName,
-        payerEmail: result.payerEmail,
-        amount: result.amount,
-        amountMatches: result.amountMatches,
-        isDuplicate: result.isDuplicate,
-        isLiveApi: result.isLiveApi,
-        message: result.message
-      }
-    );
+    // Banking evidence is persisted by the server; refresh instead of approving local proof.
+    await storageService.refreshCentralState();
+    const canonical = storageService.getState().sales.find((sale) => sale.id === selectedSale.id);
+    if (canonical) setSelectedSaleId(canonical.id);
 
     setReverifyMessage(result.message);
     setIsReverifying(false);
@@ -416,11 +396,13 @@ export const VoucherValidationView: React.FC<VoucherValidationViewProps> = ({ st
             {/* Botones de Acción para el Coordinador */}
             <div className="flex flex-wrap items-center gap-3 pt-2">
               <button
-                onClick={() => handleUpdateStatus(selectedSale.id, 'validada')}
-                className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-600/20 flex items-center justify-center space-x-1.5 transition-all cursor-pointer"
+                type="button"
+                disabled
+                title="La aprobación exige verificar el pago oficial de esta venta."
+                className="flex-1 py-2.5 bg-slate-200 text-slate-700 font-bold text-xs rounded-xl flex items-center justify-center space-x-1.5 cursor-not-allowed"
               >
                 <Check className="w-4 h-4" />
-                <span>Aprobar Comprobante</span>
+                <span>Requiere verificación bancaria</span>
               </button>
 
               <button
@@ -428,7 +410,7 @@ export const VoucherValidationView: React.FC<VoucherValidationViewProps> = ({ st
                 className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-rose-600/20 flex items-center justify-center space-x-1.5 transition-all cursor-pointer"
               >
                 <ShieldAlert className="w-4 h-4" />
-                <span>Marcar como Sospechosa / Fraude</span>
+                <span>Marcar revisión local</span>
               </button>
 
               <button
@@ -438,6 +420,7 @@ export const VoucherValidationView: React.FC<VoucherValidationViewProps> = ({ st
                 <RotateCcw className="w-3.5 h-3.5" />
               </button>
             </div>
+            <p className="text-xs text-slate-400">Las marcas manuales son locales. La consulta bancaria y su asignación a la venta se guardan centralmente.</p>
 
           </div>
         ) : (

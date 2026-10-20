@@ -28,7 +28,9 @@ export interface SettlementCalculationInput {
   totalSalesAmount: number;
   grossCommission: number;
   housingDeductionOverride?: number;
+  housingCostPerPersonDaily?: number;
   isHousingExempt?: boolean;
+  incentivesOrBonuses?: number;
   missingUnitsCount: number;
   missingUnitPenaltyRate?: number; // Tarifa plana por defecto si no hay tramos (ej: $1.500)
   wastePenaltyTiers?: WastePenaltyTiers; // Política escalonada configurada por Administrador
@@ -50,6 +52,21 @@ export interface SettlementCalculationResult {
 
 export const DEFAULT_HOUSING_DAILY_DEDUCTION = 8000;
 export const DEFAULT_MISSING_UNIT_PENALTY = 1500;
+
+/** Resuelve vivienda con la misma prioridad en servidor y previsualización.
+ * Exención anula el cargo; una excepción individual (también cero) prevalece
+ * sobre el costo central. Sólo la ausencia utiliza el valor predeterminado.
+ */
+export function calculateHousingDeduction(input: {
+  isHousingExempt?: boolean;
+  housingDeductionOverride?: number | null;
+  housingCostPerPersonDaily?: number | null;
+}): number {
+  if (input.isHousingExempt) return 0;
+  const amount = input.housingDeductionOverride ?? input.housingCostPerPersonDaily ?? DEFAULT_HOUSING_DAILY_DEDUCTION;
+  if (!Number.isFinite(amount) || amount < 0) throw new RangeError('Costo de vivienda inválido.');
+  return amount;
+}
 
 /**
  * Calcula el desglose escalonado de deducción por merma y faltante de tequeños:
@@ -115,7 +132,8 @@ export function calculateWasteDeduction(
  * Calcula la liquidación final que cobra el vendedor en mano.
  *
  * Fórmula:
- * Pago Final = Comisión Bruta - Deducción Vivienda - Penalización Faltantes/Merma - Faltante de Caja
+ * Pago Final = máximo(0, Comisión Bruta + Bonos - Vivienda - Penalización de Faltantes).
+ * El faltante de caja se informa por separado, como en el cierre central.
  */
 export function calculateSettlement(
   input: SettlementCalculationInput
@@ -124,7 +142,9 @@ export function calculateSettlement(
     totalSalesAmount,
     grossCommission,
     housingDeductionOverride,
+    housingCostPerPersonDaily,
     isHousingExempt,
+    incentivesOrBonuses = 0,
     missingUnitsCount,
     missingUnitPenaltyRate = DEFAULT_MISSING_UNIT_PENALTY,
     wastePenaltyTiers,
@@ -133,13 +153,7 @@ export function calculateSettlement(
   } = input;
 
   // 1. Deducción de vivienda
-  let housingDeduction = 0;
-  if (!isHousingExempt) {
-    housingDeduction =
-      typeof housingDeductionOverride === 'number'
-        ? housingDeductionOverride
-        : DEFAULT_HOUSING_DAILY_DEDUCTION;
-  }
+  const housingDeduction = calculateHousingDeduction({ isHousingExempt,housingDeductionOverride,housingCostPerPersonDaily });
 
   // 2. Penalización por tequeños faltantes / merma injustificada (escalonada o plana)
   let missingUnitsPenalty = 0;
@@ -157,10 +171,12 @@ export function calculateSettlement(
   const cashShortfall = cashDifference < 0 ? Math.abs(cashDifference) : 0;
 
   // 4. Total de deducciones
-  const totalDeductions = housingDeduction + missingUnitsPenalty + cashShortfall;
+  // La regla operativa registra el faltante de efectivo por separado; no se
+  // introduce un descuento nuevo respecto del cierre central confirmado.
+  const totalDeductions = housingDeduction + missingUnitsPenalty;
 
   // 5. Pago neto final (no puede ser inferior a 0 en el comprobante diario)
-  const finalPayoutAmount = Math.max(0, grossCommission - totalDeductions);
+  const finalPayoutAmount = Math.max(0, grossCommission + incentivesOrBonuses - totalDeductions);
 
   return {
     totalSalesAmount,

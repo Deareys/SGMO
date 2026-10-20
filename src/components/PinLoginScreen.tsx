@@ -2,28 +2,25 @@
  * SGMO — Tequeños Costa
  * Pantalla de Inicio de Sesión Modernizada (Hito 1.2)
  *
- * Soporta dos vías de autenticación:
- * 1. Trabajadores de Playa, Base y Fábrica: Selección de cuenta individual + PIN personal de 8 dígitos.
- * 2. Administradores: Identificador (userCode/email) + Contraseña de al menos 14 caracteres.
+ * Un único formulario sin selector de perfiles. El servidor decide el rol.
+ * Conserva dos contratos de credencial:
+ * 1. Todos los roles: código/correo + contraseña personal de al menos 12 caracteres.
+ * 2. PIN de 8 dígitos sólo para trabajadores que aún no eligieron su contraseña.
  *
  * Alto Contraste Solar — Diseñado para lectura impecable bajo luz solar directa en la arena.
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState } from 'react';
 import {
   Lock,
   Delete,
   AlertCircle,
-  ShieldCheck,
   CheckCircle2,
   Sparkles,
-  KeyRound,
   RotateCcw,
-  Users,
   Eye,
   EyeOff,
   ChevronRight,
-  ShieldAlert
 } from 'lucide-react';
 import { UserProfile } from '../types';
 import { storageService } from '../services/storageService';
@@ -33,139 +30,40 @@ interface PinLoginScreenProps {
 }
 
 export const PinLoginScreen: React.FC<PinLoginScreenProps> = ({ onLoginSuccess }) => {
-  const [authMode, setAuthMode] = useState<'worker' | 'admin'>('worker');
-
-  // Estado modo trabajador (PIN 8 dígitos)
-  const [selectedUserCode, setSelectedUserCode] = useState<string>('VEND-01');
-  const [pin, setPin] = useState<string>('');
+  const [identifier, setIdentifier] = useState('');
+  const [credential, setCredential] = useState('');
+  const [showCredential, setShowCredential] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [isAuthenticating, setIsAuthenticating] = useState<boolean>(false);
-  const [isShaking, setIsShaking] = useState<boolean>(false);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [loginSuccessUser, setLoginSuccessUser] = useState<UserProfile | null>(null);
+  const busy = isAuthenticating || !!loginSuccessUser;
+  const numericCredential = /^\d{0,8}$/.test(credential);
 
-  // Estado modo administrador
-  const [adminIdentifier, setAdminIdentifier] = useState<string>('carlos.admin@tequenosplaya.com');
-  const [adminPassword, setAdminPassword] = useState<string>('');
-  const [showAdminPassword, setShowAdminPassword] = useState<boolean>(false);
-
-  // Lista de trabajadores activos
-  const workers = useMemo(() => {
-    return storageService
-      .getState()
-      .users
-      .filter((u) => u.isActive !== false && u.role !== 'admin');
-  }, []);
-
-  const selectedWorker = useMemo(() => {
-    return workers.find((w) => w.userCode === selectedUserCode || w.id === selectedUserCode);
-  }, [workers, selectedUserCode]);
-
-  // Manejo de validación de PIN (8 dígitos para trabajadores o 4 dígitos de transición)
-  const handleValidatePin = useCallback(
-    async (pinToValidate: string) => {
-      if (pinToValidate.length !== 8 && pinToValidate.length !== 4) return;
-
-      setIsAuthenticating(true);
-      setErrorMsg(null);
-
-      try {
-        const result = await storageService.loginWithPinAsync(pinToValidate, selectedUserCode);
-        if (result.success && result.user) {
-          setLoginSuccessUser(result.user);
-          setTimeout(() => {
-            onLoginSuccess(result.user!);
-          }, 350);
-        } else {
-          setIsAuthenticating(false);
-          setErrorMsg(result.error || 'PIN incorrecto o cuenta no válida.');
-          setIsShaking(true);
-          setTimeout(() => setIsShaking(false), 500);
-          setPin('');
-        }
-      } catch (err: any) {
-        setIsAuthenticating(false);
-        setErrorMsg(err.message || 'Error al validar credenciales');
-        setIsShaking(true);
-        setTimeout(() => setIsShaking(false), 500);
-        setPin('');
-      }
-    },
-    [onLoginSuccess, selectedUserCode]
-  );
-
-  // Manejo de teclado táctil
-  const handleKeyPress = (digit: string) => {
-    if (pin.length < 8 && !isAuthenticating && !loginSuccessUser) {
-      const newPin = pin + digit;
-      setPin(newPin);
-      if (newPin.length === 8) {
-        handleValidatePin(newPin);
-      }
-    }
-  };
-
-  const handleDelete = () => {
-    if (pin.length > 0 && !isAuthenticating && !loginSuccessUser) {
-      setPin(pin.slice(0, -1));
-      setErrorMsg(null);
-    }
-  };
-
-  const handleClear = () => {
-    if (!isAuthenticating && !loginSuccessUser) {
-      setPin('');
-      setErrorMsg(null);
-    }
-  };
-
-  // Login de Administrador
-  const handleAdminSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!adminIdentifier || !adminPassword) {
-      setErrorMsg('Ingresá el identificador y la contraseña.');
-      return;
-    }
-
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (busy) return;
     setIsAuthenticating(true);
     setErrorMsg(null);
-
     try {
-      const result = await storageService.loginAsAdminAsync(adminIdentifier, adminPassword);
+      const result = await storageService.loginWithCredentialAsync(identifier, credential);
       if (result.success && result.user) {
         setLoginSuccessUser(result.user);
-        setTimeout(() => {
-          onLoginSuccess(result.user!);
-        }, 350);
-      } else {
-        setIsAuthenticating(false);
-        setErrorMsg(result.error || 'Credenciales de administrador incorrectas.');
-        setIsShaking(true);
-        setTimeout(() => setIsShaking(false), 500);
+        onLoginSuccess(result.user);
+        return;
       }
-    } catch (err: any) {
-      setIsAuthenticating(false);
-      setErrorMsg(err.message || 'Error de conexión con el servidor.');
-      setIsShaking(true);
-      setTimeout(() => setIsShaking(false), 500);
+      setErrorMsg(result.error || 'No se pudo verificar tu acceso.');
+    } catch {
+      setErrorMsg('No se pudo conectar con el servidor. Volvé a intentarlo con conexión.');
     }
+    setIsAuthenticating(false);
   };
 
-  // Teclado físico sólo activo en pestaña de trabajador
-  useEffect(() => {
-    if (authMode !== 'worker') return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (/^[0-9]$/.test(e.key)) {
-        handleKeyPress(e.key);
-      } else if (e.key === 'Backspace') {
-        handleDelete();
-      } else if (e.key === 'Escape') {
-        handleClear();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [pin, isAuthenticating, loginSuccessUser, authMode]);
+  const appendDigit = (digit: string) => {
+    if (!busy && numericCredential && credential.length < 8) {
+      setCredential(current => current + digit);
+      setErrorMsg(null);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col justify-center items-center p-3 sm:p-4 relative select-none">
@@ -187,253 +85,88 @@ export const PinLoginScreen: React.FC<PinLoginScreenProps> = ({ onLoginSuccess }
           </p>
         </div>
 
-        {/* Selector de Modo: Trabajadores (PIN 8 dígitos) vs Administrador */}
-        <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 rounded-2xl border border-slate-300 mb-4">
-          <button
-            type="button"
-            onClick={() => {
-              setAuthMode('worker');
-              setErrorMsg(null);
-            }}
-            className={`py-2 px-3 rounded-xl font-black text-xs transition-all flex items-center justify-center space-x-1.5 cursor-pointer ${
-              authMode === 'worker'
-                ? 'bg-amber-400 text-slate-950 shadow-sm border border-amber-500'
-                : 'text-slate-600 hover:text-slate-950'
-            }`}
-          >
-            <KeyRound className="w-3.5 h-3.5" />
-            <span>PIN Personal (8d)</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setAuthMode('admin');
-              setErrorMsg(null);
-            }}
-            className={`py-2 px-3 rounded-xl font-black text-xs transition-all flex items-center justify-center space-x-1.5 cursor-pointer ${
-              authMode === 'admin'
-                ? 'bg-slate-900 text-white shadow-sm'
-                : 'text-slate-600 hover:text-slate-950'
-            }`}
-          >
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Administración</span>
-          </button>
-        </div>
-
-        {/* 1. MODO TRABAJADOR */}
-        {authMode === 'worker' && (
+        <form onSubmit={handleSubmit} className="space-y-3" aria-label="Inicio de sesión">
+          <p className="text-sm text-slate-700">Ingresá tus datos personales de acceso.</p>
           <div>
-            {/* Selector de Trabajador */}
-            <div className="mb-3.5">
-              <label className="block text-[11px] font-black text-slate-700 uppercase tracking-wider mb-1">
-                Cuenta Individual:
-              </label>
-              <select
-                value={selectedUserCode}
-                onChange={(e) => {
-                  setSelectedUserCode(e.target.value);
-                  setPin('');
-                  setErrorMsg(null);
-                }}
-                disabled={isAuthenticating || !!loginSuccessUser}
-                className="w-full bg-slate-50 border-2 border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:border-amber-500 cursor-pointer"
-              >
-                {workers.map((w) => (
-                  <option key={w.id} value={w.userCode || w.id}>
-                    [{w.userCode || w.id}] {w.name} — {w.role === 'seller' ? 'Vendedor' : w.role === 'coordinator' ? 'Coordinador' : 'Fábrica'}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Visualizador de Dígitos (8 Dots de PIN de Alto Contraste) */}
-            <div className="text-center mb-3">
-              <p className="text-xs text-slate-600 font-bold mb-2">
-                Ingresá tu PIN de 8 dígitos ({pin.length}/8)
-              </p>
-              <div
-                className={`flex justify-center items-center space-x-1.5 sm:space-x-2 ${
-                  isShaking ? 'animate-bounce' : ''
-                }`}
-              >
-                {[0, 1, 2, 3, 4, 5, 6, 7].map((index) => {
-                  const hasDigit = pin.length > index;
-                  const isCurrent = pin.length === index;
-
-                  return (
-                    <div
-                      key={index}
-                      className={`w-7 sm:w-8 h-10 sm:h-11 rounded-xl flex items-center justify-center border-2 transition-all duration-150 ${
-                        loginSuccessUser
-                          ? 'border-emerald-600 bg-emerald-100'
-                          : hasDigit
-                          ? 'border-amber-500 bg-amber-100 shadow-sm'
-                          : isCurrent
-                          ? 'border-amber-500 bg-white scale-105 shadow-inner'
-                          : 'border-slate-300 bg-slate-50'
-                      }`}
-                    >
-                      {loginSuccessUser ? (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                      ) : hasDigit ? (
-                        <div className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-sm" />
-                      ) : (
-                        <div className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Mensajes de Estado */}
-            <div className="min-h-[34px] flex items-center justify-center mb-2.5">
-              {errorMsg && (
-                <div className="flex items-center space-x-1.5 text-[11px] font-bold text-rose-800 bg-rose-50 border border-rose-300 px-3 py-1 rounded-xl animate-fadeIn">
-                  <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-600" />
-                  <span>{errorMsg}</span>
-                </div>
-              )}
-              {isAuthenticating && !errorMsg && (
-                <div className="flex items-center space-x-1.5 text-[11px] font-bold text-amber-900 bg-amber-50 border border-amber-300 px-3 py-1 rounded-xl">
-                  <Sparkles className="w-3.5 h-3.5 animate-spin text-amber-600" />
-                  <span>Validando con servidor central...</span>
-                </div>
-              )}
-              {loginSuccessUser && (
-                <div className="flex items-center space-x-1.5 text-[11px] font-black text-emerald-900 bg-emerald-100 border border-emerald-400 px-3 py-1 rounded-xl">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Bienvenido/a {loginSuccessUser.name}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Teclado Numérico Táctil de Alto Contraste Solar */}
-            <div className="grid grid-cols-3 gap-2 max-w-[270px] mx-auto mb-2">
-              {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
-                <button
-                  key={digit}
-                  type="button"
-                  onClick={() => handleKeyPress(digit)}
-                  disabled={isAuthenticating || !!loginSuccessUser}
-                  className="h-12 sm:h-13 rounded-2xl bg-white hover:bg-slate-50 active:bg-amber-400 active:text-slate-950 active:scale-95 border-2 border-slate-300 hover:border-slate-400 text-xl font-black text-slate-950 transition-all flex items-center justify-center shadow-sm cursor-pointer disabled:opacity-50"
-                >
-                  {digit}
-                </button>
-              ))}
-
-              {/* Botón Limpiar */}
-              <button
-                type="button"
-                onClick={handleClear}
-                disabled={isAuthenticating || !!loginSuccessUser || pin.length === 0}
-                title="Limpiar todo"
-                className="h-12 sm:h-13 rounded-2xl bg-slate-100 hover:bg-slate-200 active:scale-95 border-2 border-slate-300 text-xs font-bold text-slate-700 transition-all flex flex-col items-center justify-center cursor-pointer disabled:opacity-40"
-              >
-                <RotateCcw className="w-4 h-4" />
-                <span className="text-[9px]">Limpiar</span>
-              </button>
-
-              {/* Dígito 0 */}
-              <button
-                type="button"
-                onClick={() => handleKeyPress('0')}
-                disabled={isAuthenticating || !!loginSuccessUser}
-                className="h-12 sm:h-13 rounded-2xl bg-white hover:bg-slate-50 active:bg-amber-400 active:text-slate-950 active:scale-95 border-2 border-slate-300 hover:border-slate-400 text-xl font-black text-slate-950 transition-all flex items-center justify-center shadow-sm cursor-pointer disabled:opacity-50"
-              >
-                0
-              </button>
-
-              {/* Botón Borrar 1 dígito */}
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={isAuthenticating || !!loginSuccessUser || pin.length === 0}
-                title="Borrar dígito"
-                className="h-12 sm:h-13 rounded-2xl bg-slate-100 hover:bg-slate-200 active:scale-95 border-2 border-slate-300 text-slate-700 hover:text-rose-700 transition-all flex flex-col items-center justify-center cursor-pointer disabled:opacity-40"
-              >
-                <Delete className="w-4 h-4" />
-                <span className="text-[9px]">Borrar</span>
-              </button>
-            </div>
+            <label htmlFor="login-identifier" className="block text-sm font-bold text-slate-800 mb-1">
+              Código de usuario o correo
+            </label>
+            <input id="login-identifier" name="username" type="text" autoComplete="username"
+              autoCapitalize="none" spellCheck={false} maxLength={254} required value={identifier}
+              onChange={event => { setIdentifier(event.target.value); setCredential(''); setErrorMsg(null); }}
+              disabled={busy} placeholder="Tu código o correo"
+              className="w-full min-h-12 bg-slate-50 border-2 border-slate-300 rounded-xl px-3 text-base font-semibold text-slate-950 focus:outline-none focus:border-amber-500" />
           </div>
-        )}
-
-        {/* 2. MODO ADMINISTRACIÓN (Contraseña de al menos 14 caracteres) */}
-        {authMode === 'admin' && (
-          <form onSubmit={handleAdminSubmit} className="space-y-3.5 mb-2">
-            <div>
-              <label className="block text-[11px] font-black text-slate-700 uppercase tracking-wider mb-1">
-                Identificador / Correo de Administrador:
-              </label>
-              <input
-                type="text"
-                value={adminIdentifier}
-                onChange={(e) => setAdminIdentifier(e.target.value)}
-                placeholder="carlos.admin@tequenosplaya.com o ADM-01"
-                required
-                disabled={isAuthenticating || !!loginSuccessUser}
-                className="w-full bg-slate-50 border-2 border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:border-slate-900"
-              />
+          <div>
+            <label htmlFor="login-credential" className="block text-sm font-bold text-slate-800 mb-1">PIN o contraseña</label>
+            <div className="relative">
+              <input id="login-credential" name="password" type={showCredential ? 'text' : 'password'}
+                autoComplete="current-password" autoCapitalize="none" spellCheck={false} inputMode="text"
+                enterKeyHint="go" maxLength={1024} required value={credential} disabled={busy}
+                onChange={event => { setCredential(event.target.value); setErrorMsg(null); }}
+                aria-describedby="login-credential-help"
+                className="w-full min-h-12 bg-slate-50 border-2 border-slate-300 rounded-xl pl-3 pr-14 text-base font-semibold text-slate-950 focus:outline-none focus:border-amber-500" />
+              <button type="button" aria-label={showCredential ? 'Ocultar credencial' : 'Mostrar credencial'}
+                aria-pressed={showCredential} disabled={busy} onClick={() => setShowCredential(current => !current)}
+                className="absolute right-0 top-0 min-h-12 min-w-12 flex items-center justify-center text-slate-700">
+                {showCredential ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
             </div>
+            <p id="login-credential-help" className="text-xs text-slate-600 mt-1">
+              Usá tu PIN de 8 dígitos o tu contraseña de al menos 12 caracteres.
+            </p>
+          </div>
 
-            <div>
-              <label className="block text-[11px] font-black text-slate-700 uppercase tracking-wider mb-1">
-                Contraseña (mínimo 14 caracteres):
-              </label>
-              <div className="relative">
-                <input
-                  type={showAdminPassword ? 'text' : 'password'}
-                  value={adminPassword}
-                  onChange={(e) => setAdminPassword(e.target.value)}
-                  placeholder="••••••••••••••"
-                  required
-                  disabled={isAuthenticating || !!loginSuccessUser}
-                  className="w-full bg-slate-50 border-2 border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-900 pr-9 focus:outline-none focus:border-slate-900"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowAdminPassword(!showAdminPassword)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-800"
-                >
-                  {showAdminPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
+          <details className="rounded-xl border-2 border-slate-300 bg-slate-50">
+            <summary className="min-h-12 px-3 flex items-center cursor-pointer font-bold text-sm text-slate-800">
+              Teclado numérico para PIN
+            </summary>
+            <div className="grid grid-cols-3 gap-2 p-3" aria-label="Teclado numérico">
+              {['1','2','3','4','5','6','7','8','9'].map(digit => (
+                <button key={digit} type="button" onClick={() => appendDigit(digit)}
+                  disabled={busy || !numericCredential || credential.length === 8}
+                  className="h-12 rounded-xl bg-white border-2 border-slate-300 text-xl font-black text-slate-950 active:bg-amber-400 disabled:opacity-40">{digit}</button>
+              ))}
+              <button type="button" aria-label="Limpiar credencial" disabled={busy || !credential}
+                onClick={() => { setCredential(''); setErrorMsg(null); }}
+                className="h-12 rounded-xl bg-white border-2 border-slate-300 flex items-center justify-center text-slate-800 disabled:opacity-40">
+                <RotateCcw className="w-5 h-5" />
+              </button>
+              <button type="button" onClick={() => appendDigit('0')} disabled={busy || !numericCredential || credential.length === 8}
+                className="h-12 rounded-xl bg-white border-2 border-slate-300 text-xl font-black text-slate-950 active:bg-amber-400 disabled:opacity-40">0</button>
+              <button type="button" aria-label="Borrar último carácter" disabled={busy || !credential}
+                onClick={() => { setCredential(current => current.slice(0,-1)); setErrorMsg(null); }}
+                className="h-12 rounded-xl bg-white border-2 border-slate-300 flex items-center justify-center text-slate-800 disabled:opacity-40">
+                <Delete className="w-5 h-5" />
+              </button>
             </div>
+          </details>
 
-            {/* Mensajes de Estado */}
-            <div className="min-h-[30px] flex items-center justify-center">
-              {errorMsg && (
-                <div className="flex items-center space-x-1.5 text-[11px] font-bold text-rose-800 bg-rose-50 border border-rose-300 px-3 py-1 rounded-xl">
-                  <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-600" />
-                  <span>{errorMsg}</span>
-                </div>
-              )}
-              {isAuthenticating && !errorMsg && (
-                <div className="flex items-center space-x-1.5 text-[11px] font-bold text-slate-800 bg-slate-100 border border-slate-300 px-3 py-1 rounded-xl">
-                  <Sparkles className="w-3.5 h-3.5 animate-spin text-slate-700" />
-                  <span>Verificando credenciales de administración...</span>
-                </div>
-              )}
-            </div>
+          <div aria-live="polite" className="min-h-8">
+            {errorMsg && <p role="alert" className="flex items-start gap-2 rounded-xl bg-rose-50 border-2 border-rose-300 p-3 text-sm font-bold text-rose-800">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" /><span>{errorMsg}</span>
+            </p>}
+            {isAuthenticating && <p className="flex items-center gap-2 text-sm font-bold text-slate-800">
+              <Sparkles className="w-4 h-4 animate-spin" />Verificando tu acceso…
+            </p>}
+            {loginSuccessUser && <p className="flex items-center gap-2 text-sm font-bold text-emerald-800">
+              <CheckCircle2 className="w-4 h-4" />Acceso confirmado.
+            </p>}
+          </div>
+          <button type="submit" disabled={busy} className="w-full min-h-12 bg-amber-400 border-2 border-amber-500 rounded-xl text-slate-950 font-black flex items-center justify-center gap-2 active:bg-amber-500 disabled:opacity-50">
+            <span>Ingresar</span><ChevronRight className="w-4 h-4" />
+          </button>
+        </form>
 
-            <button
-              type="submit"
-              disabled={isAuthenticating || !!loginSuccessUser}
-              className="w-full h-12 bg-slate-900 hover:bg-slate-950 active:scale-95 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-50"
-            >
-              <span>Ingresar a Administración</span>
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </form>
-        )}
+        <p className="mt-3 text-xs text-slate-700">¿Olvidaste tu contraseña? Pedí al administrador que verifique tu identidad y prepare un enlace privado.</p>
+        <a href="/activate" className="min-h-12 flex items-center justify-center underline text-sm text-slate-800">Tengo un código de activación</a>
 
         {/* Pie de seguridad */}
         <div className="mt-4 pt-3 border-t border-slate-200 text-center">
+          <a href="/setup" className="min-h-12 flex items-center justify-center text-xs font-semibold text-slate-700 underline">Configuración inicial del negocio</a>
           <p className="text-[11px] text-slate-500 font-medium flex items-center justify-center space-x-1">
             <Lock className="w-3.5 h-3.5 text-slate-400" />
-            <span>Autenticación scrypt individual protegida contra fuerza bruta</span>
+            <span>Acceso personal verificado en el servidor</span>
           </p>
         </div>
 
