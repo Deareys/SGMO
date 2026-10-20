@@ -20,14 +20,17 @@ import { AdminConfigView } from './components/AdminConfigView';
 import { FactoryProductionView } from './components/FactoryProductionView';
 import { GeneralVouchersRepositoryView } from './components/GeneralVouchersRepositoryView';
 import { AuditAlertsModal } from './components/AuditAlertsModal';
+import { ChangePasswordModal } from './components/PasswordManagement';
 
 const InitialOwnerSetup = lazy(() => import('./components/InitialOwnerSetup'));
+const PasswordActivationScreen = lazy(() => import('./components/PasswordActivationScreen'));
 
 export const App: React.FC = () => {
   const [state, setState] = useState<AppState>(storageService.getState());
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [isAlertsOpen, setIsAlertsOpen] = useState(false);
   const [isAuditOpen, setIsAuditOpen] = useState(false);
+  const [isPasswordOpen, setIsPasswordOpen] = useState(false);
 
   useEffect(() => {
     const unsubscribe = storageService.subscribe((newState) => {
@@ -88,7 +91,11 @@ export const App: React.FC = () => {
     }
   };
 
-  // Si no hay usuario autenticado, renderizar exclusivamente la pantalla de ingreso con PIN
+  if (window.location.pathname === '/activate') {
+    return <Suspense fallback={<p role="status" className="p-6">Preparando activación…</p>}><PasswordActivationScreen /></Suspense>;
+  }
+
+  // Si no hay usuario autenticado, mostrar sólo ingreso/activación inicial.
   if (!state.currentUser) {
     if (window.location.pathname === '/setup') {
       return <Suspense fallback={<p role="status" className="p-6">Preparando activación…</p>}><InitialOwnerSetup /></Suspense>;
@@ -159,7 +166,9 @@ export const App: React.FC = () => {
         onOpenAudit={() => setIsAuditOpen(true)}
         onResetSeed={handleResetSeed}
         onLogout={handleLogout}
+        onChangePassword={() => setIsPasswordOpen(true)}
       />
+      {isPasswordOpen && <ChangePasswordModal onClose={() => setIsPasswordOpen(false)} />}
 
       <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-3 space-y-2">
         {state.demoMode && <p className="rounded-xl border-2 border-amber-500 bg-amber-50 p-3 text-sm font-bold">Demostración aislada: estos datos no pertenecen a producción.</p>}

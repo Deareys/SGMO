@@ -30,10 +30,12 @@ import { authenticateToken, extractToken } from './authMiddleware.js';
 import { INITIAL_USERS } from '../../mockData.js';
 import { publicProfile } from './publicProfile.js';
 import { browserSecurityMiddleware, issueCsrfToken, isExplicitApiRequest, setSessionCookie, clearSessionCookie } from './browserSecurity.js';
+import { passwordRouter } from './passwordRoutes.js';
 
 export const authRouter = Router();
 authRouter.use(browserSecurityMiddleware);
 authRouter.get('/csrf', issueCsrfToken);
+authRouter.use(passwordRouter);
 
 // =====================================================================
 // Almacén aislado exclusivo para desarrollo local / suite de pruebas
@@ -223,7 +225,7 @@ authRouter.post('/login', pinRateLimiter, async (req: Request, res: Response) =>
         await client.query('LOCK TABLE users IN ROW EXCLUSIVE MODE');
         // La fila bloqueada serializa verificación, contador y emisión frente a otros logins/restablecimientos.
         const account = await userRepository.getAuthRecordByIdentifier(normalizedIdentifier, client);
-        if (!account || !account.isActive || (isAdminLogin ? account.role !== 'admin' : account.role === 'admin')
+        if (!account || !account.isActive || (!isAdminLogin && account.role === 'admin')
             || (!isAdminLogin && account.userCode?.toLowerCase() !== normalizedIdentifier.toLowerCase())) return null;
         if (account.lockedUntil && new Date(account.lockedUntil).getTime() > Date.now()) {
           locked = true;

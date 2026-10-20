@@ -2,6 +2,10 @@
 
 Fecha: 13 de octubre de 2026. Hitos 1.2.2 y 1.3.
 
+## Ampliación Hito 3.4 — 20/10/2026
+
+La política nueva admite 12–128 caracteres sin composición obligatoria. La suite histórica ahora prueba una entrada de 11 caracteres; un ejemplo de 12 ya no debe rechazarse por longitud. Se agregan cuatro pruebas de política y una de repositorio (193 en total), ocho grupos `passwords-sql.integration.ts --postgres`, tres escenarios de contraseñas en el runner HTTP multiproceso (nueve grupos en total) y seis recorridos `browser-passwords.smoke.cjs`. La CI verifica consumo competitivo de un código, cambio/login simultáneos, fallo cerrado de los tres endpoints, rollback integral y conservación de ventas pendientes al cambiar la clave. El navegador usa la API y SQL WASM efímero; sólo el job PostgreSQL prueba concurrencia por sockets. No usa Neon ni proveedores reales. El informe del [Hito 3.4](HITO_3_4_CONTRASENAS_Y_PRODUCCION.md) distingue los resultados locales de los de Actions.
+
 ## Ampliación Hito 3.3 — 18/10/2026
 
 El job SQL ejecuta ahora 24 casos de operaciones/liquidación en PostgreSQL 16, incluidos ceros, excepción individual y snapshot inmutable. El job browser instala Playwright 1.56.1 y PGlite 0.3.14 en un runtime externo y ejecuta ambos smokes: autenticación y `browser-central.smoke.cjs`. El nuevo smoke usa formulario `/setup`, dos contextos/cookies independientes, API real y SQL WASM efímero; comprueba cortes offline, ACK, respuesta perdida tras COMMIT, recuperación después de cerrar pestaña y ausencia de duplicados. No sustituye el job PostgreSQL multiproceso ni llama a proveedores.

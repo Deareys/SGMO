@@ -75,12 +75,24 @@ test('create rechaza PIN legado, malformado y credenciales cruzadas antes de esc
   for (const invalid of [pin.slice(0, 4), pin.slice(0, 7), `${pin}1`, ` ${pin}`, `${pin} `, 'abcdefgh', 12345678, null, '']) {
     await assert.rejects(repository.create({ ...publicProfile, pin: invalid as string }), UserCredentialValidationError);
   }
-  await assert.rejects(repository.create({ ...publicProfile, password: adminPassword() }), UserCredentialValidationError);
+  await assert.rejects(repository.create({ ...publicProfile, pin, password: adminPassword() }), UserCredentialValidationError);
   await assert.rejects(repository.create({ ...publicProfile, role: 'admin', pin }), UserCredentialValidationError);
   await assert.rejects(repository.create({ ...publicProfile, role: 'admin', password: '' }), UserCredentialValidationError);
   await assert.rejects(repository.create({ ...publicProfile, role: 'unknown' as UserProfile['role'] }), UserCredentialValidationError);
   await assert.rejects(repository.create({ ...publicProfile, isActive: 'false' as unknown as boolean }), UserCredentialValidationError);
   assert.equal(statements.length, 0);
+});
+
+test('una contraseña de trabajador usa scrypt y el mismo contrato personal que el administrador', async () => {
+  reset();
+  const password = crypto.randomBytes(6).toString('hex');
+  await repository.create({ ...publicProfile, password });
+  const insert = statements.find(({ sql }) => sql.includes('INSERT INTO users'))!;
+  assert.deepEqual(insert.parameters.slice(6, 8), [null, null]);
+  assert.equal(verifyPassword(password, insert.parameters[8] as string, insert.parameters[9] as string), true);
+  assert.equal(insert.parameters[10], 'password_12');
+  assert.equal(insert.parameters[11], true);
+  assert.ok(!insert.parameters.includes(password));
 });
 
 test('create hashea, marca aprovisionamiento y no refleja campos arbitrarios del request', async () => {
@@ -116,7 +128,7 @@ test('update valida tipo por rol bloqueado y hace rollback sin cambiar credencia
   assert.ok(statements.some(({ sql }) => sql.includes('FOR UPDATE')));
   assert.ok(!statements.some(({ sql }) => sql.includes('UPDATE users')));
   reset();
-  await assert.rejects(repository.updatePassword(publicProfile.id, adminPassword()), UserCredentialValidationError);
+  await assert.rejects(repository.update(publicProfile.id, { pin: workerPin(), password: adminPassword() }), UserCredentialValidationError);
   assert.deepEqual(transactionCommands(), ['BEGIN', 'ROLLBACK']);
 });
 
@@ -124,7 +136,7 @@ test('cambio de rol sin credencial desactiva aprovisionamiento y revoca en la mi
   reset();
   await repository.update(publicProfile.id, { role: 'admin' });
   const update = statements.find(({ sql }) => sql.includes('UPDATE users'))!;
-  assert.deepEqual(update.parameters.slice(1, 7), [null, null, null, null, 'password_14', false]);
+  assert.deepEqual(update.parameters.slice(1, 7), [null, null, null, null, 'password_12', false]);
   const updateIndex = statements.findIndex(({ sql }) => sql.includes('UPDATE users'));
   const revokeIndex = statements.findIndex(({ sql }) => sql.includes('UPDATE auth_sessions'));
   assert.ok(updateIndex < revokeIndex);

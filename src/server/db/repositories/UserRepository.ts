@@ -16,6 +16,7 @@ export interface UserAuthRecord extends UserProfile {
   passwordHash?: string | null;
   passwordSalt?: string | null;
   credentialType?: string | null;
+  credentialVersion?: string | number;
   isProvisioned?: boolean;
   failedAttempts?: number;
   lockedUntil?: string | null;
@@ -104,13 +105,14 @@ export class UserRepository {
   /**
    * Obtiene los datos de autenticación interna de un usuario (para verificación en backend)
    */
-  async getAuthRecordById(id: string): Promise<UserAuthRecord | null> {
-    const res = await query(`
+  async getAuthRecordById(id: string, client?: PoolClient): Promise<UserAuthRecord | null> {
+    const execute = client ? client.query.bind(client) : query;
+    const res = await execute(`
       SELECT 
         id, user_code as "userCode", name, email, role, phone, 
         pin_hash as "pinHash", pin_salt as "pinSalt",
         password_hash as "passwordHash", password_salt as "passwordSalt",
-        credential_type as "credentialType",
+        credential_type as "credentialType", credential_version as "credentialVersion",
         COALESCE(is_provisioned, FALSE) as "isProvisioned",
         failed_attempts as "failedAttempts", locked_until as "lockedUntil",
         failed_attempt_window_started_at as "failedAttemptWindowStartedAt",
@@ -142,7 +144,7 @@ export class UserRepository {
         id, user_code as "userCode", name, email, role, phone, 
         pin_hash as "pinHash", pin_salt as "pinSalt",
         password_hash as "passwordHash", password_salt as "passwordSalt",
-        credential_type as "credentialType",
+        credential_type as "credentialType", credential_version as "credentialVersion",
         COALESCE(is_provisioned, FALSE) as "isProvisioned",
         failed_attempts as "failedAttempts", locked_until as "lockedUntil",
         failed_attempt_window_started_at as "failedAttemptWindowStartedAt",
@@ -201,7 +203,7 @@ export class UserRepository {
     this.validateRole(user.role);
     if (typeof user.isActive !== 'boolean') throw new UserCredentialValidationError('El estado activo debe ser booleano.');
     const credential = this.prepareCredential(user.role, user.pin, user.password);
-    const credentialType = user.role === 'admin' ? 'password_14' : 'pin_8';
+    const credentialType = credential.credentialType;
 
     await withTransaction(async (client) => {
       await client.query('LOCK TABLE users IN ROW EXCLUSIVE MODE');
@@ -283,7 +285,7 @@ export class UserRepository {
       if (!administrator || administrator.role !== 'admin' || !administrator.isActive || administrator.isProvisioned) return false;
       await client.query(`
         UPDATE users SET password_hash = $1, password_salt = $2,
-          pin_hash = NULL, pin_salt = NULL, credential_type = 'password_14',
+          pin_hash = NULL, pin_salt = NULL, credential_type = 'password_12',
           is_provisioned = TRUE, failed_attempts = 0, locked_until = NULL,
           failed_attempt_window_started_at = NULL, updated_at = CURRENT_TIMESTAMP,
           name = COALESCE($4, name), email = COALESCE($5, email)
@@ -354,7 +356,7 @@ export class UserRepository {
           `password_hash = $${idx++}`, `password_salt = $${idx++}`,
           `credential_type = $${idx++}`, `is_provisioned = $${idx++}`);
         values.push(credential.pinHash, credential.pinSalt, credential.passwordHash,
-          credential.passwordSalt, role === 'admin' ? 'password_14' : 'pin_8', credential.isProvisioned);
+          credential.passwordSalt, credential.credentialType, credential.isProvisioned);
         fields.push('failed_attempts = 0', 'locked_until = NULL', 'failed_attempt_window_started_at = NULL');
       }
       if (updates.assignedHouseId !== undefined) {
@@ -417,13 +419,14 @@ export class UserRepository {
 
   /** Valida toda escritura; ausencia de credencial implica cuenta sin aprovisionar. */
   private prepareCredential(role: UserProfile['role'], pin?: string, password?: string) {
-    if ((role === 'admin' && pin !== undefined) || (role !== 'admin' && password !== undefined)) {
+    if ((role === 'admin' && pin !== undefined) || (pin !== undefined && password !== undefined)) {
       throw new UserCredentialValidationError('El tipo de credencial no corresponde al rol.');
     }
     const credential = {
       pinHash: null as string | null, pinSalt: null as string | null,
       passwordHash: null as string | null, passwordSalt: null as string | null,
-      isProvisioned: false
+      isProvisioned: false,
+      credentialType: password !== undefined || role === 'admin' ? 'password_12' : 'pin_8'
     };
     if (pin !== undefined) {
       const validation = validateWorkerPin(pin);
@@ -446,6 +449,8 @@ export class UserRepository {
 
   private async revokeUserSessions(client: PoolClient, id: string): Promise<void> {
     await client.query('UPDATE auth_sessions SET is_revoked = TRUE WHERE user_id = $1 AND is_revoked = FALSE', [id]);
+    await client.query('UPDATE users SET credential_version=credential_version+1 WHERE id=$1', [id]);
+    await client.query('UPDATE auth_password_activations SET revoked_at=clock_timestamp() WHERE user_id=$1 AND consumed_at IS NULL AND revoked_at IS NULL', [id]);
   }
 
   /**

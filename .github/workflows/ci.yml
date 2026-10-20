@@ -58,6 +58,8 @@ jobs:
           SGMO_TEST_REPORT_DIR: ${{ runner.temp }}/sgmo-test-report
       - name: PostgreSQL sales, inventory and bank payment integrity
         run: node --import tsx scripts/tests/sales-integrity.integration.ts --postgres
+      - name: PostgreSQL personal passwords and one-time recovery
+        run: node --import tsx scripts/tests/passwords-sql.integration.ts --postgres
       - name: Install isolated SQL WASM runtime
         run: npm install --prefix "$RUNNER_TEMP/sgmo-sql-runtime" @electric-sql/pglite@0.3.14
       - name: Configuration transactions in embedded SQL
@@ -103,6 +105,13 @@ jobs:
           SGMO_PGLITE_ROOT: ${{ runner.temp }}/sgmo-browser-runtime/node_modules/@electric-sql/pglite
           SGMO_BROWSER_QA_DIR: ${{ runner.temp }}/sgmo-browser-report/central
           SGMO_BROWSER_CENTRAL_PORT: '3103'
+      - name: Browser personal passwords and recovery with pending sales
+        run: node scripts/tests/browser-passwords.smoke.cjs
+        env:
+          SGMO_PLAYWRIGHT_MODULES: ${{ runner.temp }}/sgmo-browser-runtime/node_modules
+          SGMO_PGLITE_ROOT: ${{ runner.temp }}/sgmo-browser-runtime/node_modules/@electric-sql/pglite
+          SGMO_BROWSER_QA_DIR: ${{ runner.temp }}/sgmo-browser-report/passwords
+          SGMO_BROWSER_PASSWORD_PORT: '3104'
       - name: Preserve browser QA evidence
         if: always()
         uses: actions/upload-artifact@v4

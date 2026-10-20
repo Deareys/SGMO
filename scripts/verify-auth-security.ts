@@ -308,7 +308,7 @@ async function runSecurityTests() {
       modernAdminLogin.status === 200 &&
         modernAdminLogin.body.success === true &&
         modernAdminLogin.body.user.role === 'admin',
-      'Hito 1.2: Login exitoso de Administrador con correo y contraseña (≥14 caracteres)'
+      'Hito 1.2: Login exitoso de Administrador con correo y contraseña personal (≥12 caracteres)'
     );
 
     // 31. Login de Administrador con código único 'ADM-01' y contraseña
@@ -343,24 +343,24 @@ async function runSecurityTests() {
       'Hito 1.2: Validación rechaza PIN repetitivo 00000000'
     );
 
-    // 34. Rechazo de contraseña de admin demasiado corta (< 14 caracteres)
+    // 34. Política personal: 11 caracteres no alcanzan el mínimo de 12 (ADR-022).
     const valShortPassword = await request('/api/auth/validate-credential', {
       method: 'POST',
-      body: { type: 'admin_password', value: 'AdminPass123!' }
+      body: { type: 'admin_password', value: 'AdminP12!xy' }
     });
     assert(
       valShortPassword.body.isValid === false,
-      'Hito 1.2: Validación rechaza contraseña de administrador de menos de 14 caracteres'
+      'Hito 1.2: Validación rechaza contraseña personal de menos de 12 caracteres'
     );
 
-    // 35. Aceptación de contraseña de admin segura (≥ 14 caracteres con mayúsculas, minúsculas y caracteres especiales)
+    // 35. Aceptación de contraseña personal válida (sin mezcla obligatoria).
     const valStrongPassword = await request('/api/auth/validate-credential', {
       method: 'POST',
       body: { type: 'admin_password', value: adminPassword }
     });
     assert(
       valStrongPassword.body.isValid === true,
-      'Hito 1.2: Validación acepta contraseña de administrador segura (≥14 chars con variedad)'
+      'Hito 1.2: Validación acepta contraseña personal válida (≥12 caracteres)'
     );
 
     // 36. Aceptación de PIN de 8 dígitos seguro para trabajador

@@ -15,7 +15,8 @@
     "test:auth:postgres": "node --import tsx scripts/tests/postgres-auth.integration.ts --postgres",
     "test:auth:sql": "node --import tsx scripts/tests/postgres-auth.integration.ts --wasm",
     "verify:deployment": "node scripts/verify-deployment.mjs",
-    "db:migrate": "node --env-file=.env --import tsx scripts/migrate-database.ts"
+    "db:migrate": "node --env-file=.env --import tsx scripts/migrate-database.ts",
+    "auth:recover-owner": "node --env-file=.env --import tsx scripts/recover-owner.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

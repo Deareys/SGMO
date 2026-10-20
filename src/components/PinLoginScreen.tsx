@@ -4,8 +4,8 @@
  *
  * Un único formulario sin selector de perfiles. El servidor decide el rol.
  * Conserva dos contratos de credencial:
- * 1. Trabajadores de Playa, Base y Fábrica: Código de cuenta individual + PIN personal de 8 dígitos.
- * 2. Administradores: Identificador (userCode/email) + Contraseña de al menos 14 caracteres.
+ * 1. Todos los roles: código/correo + contraseña personal de al menos 12 caracteres.
+ * 2. PIN de 8 dígitos sólo para trabajadores que aún no eligieron su contraseña.
  *
  * Alto Contraste Solar — Diseñado para lectura impecable bajo luz solar directa en la arena.
  */
@@ -113,7 +113,7 @@ export const PinLoginScreen: React.FC<PinLoginScreenProps> = ({ onLoginSuccess }
               </button>
             </div>
             <p id="login-credential-help" className="text-xs text-slate-600 mt-1">
-              Usá tu PIN de 8 dígitos o tu contraseña de al menos 14 caracteres.
+              Usá tu PIN de 8 dígitos o tu contraseña de al menos 12 caracteres.
             </p>
           </div>
 
@@ -157,6 +157,9 @@ export const PinLoginScreen: React.FC<PinLoginScreenProps> = ({ onLoginSuccess }
             <span>Ingresar</span><ChevronRight className="w-4 h-4" />
           </button>
         </form>
+
+        <p className="mt-3 text-xs text-slate-700">¿Olvidaste tu contraseña? Pedí al administrador que verifique tu identidad y prepare un enlace privado.</p>
+        <a href="/activate" className="min-h-12 flex items-center justify-center underline text-sm text-slate-800">Tengo un código de activación</a>
 
         {/* Pie de seguridad */}
         <div className="mt-4 pt-3 border-t border-slate-200 text-center">

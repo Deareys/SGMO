@@ -222,7 +222,7 @@ async function main() {
   await newUserForm.getByPlaceholder('Ej: VEND-05').fill('QA-TEMP');
   await newUserForm.locator('input[type="email"]').fill('qa@example.invalid');
   await newUserForm.locator('input[type="tel"]').fill('000000000');
-  await newUserForm.locator('input[type="password"]').fill(workerPin);
+  assert.equal(await newUserForm.locator('input[type="password"]').count(), 0, 'Cada usuario elige su contraseña fuera del alta administrativa');
   await newUserForm.getByRole('button', { name: 'Guardar Usuario', exact: true }).click();
   await assertVisible(newUserForm.getByRole('alert'));
   await assertEventually(async () => assert.equal(await newUserForm.getByRole('button', { name: 'Guardar Usuario', exact: true }).isEnabled(), true));
@@ -233,7 +233,7 @@ async function main() {
 
   await page.getByRole('button', { name: 'Editar Usuario', exact: true }).nth(1).click();
   const editUserForm = page.locator('form').filter({ has: page.getByPlaceholder('Ej: VEND-05') });
-  await assertValue(editUserForm.locator('input[type="password"]'), '');
+  assert.equal(await editUserForm.locator('input[type="password"]').count(), 0);
   let updateRequestBody;
   page.on('request', (request) => {
     if (request.method() === 'PUT' && request.url().includes('/api/users/')) updateRequestBody = request.postDataJSON();

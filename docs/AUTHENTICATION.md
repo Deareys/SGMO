@@ -1,4 +1,16 @@
-# SGMO — Autenticación vigente y aprovisionamiento
+# SGMO — Autenticación actual y registro histórico
+
+## Estado actual — Hito 3.4, 20/10/2026
+
+El formulario no tiene selector de perfiles. Todos los roles ingresan con `{ identifier, password }`, por código o correo; el backend determina los permisos. Las claves nuevas tienen 12–128 caracteres, permiten frases y rechazan una lista local de claves comunes/patrones. Los PIN anteriores de ocho dígitos siguen con `{ userCode, pin }` hasta elegir contraseña. No se transforma ni trunca un secreto histórico.
+
+Las sesiones del navegador usan cookies HttpOnly, CSRF y origen validado; no bearer en localStorage. `POST /api/auth/password-activations` exige admin, contraseña actual e identidad confirmada. Devuelve una vez un código de 256 bits, almacenado como SHA-256 y válido 15 minutos. `POST /api/auth/complete-password-activation` consume el código y guarda la clave; no autentica. `POST /api/auth/change-password` exige sesión y credencial actual. Escritura, consumo, versión y revocación de sesiones/códigos son transaccionales. PostgreSQL caído produce 503, sin alternativa en memoria.
+
+El alta desde la UI crea un perfil sin clave y ofrece la activación privada. Las operaciones administrativas anteriores de PIN/contraseña en `/api/users` se conservan por compatibilidad con las pruebas e integraciones previas; la interfaz ya no solicita ni muestra una clave de otra persona. La migración 009 no revoca credenciales existentes. Si el dueño olvida su contraseña y no queda otro administrador, el procedimiento privado `auth:recover-owner` genera una activación con destino explícito y terminal interactiva; no reabre bootstrap ni añade un endpoint de emergencia. Ver [guía operativa](CONTRASENAS_Y_SALIDA_A_PRODUCCION.md) e [informe y pruebas](HITO_3_4_CONTRASENAS_Y_PRODUCCION.md).
+
+## Registro histórico del 12/10/2026
+
+Las menciones siguientes a 14 caracteres, bearer local y pruebas pendientes describen aquella entrega. El estado actual y su evidencia están arriba y en los informes posteriores.
 
 Estado al 12 de octubre de 2026: implementación reparada localmente. No certificada para producción. Consultar `HITO_1_2_1_INFORME.md` y `POSTGRES_AUTH_TESTS.md`.
 

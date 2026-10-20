@@ -8,6 +8,16 @@
 
 ## Actualización vigente — 13 de octubre de 2026
 
+### ADR-022: contraseña personal y recuperación presencial — 18 de octubre de 2026
+
+Sebas autoriza implementar elección/cambio de contraseña y recuperación asistida por el administrador, con una clave más corta que la propuesta de 15 caracteres. Se adopta mínimo **12 caracteres**, máximo 128 para nuevas claves, sin mezclas de caracteres obligatorias y con bloqueo local de claves comunes, patrones repetidos y claves derivadas del identificador. Es un compromiso de usabilidad: no equivale a la recomendación NIST de 15 caracteres sin segundo factor. Las claves existentes no se invalidan automáticamente; los PIN de ocho dígitos anteriores permanecen como transición hasta que su titular elija contraseña.
+
+Cada cuenta conserva su rol independiente de la credencial. El administrador crea el perfil y, después de verificar presencialmente la identidad, genera una activación de un solo uso que vence en 15 minutos, autenticando nuevamente su propia contraseña. El usuario elige el secreto final; el administrador jamás puede consultar la clave anterior. Cambiar la propia contraseña exige la credencial actual. Restablecer/activar cambia hash, consume el código, revoca enlaces pendientes y sesiones atómicamente, sin borrar ventas pendientes del dispositivo. Emitir un código no cambia ni bloquea por sí solo la cuenta.
+
+La migración 009 es aditiva y sustituye una restricción por rol por otra que permite contraseñas personales en todos los roles. Conserva hashes/PIN y datos operativos; añade versión de credencial y activaciones hasheadas. Primero se prueba en SQL efímero/PostgreSQL CI y una rama Neon aislada; sólo se aplica a `sgmo-pruebas` después de respaldo/verificación. No se migra ni se promueve producción automáticamente. Recuperación del propio dueño: procedimiento de infraestructura privado, sin reabrir el bootstrap público. Se preservan Express, PostgreSQL, scrypt, cookies HttpOnly, CSRF y bloqueo de intentos.
+
+Estado, prompts y pasos de producción: `HITO_3_4_CONTRASENAS_Y_PRODUCCION.md`.
+
 ### ADR-021: liquidaciones coherentes y acceso sin selector — 18 de octubre de 2026
 
 Sebas autorizó reparar las liquidaciones, retirar el selector de perfiles del ingreso, preparar el administrador **del dueño del negocio** y probar sesiones independientes y cortes de red. Las correcciones respetan valores cero y distinguen datos ausentes. Vivienda: exención → cero; excepción individual → su importe, incluido cero; costo diario central → su importe, incluido cero; valor predeterminado sólo si falta la configuración. La comisión cero y la tarifa de faltante cero se conservan también en UI/PDF. Los cierres históricos no se recalculan.

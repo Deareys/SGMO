@@ -429,8 +429,8 @@ export class StorageService {
   public async loginWithCredentialAsync(identifier: string, credential: string): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
     if (!identifier.trim()) return { success:false,error:'Ingresá tu código de usuario o correo.' };
     if (/^\d{8}$/.test(credential)) return this.loginWithPinAsync(credential,identifier.trim());
-    if (credential.length >= 14 && credential.length <= 1024) return this.loginAsAdminAsync(identifier.trim(),credential);
-    return { success:false,error:'Ingresá un PIN de 8 dígitos o una contraseña de al menos 14 caracteres.' };
+    if (Array.from(credential).length >= 12 && credential.length <= 1024) return this.loginAsAdminAsync(identifier.trim(),credential);
+    return { success:false,error:'Ingresá un PIN de 8 dígitos o una contraseña de al menos 12 caracteres.' };
   }
 
   public async loginWithPinAsync(pin: string, userCode?: string): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
@@ -520,6 +520,20 @@ export class StorageService {
   /** @deprecated La autenticación requiere loginWithPinAsync y servidor disponible. */
   public loginWithPin(_pin: string, _userCode: string): { success: boolean; user?: UserProfile; error?: string } {
     return { success: false, error: 'El inicio de sesión local está deshabilitado. Usá la autenticación central con conexión.' };
+  }
+
+  /** Sólo después del ACK de cambio: el servidor ya revocó cookie/sesiones; no toca la cola de ventas. */
+  public clearSessionAfterPasswordChange(): void {
+    this.authRevision++;
+    this.state.currentUser = null;
+    this.state.centralHydrated = false;
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(AUTH_TOKEN_KEY);
+      localStorage.removeItem(AUTH_USER_KEY);
+      localStorage.removeItem(LOGOUT_PENDING_KEY);
+    }
+    resetCsrfToken();
+    this.saveState();
   }
 
   public logout(): Promise<{ success: boolean; error?: string }> {

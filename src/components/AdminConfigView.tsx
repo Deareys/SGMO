@@ -37,6 +37,7 @@ import {
   QrCode,
   Sparkles
 } from 'lucide-react';
+import { IssuePasswordActivationModal } from './PasswordManagement';
 import { CommissionTiersTab } from './CommissionTiersTab';
 import { MercadoPagoTestLabModal } from './MercadoPagoTestLabModal';
 import { AppState, storageService } from '../services/storageService';
@@ -100,6 +101,7 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
   const [isCreatingRecipe, setIsCreatingRecipe] = useState(false);
 
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
+  const [activationUser, setActivationUser] = useState<UserProfile | null>(null);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
 
   // Estado temporal para Parámetros Globales
@@ -1160,7 +1162,7 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
                 Gestión de Personal, Roles y Exención de Vivienda
               </h2>
               <p className="text-xs text-slate-400 mt-1">
-                Administración de cuentas con control de permisos, clave PIN, % de comisión y base asignada.
+                Administración de cuentas, contraseñas personales, permisos, comisión y base asignada.
               </p>
             </div>
             <button
@@ -1233,7 +1235,7 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
                       </strong>
                     </div>
                     <div className="flex justify-between text-slate-300">
-                      <span>PIN de Acceso:</span>
+                      <span>Credencial privada:</span>
                       <strong className="text-slate-200 font-mono">••••</strong>
                     </div>
                   </div>
@@ -1246,6 +1248,7 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
                       <Edit2 className="w-3.5 h-3.5" />
                       <span>Editar Usuario</span>
                     </button>
+                    <button type="button" disabled={u.isActive === false} onClick={() => setActivationUser(u)} className="min-h-12 text-sky-300 underline font-bold disabled:opacity-50" aria-label={`Activar o restablecer contraseña de ${u.name}`}>Contraseña</button>
                     {u.id !== state.currentUser?.id && (
                       <button
                         onClick={async () => {
@@ -1271,6 +1274,8 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
           </div>
         </div>
       )}
+
+      {activationUser && <IssuePasswordActivationModal user={activationUser} onClose={() => setActivationUser(null)} />}
 
       {/* --- MODALES DE EDICIÓN / CREACIÓN --- */}
 
@@ -2049,8 +2054,6 @@ interface UserModalProps {
 const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [showPin, setShowPin] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
     name: user?.name || '',
     userCode: user?.userCode || '',
@@ -2086,25 +2089,12 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) 
               alert('El código de usuario es obligatorio (ej: VEND-05, COORD-03, ADM-02).');
               return;
             }
-            if (formData.role === 'admin') {
-              if (!user && (!formData.password || formData.password.length < 14)) {
-                alert('La contraseña de Administrador debe tener al menos 14 caracteres con mayúsculas, minúsculas y números o símbolos.');
-                return;
-              }
-            } else {
-              if (formData.pin && formData.pin.length !== 8) {
-                alert('El PIN personal del trabajador debe contener exactamente 8 dígitos numéricos.');
-                return;
-              }
-            }
             const { pin, password, ...profile } = formData;
             setIsSaving(true);
             setSaveError(null);
             try {
               await onSave({
                 ...profile,
-                ...(formData.role === 'admin' && password ? { password } : {}),
-                ...(formData.role !== 'admin' && pin ? { pin } : {}),
                 userCode: formData.userCode.trim().toUpperCase(),
                 commissionRate: Number(formData.commissionRate)
               });
@@ -2181,51 +2171,7 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) 
             </div>
 
             <div>
-              {formData.role === 'admin' ? (
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1">Contraseña (≥14 chars)</label>
-                  <div className="relative">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={formData.password}
-                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono text-xs pr-8"
-                      placeholder={user ? '(Sin cambios)' : 'Mínimo 14 caracteres'}
-                      required={!user}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
-                    >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1">PIN Personal (8 dígitos)</label>
-                  <div className="relative">
-                    <input
-                      type={showPin ? 'text' : 'password'}
-                      maxLength={8}
-                      value={formData.pin}
-                      onChange={(e) => setFormData({ ...formData, pin: e.target.value.replace(/\D/g, '').slice(0, 8) })}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-center font-mono tracking-widest pr-8"
-                      placeholder="••••••••"
-                      required={!user}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPin(!showPin)}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
-                      title={showPin ? 'Ocultar PIN' : 'Ver PIN'}
-                    >
-                      {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-              )}
+              <p className="rounded-lg border border-slate-500 bg-slate-800 p-3 text-slate-100">Cada persona elige su contraseña. Guardá el perfil y usá su botón «Contraseña» para preparar la activación o recuperación presencial.</p>
             </div>
           </div>
 

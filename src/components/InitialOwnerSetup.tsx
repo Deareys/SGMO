@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { authenticatedFetch } from '../services/apiClient';
+import { validateAccountPassword } from '../shared/passwordPolicy';
 
 /** Activación única por el dueño. Nunca guarda contraseñas ni códigos de activación en caché. */
 export default function InitialOwnerSetup() {
@@ -17,9 +18,8 @@ export default function InitialOwnerSetup() {
     if (busy || completed) return;
     setError('');
     if (password !== confirmation) { setError('Las contraseñas no coinciden.'); return; }
-    if (password.length < 14 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9\W_]/.test(password)) {
-      setError('Usá al menos 14 caracteres, con mayúsculas, minúsculas y un número o símbolo.'); return;
-    }
+    const policy = validateAccountPassword(password, [ownerEmail]);
+    if (!policy.isValid) { setError(policy.error!); return; }
     setBusy(true);
     try {
       const response = await authenticatedFetch('/api/auth/bootstrap-admin', {
@@ -62,11 +62,11 @@ export default function InitialOwnerSetup() {
                 <input type="email" name="owner-email" autoComplete="username" autoCapitalize="none" required maxLength={160} value={ownerEmail} disabled={busy} onChange={event => setOwnerEmail(event.target.value)} className={fieldClass} />
               </label>
               <label className="block text-sm font-bold text-slate-900">Nueva contraseña
-                <input type="password" name="new-password" autoComplete="new-password" required minLength={14} maxLength={1024} value={password} disabled={busy} onChange={event => setPassword(event.target.value)} className={fieldClass} aria-describedby="owner-password-help" />
+                <input type="password" name="new-password" autoComplete="new-password" required minLength={12} maxLength={128} value={password} disabled={busy} onChange={event => setPassword(event.target.value)} className={fieldClass} aria-describedby="owner-password-help" />
               </label>
-              <p id="owner-password-help" className="text-xs text-slate-700">Al menos 14 caracteres, con mayúsculas, minúsculas y un número o símbolo. Guardala en tu gestor de contraseñas.</p>
+              <p id="owner-password-help" className="text-xs text-slate-700">Al menos 12 caracteres. Podés usar una frase; evitá claves comunes. Guardala en tu gestor de contraseñas.</p>
               <label className="block text-sm font-bold text-slate-900">Repetir contraseña
-                <input type="password" name="confirm-password" autoComplete="new-password" required minLength={14} maxLength={1024} value={confirmation} disabled={busy} onChange={event => setConfirmation(event.target.value)} className={fieldClass} />
+                <input type="password" name="confirm-password" autoComplete="new-password" required minLength={12} maxLength={128} value={confirmation} disabled={busy} onChange={event => setConfirmation(event.target.value)} className={fieldClass} />
               </label>
               <label className="block text-sm font-bold text-slate-900">Código privado de activación
                 <input type="password" name="activation-code" autoComplete="off" required minLength={32} maxLength={1024} value={activationCode} disabled={busy} onChange={event => setActivationCode(event.target.value)} className={fieldClass} aria-describedby="owner-activation-help" />

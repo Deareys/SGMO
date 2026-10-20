@@ -234,10 +234,57 @@ try {
     assert.equal((await clients[0].request(first.origin, '/api/auth/me')).status, 503);
     assert.equal((await clients[1].request(second.origin, '/api/auth/login', workerIdentity)).status, 503);
     assert.equal((await clients[0].request(first.origin, '/api/auth/logout', {})).status, 503);
+    assert.equal((await admin.request(second.origin, '/api/auth/password-activations', {
+      userId: 'HTTP-WORKER', currentPassword: adminIdentity.password, identityConfirmed: true })).status, 503);
+    assert.equal((await clients[0].request(first.origin, '/api/auth/change-password', {
+      currentCredential: workerIdentity.pin, newPassword: adminPasswords[0], confirmPassword: adminPasswords[0] })).status, 503);
+    assert.equal((await clients[1].request(second.origin, '/api/auth/complete-password-activation', {
+      token: randomBytes(32).toString('hex'), newPassword: adminPasswords[0], confirmPassword: adminPasswords[0] })).status, 503);
     transportAvailable = true;
     assert.equal((await clients[0].request(second.origin, '/api/auth/me')).status, 200);
     assert.equal((await clients[0].request(second.origin, '/api/auth/logout', {})).status, 200);
     assert.equal((await clients[0].request(first.origin, '/api/auth/me')).status, 401);
+  });
+
+  await check('Contraseña personal: recuperación requiere admin reautenticado y confirmación de identidad', async () => {
+    assert.equal((await admin.request(first.origin, '/api/users', { id: 'HTTP-PASSWORD', userCode: 'HTTP-PASSWORD',
+      name: 'Contraseña HTTP efímera', role: 'seller', commissionRate: 0, isActive: true })).status, 201);
+    assert.equal((await admin.request(first.origin, '/api/auth/password-activations', {
+      userId: 'HTTP-PASSWORD', currentPassword: adminIdentity.password, identityConfirmed: false })).status, 400);
+    assert.equal((await admin.request(first.origin, '/api/auth/password-activations', {
+      userId: 'HTTP-PASSWORD', currentPassword: password(), identityConfirmed: true })).status, 401);
+    assert.equal((await controller.query('SELECT failed_attempts FROM users WHERE id=$1', [adminIdentity.identifier])).rows[0].failed_attempts, 1);
+  });
+  let personalPassword = password().slice(0, 12);
+  secrets.push(personalPassword);
+  await check('Dos procesos compiten por un código: exactamente un consumo, sin sesión automática', async () => {
+    const issued = await admin.request(first.origin, '/api/auth/password-activations', {
+      userId: 'HTTP-PASSWORD', currentPassword: adminIdentity.password, identityConfirmed: true });
+    assert.equal(issued.status, 200);
+    const token = issued.body.activation.token; secrets.push(token);
+    const results = await Promise.all(clients.map((client, index) => client.request(index ? second.origin : first.origin,
+      '/api/auth/complete-password-activation', { token, newPassword: personalPassword, confirmPassword: personalPassword })));
+    assert.equal(results.filter(result => result.status === 200).length, 1);
+    assert.equal(results.filter(result => result.status === 400).length, 1);
+    for (const client of clients) assert.equal((await client.request(first.origin, '/api/auth/me')).status, 401);
+    for (const client of clients) assert.equal((await client.request(first.origin, '/api/auth/login', {
+      identifier: 'HTTP-PASSWORD', password: personalPassword })).status, 200);
+    assert.equal((await clients[0].request(second.origin, '/api/users')).status, 403);
+    assert.equal((await clients[0].request(second.origin, '/api/auth/password-activations', {
+      userId: 'HTTP-PASSWORD', currentPassword: personalPassword, identityConfirmed: true })).status, 403);
+  });
+  await check('Cambio propio y login competitivo: ninguna sesión previa queda utilizable entre procesos', async () => {
+    const replacement = password().slice(0, 12); secrets.push(replacement);
+    const results = await Promise.all([
+      clients[0].request(first.origin, '/api/auth/login', { identifier: 'HTTP-PASSWORD', password: personalPassword }),
+      clients[1].request(second.origin, '/api/auth/change-password', {
+        currentCredential: personalPassword, newPassword: replacement, confirmPassword: replacement })
+    ]);
+    assert.ok([200, 401].includes(results[0].status)); assert.equal(results[1].status, 200);
+    for (const client of clients) assert.equal((await client.request(first.origin, '/api/auth/me')).status, 401);
+    assert.equal((await clients[0].request(first.origin, '/api/auth/login', { identifier: 'HTTP-PASSWORD', password: personalPassword })).status, 401);
+    personalPassword = replacement;
+    assert.equal((await clients[0].request(second.origin, '/api/auth/login', { identifier: 'HTTP-PASSWORD', password: personalPassword })).status, 200);
   });
   console.log(`RESULTADO: ${outcomes.length} grupos PostgreSQL HTTP multiproceso aprobados.`);
 } catch (error) {
