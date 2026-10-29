@@ -20,6 +20,10 @@ Trabajar sobre SGMO existente y la revisión remota, sin rehacer la aplicación.
 
 ## Evidencia de esta revisión
 
+Código `6ab3f3f958c7fde8d8393887106df5a3db5d7300`: Actions [40915736280](https://github.com/Deareys/SGMO/actions/runs/40915736280) aprobado. Integración main `7ea4966b5b097db78318465ff8c9d662f6d284f0`, mismo árbol; Actions [40916290550](https://github.com/Deareys/SGMO/actions/runs/40916290550), ambos jobs success: 199 unitarias, 35 históricas, SQL 11 auth + 11 HTTP multiproceso + 25 operativas + 11 contraseñas + 7 configuración WASM; Chromium 8+9+10+5.
+
+El primer despliegue `dpl_Eme83siHoQcLdMRzpA5wHzMTmaH1` aprobó once controles de infraestructura y diez sobre el dominio público, pero la inspección real del navegador detectó pantalla vacía. El asset JavaScript devolvía HTML con HTTP 200. Esos controles anteriores no probaban que React pudiera cargar: no se consideran aceptación visual. Se corrige la salida explícita `public` y su inclusión en el bundle; un respaldo `sendFile` restringido sirve archivos del frontend y devuelve 404 ante asset ausente en vez de HTML SPA. Se amplía el gate para descargar/verificar MIME y contenido de JS/CSS y una regresión reproduce HTML en lugar de JS. El bundle y mapa del servidor siguen fuera de la salida pública. Registrar la revisión corregida y el renderizado antes de cerrar.
+
 Validación local: tipos/build y 199 pruebas aprobadas. SQL configuración: siete grupos, incluido baseline productivo y rechazo de reseed. Navegador de configuración/recuperación: cinco recorridos aprobados con API real y SQL WASM, incluidos respaldo idempotente, importación de perfiles sin claves, historial separado, casas/carritos de formularios y permisos de otra sesión. CI/deployment: registrar revisión y resultados antes de cerrar esta entrega. La evidencia de hitos previos no se presenta como prueba del nuevo código.
 
 ## Pendientes para aceptar la entrega

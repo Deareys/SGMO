@@ -30,6 +30,9 @@ test('La salida pública de Vercel contiene sólo frontend y conserva archivos a
 });
 
 test('Entrypoint productivo mantiene API desconocida en JSON404 y reporta revisión sin necesitar base', async () => {
+  const assetPath = path.resolve('public/assets/qa-release-smoke.js');
+  await mkdir(path.dirname(assetPath), { recursive: true });
+  await writeFile(assetPath, 'console.log("QA frontend sin secretos")');
   const environment = { ...process.env, NODE_ENV: 'production', VERCEL: '1', SGMO_SERVER_AUTOSTART: 'false',
     SGMO_PUBLIC_ORIGIN: 'https://sgmo-test.example.invalid', SGMO_AUTH_MODE: 'central', SGMO_REVISION: 'revision-qa',
     VERCEL_GIT_COMMIT_SHA: '', SGMO_ENABLE_API_TOKENS: '', DATABASE_URL: '', POSTGRES_URL: '',
@@ -58,8 +61,14 @@ test('Entrypoint productivo mantiene API desconocida en JSON404 y reporta revisi
     assert.equal((await unknown.json()).code, 'API_NOT_FOUND');
     const anonymous = await fetch(`${origin}/api/bootstrap`);
     assert.equal(anonymous.status, 401);
+    const asset = await fetch(`${origin}/assets/qa-release-smoke.js`);
+    assert.equal(asset.status,200);assert.match(asset.headers.get('content-type')||'',/javascript/);
+    assert.equal(await asset.text(),'console.log("QA frontend sin secretos")');
+    const missingAsset = await fetch(`${origin}/assets/qa-file-that-does-not-exist.js`);
+    assert.equal(missingAsset.status,404);
   } finally {
     clearTimeout(timeout);
     if (child.exitCode === null && child.signalCode === null) { const exited = once(child, 'exit'); child.kill('SIGTERM'); await exited; }
+    await rm(assetPath,{force:true});
   }
 });

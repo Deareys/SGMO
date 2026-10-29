@@ -370,6 +370,15 @@ app.post('/api/webhooks/mercadopago', handleMercadoPagoWebhook);
 app.use('/api', (_req, res) => res.status(404).json({ success: false, code: 'API_NOT_FOUND', message: 'La operación solicitada no está disponible.' }));
 
 if (process.env.VERCEL) {
+  // El CDN sirve public, pero un asset ausente nunca debe caer en el HTML SPA.
+  // sendFile es un respaldo para el empaquetado Express; no expone dist/server.
+  app.get('/assets/:filename', (req, res) => {
+    const filename = req.params.filename;
+    if (!/^[A-Za-z0-9_.-]+\.(?:js|css|svg|png|woff2?)$/.test(filename)) return res.status(404).end();
+    res.sendFile(path.join(process.cwd(), 'public', 'assets', filename), error => {
+      if (error && !res.headersSent) res.status(404).end();
+    });
+  });
   app.get('*', (_req, res) => res.sendFile(path.join(process.cwd(), 'public', 'index.html')));
 }
 

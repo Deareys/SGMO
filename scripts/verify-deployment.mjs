@@ -45,6 +45,16 @@ export async function verifyDeployment({ origin, expectedRevision, shareToken = 
     const { response, body } = await get(endpoint);
     requireResult(response.status === 200 && /text\/html/i.test(response.headers.get('content-type') || '') && /<html|<!doctype html/i.test(body));
   });
+  await check('Frontend: JavaScript y CSS reales, sin fallback HTML', async () => {
+    const {body} = await get('/');
+    const javascript = body.match(/<script[^>]+src="(\/assets\/[A-Za-z0-9_.-]+\.js)"/i)?.[1];
+    const stylesheet = body.match(/<link[^>]+href="(\/assets\/[A-Za-z0-9_.-]+\.css)"/i)?.[1];
+    requireResult(Boolean(javascript && stylesheet));
+    for (const [asset, mime] of [[javascript, /(?:java|ecma)script/i], [stylesheet, /text\/css/i]]) {
+      const {response,body:content} = await get(asset);
+      requireResult(response.status===200 && mime.test(response.headers.get('content-type')||'') && content.length>0 && !/^\s*<!doctype html/i.test(content));
+    }
+  });
   await check('Backend: revisión exacta y transporte de sesión', async () => {
     const { response, json } = await get('/api/health');
     requireResult(response.status === 200 && json?.status === 'ok' && json.revision === expectedRevision && json.authTransport === 'httpOnly-cookie');

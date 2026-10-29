@@ -3,8 +3,9 @@
   "framework": "express",
   "installCommand": "npm ci",
   "buildCommand": "npm run build",
+  "outputDirectory": "public",
   "functions": {
-    "server.ts": { "includeFiles": "migrations/**" }
+    "server.ts": { "includeFiles": "{migrations,public}/**" }
   },
   "headers": [
     {
