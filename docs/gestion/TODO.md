@@ -4,11 +4,13 @@
 - [x] Usuarios/casas/carritos/montos centrales; porcentajes legibles y nuevos perfiles con comisión configurada; archivados ocultos y sesiones revocadas.
 - [x] Recuperación y archivo idempotente de datos del navegador; incorporación explícita de catálogo y configuración con errores parciales visibles. El historial financiero anterior se conserva como evidencia y no se presenta como verificado.
 - [x] Documentos agrupados bajo docs, enlaces relativos verificados y un registro activo de continuidad.
-- [ ] Publicar/validar main y dominio habitual con Production (registrar evidencia en CONTINUIDAD_HITOS.md).
+- [x] Código funcional f5395f1 publicado en main y dominio habitual verificado contra Production; evidencia, CI y alcance en CONTINUIDAD_HITOS.md.
 - [ ] Dueño activa cuenta privada; recibir datos que sigan sólo en navegadores o archivos mayores de 3,5 MB; revisar historial previo antes de incorporarlo a operaciones.
 - [ ] Confirmar datos reales (catálogo, stock físico, montos, cuentas), aceptación del dueño en teléfonos y proveedores reales.
 - [ ] Centralizar los módulos heredados de fábrica/gastos/mantenimiento/radar y PWA completa. Aviso visible en vistas locales; no certificarlas como compartidas.
 - [ ] Evitar actualizaciones concurrentes de configuración con control de versión/ETag. Hoy se confirma cada escritura SQL y se refresca, pero dos administradores guardando formularios antiguos pueden sustituir cambios del otro.
+
+- [ ] Investigar TypeError intermitente en el ensayo de corte TCP: mismo código aprobó al reejecutar, manteniendo expectativas HTTP 503. No se atribuye causa ni se elimina cobertura.
 
 La lista siguiente es histórica; consultar continuidad y guía para el estado vigente.
 

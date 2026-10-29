@@ -1,5 +1,15 @@
 # Estado vigente — entrega del 29 de octubre de 2026
 
+## Publicación verificada de la operación central
+
+29/10/2026: código funcional `f5395f1e5d97b6889cbb18ae698a48da35ac62cc` publicado en main y Vercel Production, deployment `dpl_DC458vPviQpgtek1DqieJ2fhWmhJ`. Dominio habitual [https://sgmo-rose.vercel.app/](https://sgmo-rose.vercel.app/), alias verificado sobre ese deployment. Preview corregido: doce controles aprobados; dominio público: once aprobados, incluidos descarga/MIME/contenido real de JavaScript y CSS, revisión exacta, conexión PostgreSQL, CSRF y barreras anónimas. Navegador real abrió y mostró el formulario de dos campos, sin selector de perfiles. El control anterior que sólo revisaba HTML no se usa como prueba de renderizado.
+
+Actions [40918742890](https://github.com/Deareys/SGMO/actions/runs/40918742890), intento 2: ambos jobs success, 199 unitarias, 35 históricas, SQL 11 auth + 11 HTTP multiproceso + 25 operativas + 11 contraseñas + 7 configuración WASM, Chromium 8+9+10+5. En el intento inicial, el escenario de corte TCP devolvió TypeError y se detuvo; se reejecutó sin cambiar código ni relajar aserciones, y aprobó. Queda registrar diagnóstico de esa intermitencia; no se atribuye una causa no demostrada ni se oculta el intento fallido.
+
+Comprobación de escritura con el rol real `sgmo_app`: casa + usuario + carrito insertados dentro de SAVEPOINT y revertidos antes de COMMIT. Ningún registro QA quedó persistido. Rol sin CREATE en public ni UPDATE de schema_migrations. Conteo productivo confirmado: once versiones, un espacio de dueño sin activar, cero ventas/jornadas, cero casas/carritos y cero respaldos de navegadores recibidos. No afirmar que esos datos privados ya migraron. El dueño debe activar /setup y cada origen anterior debe enviar su respaldo desde Configuración → Recuperar datos anteriores o /respaldo. Production no se rellenó con datos de ejemplo para simular una migración.
+
+La actualización siguiente de este registro es documental y no cambia el código funcional verificado. El proyecto SGMO sigue siendo uno; Deareys Studio permanece independiente. Pagos/OCR reales, aceptación en teléfonos, historial anterior convertido a operación central, módulos heredados locales y PWA siguen delimitados en guía/TODO. No afirmar que toda la aplicación queda certificada sólo cambiando API keys.
+
 ## Objetivo y autorización
 
 Preparar production y el dominio habitual hoy, corregir cambios compartidos de casas/carritos/usuarios/montos, conservar datos previos y agrupar la documentación. La ampliación expresa del usuario queda registrada por el principal en AGENTS.md; no se delegó a auxiliares.
@@ -30,7 +40,7 @@ Validación local: tipos/build y 199 pruebas aprobadas. SQL configuración: siet
 
 ## Pendientes para aceptar la entrega
 
-1. Publicar revisión verificada y comprobar el dominio principal contra production.
+1. Publicación del código funcional y dominio principal verificadas; mantener monitoreo y revisar datos/alcance antes de operar con dinero real.
 2. El dueño activa su cuenta privada. Los datos que sólo están en un navegador deben enviarse desde ese origen o como archivo; no afirmar que ya migraron sin recibo y conteo. No hay credenciales de dueño predeterminadas.
 3. Confirmar datos reales del negocio: casas, personas, catálogo/precios, tramos, stock contado y medios de pago. Production arranca sin importes supuestos.
 4. Aceptación en teléfonos y proveedores reales (Mercado Pago, webhook, OCR/facturación). Módulos heredados locales y PWA completa siguen pendientes y se identifican en la interfaz/guía.

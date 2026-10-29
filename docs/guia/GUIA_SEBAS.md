@@ -1,6 +1,6 @@
 # Guía vigente de SGMO — entrega del 29/10/2026
 
-Aplicación habitual: [sgmo-rose.vercel.app](https://sgmo-rose.vercel.app). GitHub guarda las versiones; Vercel ejecuta la app; Neon conserva la operación central. Usar este enlace estable después de verificar la publicación registrada en continuidad. Los enlaces de preview son otras versiones dentro del mismo proyecto `sgmo`. `deareys-studio` es otro proyecto, no una segunda mitad de SGMO.
+Aplicación habitual: [sgmo-rose.vercel.app](https://sgmo-rose.vercel.app). GitHub guarda las versiones; Vercel ejecuta la app; Neon conserva la operación central. La operación central ya está publicada y el dominio verificado; los datos y cuenta del dueño se completan con los pasos siguientes. Los enlaces de preview son otras versiones dentro del mismo proyecto `sgmo`. `deareys-studio` es otro proyecto, no una segunda mitad de SGMO.
 
 ## Preparar la presentación de hoy
 

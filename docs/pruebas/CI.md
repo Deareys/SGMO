@@ -1,6 +1,6 @@
 # Verificación vigente — 29/10/2026
 
-La entrega agrega `browser-configuration.smoke.cjs`: cinco recorridos UI → API → SQL efímero → otra sesión, con migración/respaldo, casas, carritos, porcentajes y archivo de usuarios. Configuración SQL ahora tiene siete grupos, incluido production sin demo y rechazo de reseed. Unitarias: 199. Los resultados concretos de CI y publicación se registran en [continuidad](../gestion/CONTINUIDAD_HITOS.md); no confundir valores esperados con una ejecución aprobada.
+La entrega agrega `browser-configuration.smoke.cjs`: cinco recorridos UI → API → SQL efímero → otra sesión, con migración/respaldo, casas, carritos, porcentajes y archivo de usuarios. Configuración SQL ahora tiene siete grupos, incluido production sin demo y rechazo de reseed. Unitarias: 199. Aprobado en [40918742890, intento 2](https://github.com/Deareys/SGMO/actions/runs/40918742890), código f5395f1: ambos jobs success. Chromium 8+9+10+5. El primer intento falló con TypeError en corte TCP; la reejecución conserva las mismas expectativas estrictas. Evidencia y límites en [continuidad](../gestion/CONTINUIDAD_HITOS.md).
 
 ---
 
