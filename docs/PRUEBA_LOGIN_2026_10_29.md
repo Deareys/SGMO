@@ -2,7 +2,7 @@
 
 29/10/2026. Usar la URL exacta y revisión indicadas en el [informe del Hito 3.5](HITO_3_5_LOGIN_Y_USUARIOS.md). GitHub guarda el código; Vercel ejecuta una revisión concreta y Neon guarda las cuentas. Una rama publicada no cambia automáticamente el dominio principal.
 
-Versión funcional verificada: [abrir la app de ensayo](https://sgmo-6mm1ezls5-deareys.vercel.app), revisión `6e475e59…`. Requiere acceso autorizado de Vercel. **No confundir con `sgmo-rose.vercel.app`, que sigue en el main antiguo.** El dueño debe completar la primera activación antes de crear cuentas; los perfiles sin contraseña en la base no tienen un acceso predeterminado.
+Versión funcional verificada: [abrir la app de ensayo](https://sgmo-hxrkrkfqs-deareys.vercel.app), revisión `90a89899…`. Requiere acceso autorizado de Vercel. **No confundir con `sgmo-rose.vercel.app`, que sigue en el main antiguo.** El dueño debe completar la primera activación antes de crear cuentas; los perfiles sin contraseña en la base no tienen un acceso predeterminado.
 
 ## Primera cuenta del negocio
 
@@ -17,7 +17,7 @@ Si el preview pide acceso a Vercel, entrar con la cuenta autorizada. Esa protecc
 3. Pulsar **Guardar Usuario**. Debe cerrarse el formulario después de que confirme el servidor y aparecer el usuario. Recargar: debe seguir apareciendo. Si falla el servidor, el formulario debe mostrar el error y conservar los datos para corregirlo.
 4. Salir del administrador e ingresar con el código y contraseña recién guardados. Repetir en otro navegador o teléfono usando correo y contraseña si se asignó correo. Debe abrir el perfil correcto, con los permisos de ese usuario.
 5. Volver a ingresar como administrador y editar su nombre/correo sin completar contraseña. Guardar, recargar y verificar los cambios. El usuario debe poder seguir entrando con la misma contraseña y el identificador actualizado.
-6. Editar otra vez: completar **Nueva contraseña** y **Repetir contraseña**. Guardar. La anterior debe dejar de funcionar, la nueva debe ingresar y las sesiones anteriores deben rechazarse al consultar el servidor. El titular puede cambiarla luego desde **Mi contraseña**.
+6. Editar otra vez: completar **Nueva contraseña** y **Repetir contraseña**. Guardar. La anterior debe dejar de funcionar, la nueva debe ingresar y las sesiones anteriores deben rechazarse al consultar el servidor. El titular puede cambiarla luego desde **Mi contraseña**. Si una cuenta no tenía base, debe conservar **Sin base asignada** al editar su clave; cambiar la contraseña no debe asignarle una casa ni exigir cerrar jornadas.
 7. Intentar crear otra cuenta con el mismo correo, incluso cambiando mayúsculas. Debe mostrarse el error de correo asignado y no aparecer un usuario falso. Un código repetido también debe rechazarse.
 8. Si hay un corte de conexión al guardar, no asumir éxito o fracaso: reconectar y recargar la lista antes de repetir. Una respuesta perdida puede ocurrir después de que PostgreSQL haya confirmado el cambio.
 
