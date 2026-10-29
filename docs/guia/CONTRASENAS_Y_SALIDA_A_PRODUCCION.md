@@ -64,7 +64,7 @@ En **Project → Settings → Environment Variables** elegir el entorno correcto
 
 ## Dónde mirar las pruebas
 
-**GitHub → Actions → SGMO validation → ejecución del commit:** todos los jobs deben estar verdes. Abrir cada job para ver resultados; un verde antiguo no valida código nuevo. En el artefacto `browser-auth-report` hay resúmenes y capturas de cuentas efímeras. Para el código y prompts reales, consultar [HITO_3_4_CONTRASENAS_Y_PRODUCCION.md](HITO_3_4_CONTRASENAS_Y_PRODUCCION.md).
+**GitHub → Actions → SGMO validation → ejecución del commit:** todos los jobs deben estar verdes. Abrir cada job para ver resultados; un verde antiguo no valida código nuevo. En el artefacto `browser-auth-report` hay resúmenes y capturas de cuentas efímeras. Para el código y prompts reales, consultar [HITO_3_4_CONTRASENAS_Y_PRODUCCION.md](../historial/HITO_3_4_CONTRASENAS_Y_PRODUCCION.md).
 
 **Vercel:** abrir el deployment correspondiente a ese SHA. `/api/health` confirma qué código se está ejecutando y `/api/db/status` sólo confirma conexión; no demuestra por sí solo ventas, pagos ni todas las tablas. El script `npm run verify:deployment -- --url https://DOMINIO --revision SHA_COMPLETO` realiza comprobaciones de sólo lectura; para un preview protegido el acceso temporal se maneja privadamente.
 

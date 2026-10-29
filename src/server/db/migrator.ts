@@ -61,6 +61,10 @@ export async function runMigrations(): Promise<{ success: boolean; results: Migr
 
   for (const file of files) {
     const version = file.replace('.sql', '');
+    if (version === '002_seed_initial_data' && appliedVersions.has('002_production_baseline')) {
+      results.push({version,success:true,message:'Omitida: este entorno tiene inicialización productiva sin datos demo.'});
+      continue;
+    }
     if (appliedVersions.has(version)) {
       results.push({
         version,

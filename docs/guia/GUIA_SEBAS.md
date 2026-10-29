@@ -1,6 +1,37 @@
+# Guía vigente de SGMO — entrega del 29/10/2026
+
+Aplicación habitual: [sgmo-rose.vercel.app](https://sgmo-rose.vercel.app). GitHub guarda las versiones; Vercel ejecuta la app; Neon conserva la operación central. Usar este enlace estable después de verificar la publicación registrada en continuidad. Los enlaces de preview son otras versiones dentro del mismo proyecto `sgmo`. `deareys-studio` es otro proyecto, no una segunda mitad de SGMO.
+
+## Preparar la presentación de hoy
+
+1. El dueño abre `/setup` en el dominio habitual, elige nombre/correo/contraseña de al menos 12 caracteres y usa el código privado `BOOTSTRAP_SECRET` ya configurado en Vercel. No hay una cuenta activa predeterminada; el administrador es el dueño del negocio, no Sebas. El código de instalación es privado y no se pega en GitHub ni en el chat.
+2. Si usaste la app vieja, abrí **Configuración → Recuperar datos anteriores** desde ese mismo navegador y dominio. Guardá el respaldo en Neon antes de incorporar el catálogo. Para descargar sin iniciar sesión: `/respaldo`. En otro dispositivo podés cargar ese JSON desde la misma sección. Nunca borrar el almacenamiento para probar la actualización.
+3. **Incorporar catálogo y configuración** trae casas, carritos, productos, usuarios y montos anteriores usando validaciones del servidor. Las cuentas importadas no tienen contraseña recuperable: asignala desde Usuarios. Si aparece resultado parcial, el respaldo queda completo y el mensaje identifica registros rechazados. Las cuentas ya activadas no se reemplazan.
+4. El historial anterior de ventas/jornadas/comprobantes queda respaldado y descargable; no aparece automáticamente como movimientos verificados en la operación central. Si había operaciones reales, necesitan revisión del respaldo y carga controlada. Un archivo mayor de 3,5 MB se conserva para importación del operador; no se finge un envío exitoso.
+5. Si no hay datos anteriores, configurá bases, productos/precios/combos, carritos, zonas, tramos, vivienda y personas. Production arranca sin ejemplos ficticios ni precios supuestos. Registrá stock físico por casa/variedad con motivo. Crear una variedad o casa no inventa existencias.
+6. Abrí una jornada, probá una venta en efectivo y comprobala desde otro navegador. Para ensayar pagos/OCR, configurar las credenciales de **Production** y verificar proveedor/importe/cuenta/webhook; sólo cambiar claves no demuestra que un cobro esté acreditado.
+
+## Comprobar que la configuración se comparte
+
+- Crear/editar casa, carrito o usuario, guardar, recargar y consultar desde otra cuenta. El éxito sólo aparece después de la respuesta central. Volver a la pestaña o esperar hasta 30 segundos trae cambios; recargar consulta de nuevo.
+- Un campo de porcentaje usa números humanos: escribir `17,5` equivale a 17,5 %, almacenado como `0,175`. Las cuentas nuevas toman la comisión base actual. Los tramos configurados determinan la comisión según ventas; una liquidación archivada no cambia retroactivamente.
+- Con jornadas abiertas, precios/comisiones/vivienda y asignaciones económicas pueden devolver 409: cerrar/sincronizar esas jornadas antes de modificar la política. Esto preserva las liquidaciones; no es un guardado local que se pierde.
+- Desactivar un usuario revoca su acceso y lo retira de la lista habitual y selectores operativos. **Mostrar usuarios archivados** permite consultarlo/reactivarlo sin perder su historial.
+- Cambiar contraseña invalida la anterior y sus sesiones; editar otros datos dejando clave vacía la conserva. El login no muestra personas ni permite elegir rol.
+
+## Alcance y pendientes que no deben ocultarse
+
+La operación central cubre acceso, catálogo/configuración, jornadas, ventas, stock por casa, cierres y pagos con verificación de servidor. Fábrica, gastos y otras vistas heredadas aún contienen funciones locales: el aviso de la app las identifica; no usarlas como registro compartido. Apertura desde cero sin señal/PWA completa y pruebas con proveedores/teléfonos reales requieren cierre adicional. Los registros que siguen únicamente en un teléfono no se migran sin acceder a ese origen o recibir su respaldo.
+
+## Evidencia y continuidad
+
+El registro activo es [CONTINUIDAD_HITOS.md](../gestion/CONTINUIDAD_HITOS.md). Allí se actualiza esta entrega, el prompt del principal, revisiones, pruebas, publicación y tareas pendientes. Los informes siguientes se conservan como explicación e historial; sus limitaciones antiguas no sustituyen el estado vigente.
+
+---
+
 # SGMO: cómo revisar, probar y empezar a entender el código
 
-Esta guía corresponde a la rama `codex/sgmo-preparacion-mvp`, no necesariamente a la app que hoy ves en producción. Primero verificá la versión. El plan y todos los prompts están en [HITOS_Y_PROMPTS_MVP.md](HITOS_Y_PROMPTS_MVP.md).
+Esta guía corresponde a la rama `codex/sgmo-preparacion-mvp`, no necesariamente a la app que hoy ves en producción. Primero verificá la versión. El plan y todos los prompts están en [HITOS_Y_PROMPTS_MVP.md](../historial/HITOS_Y_PROMPTS_MVP.md).
 
 ## 1. Dónde está cada cosa
 

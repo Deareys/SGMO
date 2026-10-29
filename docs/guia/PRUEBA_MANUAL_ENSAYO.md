@@ -1,6 +1,6 @@
 # SGMO: cómo repetir el ensayo
 
-Esta guía usa exclusivamente la rama GitHub `codex/sgmo-preparacion-mvp` y la rama Neon `sgmo-pruebas`. El informe con resultados y prompts es [HITO_3_2_ENSAYO.md](HITO_3_2_ENSAYO.md). No ejecutes las pruebas sobre la base productiva.
+Esta guía usa exclusivamente la rama GitHub `codex/sgmo-preparacion-mvp` y la rama Neon `sgmo-pruebas`. El informe con resultados y prompts es [HITO_3_2_ENSAYO.md](../historial/HITO_3_2_ENSAYO.md). No ejecutes las pruebas sobre la base productiva.
 
 ## 1. Comprobar la versión desde Vercel
 
@@ -16,7 +16,7 @@ Usar siempre el mismo origen evita mezclar cookies entre deployments. Hasta conf
 
 Las cuentas QA automáticas no son cuentas para operar: sus credenciales se retiran al finalizar. Los seis perfiles originales se conservan sin contraseñas/PIN predeterminados. Hay que aprovisionar tu administrador y luego crear trabajadores desde Administración.
 
-El primer administrador usa el procedimiento de operador `POST /api/auth/bootstrap-admin` con `{ identifier, newPassword, bootstrapSecret }`, cookie/CSRF y el `BOOTSTRAP_SECRET` privado que configuraste en Preview. `ADM-01` es el código del perfil administrador semilla. La contraseña nueva debe tener al menos 14 caracteres, mayúscula, minúscula y número o símbolo. La pantalla de login actual no tiene un formulario de bootstrap. Este alta requiere un operador que aplique [AUTHENTICATION.md](AUTHENTICATION.md) y la configuración vigente de cookies/CSRF en [DECISIONS.md](DECISIONS.md); no uses el contrato bearer de las notas históricas.
+El primer administrador usa el procedimiento de operador `POST /api/auth/bootstrap-admin` con `{ identifier, newPassword, bootstrapSecret }`, cookie/CSRF y el `BOOTSTRAP_SECRET` privado que configuraste en Preview. `ADM-01` es el código del perfil administrador semilla. La contraseña nueva debe tener al menos 14 caracteres, mayúscula, minúscula y número o símbolo. La pantalla de login actual no tiene un formulario de bootstrap. Este alta requiere un operador que aplique [AUTHENTICATION.md](../tecnica/AUTHENTICATION.md) y la configuración vigente de cookies/CSRF en [DECISIONS.md](../tecnica/DECISIONS.md); no uses el contrato bearer de las notas históricas.
 
 Con el administrador ya aprovisionado, abrí login → Administrador e ingresá código/correo y contraseña. Después del alta y login confirmados, retirar `BOOTSTRAP_SECRET` y crear otro preview captura la configuración cerrada. Para trabajadores, el login usa su código individual y PIN de ocho dígitos no predecible. No compartas claves o PIN por GitHub/chat/capturas.
 

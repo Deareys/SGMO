@@ -1,6 +1,6 @@
 # Probar el login y el guardado de usuarios
 
-29/10/2026. Usar la URL exacta y revisión indicadas en el [informe del Hito 3.5](HITO_3_5_LOGIN_Y_USUARIOS.md). GitHub guarda el código; Vercel ejecuta una revisión concreta y Neon guarda las cuentas. Una rama publicada no cambia automáticamente el dominio principal.
+29/10/2026. Usar la URL exacta y revisión indicadas en el [informe del Hito 3.5](../historial/HITO_3_5_LOGIN_Y_USUARIOS.md). GitHub guarda el código; Vercel ejecuta una revisión concreta y Neon guarda las cuentas. Una rama publicada no cambia automáticamente el dominio principal.
 
 Versión funcional verificada: [abrir la app de ensayo](https://sgmo-hxrkrkfqs-deareys.vercel.app), revisión `90a89899…`. Requiere acceso autorizado de Vercel. **No confundir con `sgmo-rose.vercel.app`, que sigue en el main antiguo.** El dueño debe completar la primera activación antes de crear cuentas; los perfiles sin contraseña en la base no tienen un acceso predeterminado.
 

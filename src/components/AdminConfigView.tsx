@@ -5,6 +5,7 @@
  */
 
 import React, { useState } from 'react';
+import { LegacyRecoveryPanel } from './LegacyRecoveryPanel';
 import {
   Settings,
   Truck,
@@ -69,7 +70,8 @@ type AdminTab =
   | 'supplies'
   | 'recipes'
   | 'suppliers'
-  | 'users';
+  | 'users'
+  | 'recovery';
 
 export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
   const [activeTab, setActiveTab] = useState<AdminTab>('params');
@@ -104,9 +106,11 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [activationUser, setActivationUser] = useState<UserProfile | null>(null);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
+  const [showArchivedUsers, setShowArchivedUsers] = useState(false);
 
   // Estado temporal para Parámetros Globales
   const [globalParams, setGlobalParams] = useState<SystemConfig>(state.systemConfig);
+  const globalParamsDirty = React.useRef(false);
   const [mpStatus, setMpStatus] = useState<any | null>(null);
   const [showTestLabModal, setShowTestLabModal] = useState(false);
 
@@ -119,7 +123,8 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
     setTimeout(() => setSaveSuccessMsg(null), 3000);
   };
 
-  React.useEffect(() => { setGlobalParams(state.systemConfig); }, [state.systemConfig]);
+  // La actualización central no debe borrar un formulario que se está editando.
+  React.useEffect(() => { if (!globalParamsDirty.current) setGlobalParams(state.systemConfig); }, [state.systemConfig]);
   const reportConfigError = (error: unknown) => setConfigError(error instanceof Error ? error.message : 'No se confirmó el cambio.');
 
   // Guardar Parámetros Globales
@@ -127,6 +132,8 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
     e.preventDefault();
     setConfigError(null);
     try { await storageService.updateSystemConfig(globalParams);
+    globalParamsDirty.current = false;
+    setGlobalParams(storageService.getState().systemConfig);
     notifySuccess('Parámetros confirmados por el servidor'); } catch (error) { reportConfigError(error); }
   };
 
@@ -165,6 +172,7 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
 
       {/* Selector de Submódulos de Configuración */}
       <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 scrollbar-none border-b border-slate-800 text-xs font-medium">
+        <button type="button" onClick={()=>setActiveTab('recovery')} className="min-h-12 px-4 whitespace-nowrap border-2 border-amber-500 rounded-xl text-amber-400 font-bold">Recuperar datos anteriores</button>
         <button
           onClick={() => setActiveTab('params')}
           className={`px-4 py-2.5 rounded-xl flex items-center space-x-2 transition-all whitespace-nowrap ${
@@ -287,7 +295,14 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
             </p>
           </div>
 
-          <form onSubmit={handleSaveGlobalParams} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <form onSubmit={handleSaveGlobalParams} onChange={() => { globalParamsDirty.current = true; }} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <label className="block bg-slate-800/60 border border-slate-700 rounded-xl p-4 text-sm text-slate-100">Nombre del sistema
+              <input value={globalParams.systemName} maxLength={120} required onChange={event=>setGlobalParams({...globalParams,systemName:event.target.value})} className="mt-2 w-full min-h-12 bg-slate-950 border border-slate-500 rounded-lg px-3" />
+            </label>
+            <label className="block bg-slate-800/60 border border-slate-700 rounded-xl p-4 text-sm text-slate-100">Descuento unitario de respaldo ($)
+              <input type="number" min="0" step="0.01" required value={globalParams.deductionRatePerMissingUnit} onChange={event=>setGlobalParams({...globalParams,deductionRatePerMissingUnit:Number(event.target.value)})} className="mt-2 w-full min-h-12 bg-slate-950 border border-slate-500 rounded-lg px-3" />
+              <span className="block mt-2 text-xs text-slate-300">Se usa cuando no está definida la política escalonada de faltantes. Los importes de esa política se configuran abajo.</span>
+            </label>
             <div className="bg-slate-800/60 border border-slate-700/70 rounded-xl p-4 space-y-2">
               <label className="block text-xs font-semibold text-slate-300">
                 Costo Diario de Vivienda por Persona ($)
@@ -329,10 +344,11 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
                   type="number"
                   step="0.01"
                   min="0"
-                  max="1"
-                  value={globalParams.defaultCommissionRate}
+                  max="100"
+                  aria-label="Comisión base de respaldo (%)"
+                  value={Number((globalParams.defaultCommissionRate * 100).toFixed(2))}
                   onChange={(e) =>
-                    setGlobalParams({ ...globalParams, defaultCommissionRate: Number(e.target.value) })
+                    setGlobalParams({ ...globalParams, defaultCommissionRate: Number(e.target.value) / 100 })
                   }
                   className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-8 pr-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400"
                   required
@@ -500,14 +516,14 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
                   </label>
                   <input
                     type="text"
-                    value={globalParams.mercadoPagoConfig?.alias || 'tequenos.costa.mp'}
+                    value={globalParams.mercadoPagoConfig?.alias || ''}
                     onChange={(e) =>
                       setGlobalParams({
                         ...globalParams,
                         mercadoPagoConfig: {
                           alias: e.target.value,
                           cvu: globalParams.mercadoPagoConfig?.cvu || '',
-                          accountHolder: globalParams.mercadoPagoConfig?.accountHolder || 'Tequeños Costa SRL'
+                          accountHolder: globalParams.mercadoPagoConfig?.accountHolder || ''
                         }
                       })
                     }
@@ -526,14 +542,14 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
                   </label>
                   <input
                     type="text"
-                    value={globalParams.mercadoPagoConfig?.cvu || '0000003100084592019482'}
+                    value={globalParams.mercadoPagoConfig?.cvu || ''}
                     onChange={(e) =>
                       setGlobalParams({
                         ...globalParams,
                         mercadoPagoConfig: {
-                          alias: globalParams.mercadoPagoConfig?.alias || 'tequenos.costa.mp',
+                          alias: globalParams.mercadoPagoConfig?.alias || '',
                           cvu: e.target.value,
-                          accountHolder: globalParams.mercadoPagoConfig?.accountHolder || 'Tequeños Costa SRL'
+                          accountHolder: globalParams.mercadoPagoConfig?.accountHolder || ''
                         }
                       })
                     }
@@ -551,12 +567,12 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
                   </label>
                   <input
                     type="text"
-                    value={globalParams.mercadoPagoConfig?.accountHolder || 'Tequeños Costa SRL'}
+                    value={globalParams.mercadoPagoConfig?.accountHolder || ''}
                     onChange={(e) =>
                       setGlobalParams({
                         ...globalParams,
                         mercadoPagoConfig: {
-                          alias: globalParams.mercadoPagoConfig?.alias || 'tequenos.costa.mp',
+                          alias: globalParams.mercadoPagoConfig?.alias || '',
                           cvu: globalParams.mercadoPagoConfig?.cvu || '',
                           accountHolder: e.target.value
                         }
@@ -1156,6 +1172,11 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
       {/* 8. TAB: USUARIOS, ROLES Y EXENCIÓN DE VIVIENDA */}
       {activeTab === 'users' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+          <label className="flex items-center gap-3 min-h-12 text-sm text-slate-200">
+            <input type="checkbox" checked={showArchivedUsers} onChange={event => setShowArchivedUsers(event.target.checked)} />
+            Mostrar usuarios archivados
+          </label>
+          <p className="text-xs text-slate-300">Desactivar retira al usuario de las listas operativas y revoca su acceso. Su historial se conserva.</p>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
             <div>
               <h2 className="text-lg font-bold text-white flex items-center">
@@ -1179,7 +1200,7 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {state.users.map((u) => {
+            {state.users.filter(user => showArchivedUsers || user.isActive !== false).map((u) => {
               const house = state.houses.find((h) => h.id === u.assignedHouseId);
               return (
                 <div
@@ -1276,6 +1297,7 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
         </div>
       )}
 
+      {activeTab === 'recovery' && <LegacyRecoveryPanel />}
       {activationUser && <IssuePasswordActivationModal user={activationUser} onClose={() => setActivationUser(null)} />}
 
       {/* --- MODALES DE EDICIÓN / CREACIÓN --- */}
@@ -1377,6 +1399,7 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
         <UserModal
           user={editingUser}
           houses={state.houses}
+          defaultCommissionRate={state.systemConfig.defaultCommissionRate}
           onClose={() => {
             setIsCreatingUser(false);
             setEditingUser(null);
@@ -2048,11 +2071,12 @@ const MaterialModal: React.FC<MaterialModalProps> = ({ material, categories, sup
 interface UserModalProps {
   user: UserProfile | null;
   houses: OperationalHouse[];
+  defaultCommissionRate: number;
   onClose: () => void;
   onSave: (data: Partial<UserProfile> & { password?: string }) => Promise<void>;
 }
 
-const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) => {
+const UserModal: React.FC<UserModalProps> = ({ user, houses, defaultCommissionRate, onClose, onSave }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [passwordConfirmation, setPasswordConfirmation] = useState('');
@@ -2064,7 +2088,7 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) 
     role: user?.role || ('seller' as UserRole),
     password: '',
     assignedHouseId: user ? (user.assignedHouseId || '') : (houses[0]?.id || ''),
-    commissionRate: user?.commissionRate ?? 0.20,
+    commissionRate: user?.commissionRate ?? defaultCommissionRate,
     housingCostExempt: !!user?.housingCostExempt,
     notes: user?.notes || ''
   });
@@ -2223,9 +2247,10 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) 
                 type="number"
                 step="0.01"
                 min="0"
-                max="1"
-                value={formData.commissionRate}
-                onChange={(e) => setFormData({ ...formData, commissionRate: Number(e.target.value) })}
+                max="100"
+                aria-label="Comisión de ventas (%)"
+                value={Number((formData.commissionRate * 100).toFixed(2))}
+                onChange={(e) => setFormData({ ...formData, commissionRate: Number(e.target.value) / 100 })}
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white"
               />
             </div>

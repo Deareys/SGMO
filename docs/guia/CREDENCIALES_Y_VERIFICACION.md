@@ -109,7 +109,7 @@ Con esquema preparado en la rama de ensayo, identificar en SQL el perfil admin a
 
 `BOOTSTRAP_SECRET` habilita el procedimiento inicial del operador. `POST /api/auth/bootstrap-admin` recibe `{ identifier, newPassword, bootstrapSecret }` y exige la protección del navegador/CSRF o un transporte API habilitado explícitamente. La contraseña del administrador debe cumplir la validación actual: al menos 14 caracteres, mayúscula/minúscula y número o símbolo. No es necesario publicar contraseña o secreto en este documento.
 
-Después del alta y login comprobados, retirar `BOOTSTRAP_SECRET` y redeployar. Crear/aprovisionar las cuentas de coordinación y vendedores desde Administración. No usar bootstrap para restablecer un administrador que ya fue aprovisionado. Detalles en [AUTHENTICATION.md](AUTHENTICATION.md).
+Después del alta y login comprobados, retirar `BOOTSTRAP_SECRET` y redeployar. Crear/aprovisionar las cuentas de coordinación y vendedores desde Administración. No usar bootstrap para restablecer un administrador que ya fue aprovisionado. Detalles en [AUTHENTICATION.md](../tecnica/AUTHENTICATION.md).
 
 ## 7. Evidencias para confirmar que funciona
 
@@ -149,3 +149,4 @@ Inspeccionar variables y contratos reales de SGMO. Consultar documentación ofic
 - Mercado Pago, compras de prueba: https://www.mercadopago.com.ar/developers/es/docs/checkout-pro-preferences/integration-test/test-purchases
 - Gemini, claves: https://ai.google.dev/gemini-api/docs/api-key
 - Gemini, facturación: https://ai.google.dev/gemini-api/docs/billing
+

@@ -67,7 +67,7 @@ export class ConfigurationRepository {
   /** Datos oficiales para hidratar clientes. Sin credenciales ni cantidades demo. */
   async getBootstrapCatalog(): Promise<{houses:OperationalHouse[];carts:SellingCart[];varieties:ProductVariety[];zones:BeachZone[];systemConfig:SystemConfig}> {
     const [houses,carts,varieties,tiers,configs,stock,assignments]=await Promise.all([
-      query('SELECT * FROM operational_houses ORDER BY name'),query('SELECT * FROM selling_carts ORDER BY code'),query('SELECT * FROM product_varieties ORDER BY name'),query('SELECT * FROM commission_tiers ORDER BY sort_order,min_sales'),query("SELECT * FROM system_configs WHERE config_key IN ('GLOBAL_PARAMS','beach_zones')"),query('SELECT s.*, v.name AS variety_name FROM house_stock s JOIN product_varieties v ON v.id=s.variety_id'),query('SELECT id,role,assigned_house_id FROM users')
+      query('SELECT * FROM operational_houses ORDER BY name'),query('SELECT * FROM selling_carts ORDER BY code'),query('SELECT * FROM product_varieties ORDER BY name'),query('SELECT * FROM commission_tiers ORDER BY sort_order,min_sales'),query("SELECT * FROM system_configs WHERE config_key IN ('GLOBAL_PARAMS','beach_zones')"),query('SELECT s.*, v.name AS variety_name FROM house_stock s JOIN product_varieties v ON v.id=s.variety_id'),query('SELECT id,role,assigned_house_id FROM users WHERE is_active=TRUE')
     ]);
     const configRow=configs.rows.find(row=>row.config_key==='GLOBAL_PARAMS');
     if(!configRow) throw new Error('Falta GLOBAL_PARAMS: completar configuración central.');

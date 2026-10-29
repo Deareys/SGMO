@@ -8,6 +8,16 @@
 
 ## Actualización vigente — 13 de octubre de 2026
 
+### ADR-024: entrega sobre el dominio principal, recuperación local y documentación agrupada — 29/10/2026
+
+Sebas autoriza preparar production, integrar main y publicar sobre el proyecto Vercel `sgmo`, preservando el otro proyecto `deareys-studio`, que es otro negocio. La base productiva tiene respaldo `br-silent-boat-b6cvphw3`. Se ensayan las migraciones en `br-steep-smoke-b6y1kh4s`. El control automático rechaza aplicar la semilla 002 en producción por sus personas ficticias y posibilidad de sobrescritura. Se utiliza la alternativa `scripts/sql/production-baseline.sql`: sólo el espacio del dueño sin credenciales, parámetros iniciales cero y ninguna venta, casa, producto o carrito ficticio; INSERT con ON CONFLICT DO NOTHING. El runner reconoce `002_production_baseline` y nunca reintroduce la semilla demo. El acceso de la aplicación usa `sgmo_app`, sin DDL ni escritura de versiones; migraciones HTTP deshabilitadas por defecto en producción.
+
+Antes de reemplazar la caché del prototipo, conservar un respaldo sanitizado; si la cuota no permite guardarlo, no sobrescribir el original. El administrador puede guardarlo de forma idempotente en `legacy_imports` y descargarlo desde otro dispositivo. La incorporación de catálogo usa validaciones/autorización normales, no reemplaza cuentas ya aprovisionadas y muestra resultados parciales. Ventas, comprobantes, jornadas y módulos antiguos se conservan íntegros como evidencia sanitizada en el respaldo; no se transforman automáticamente en pagos ni liquidaciones verificadas. Los datos de un navegador al que no se tiene acceso siguen pendientes hasta que su responsable los envíe. Se limita el envío web a 3,5 MB por el límite de la plataforma; archivos mayores requieren importación del operador y permanecen sin borrar.
+
+La economía central conserva el bloqueo durante jornadas abiertas para no cambiar liquidaciones en curso. Las nuevas cuentas toman la comisión base configurada; los campos de porcentaje muestran 20 para 20 %, guardando 0,20. No perder formularios por refresco automático. Las cuentas desactivadas desaparecen de las listas operativas y del listado administrativo por defecto; se conservan bajo «Mostrar usuarios archivados». El cliente renueva configuración al recuperar foco y periódicamente, sin adoptar datos de otra sesión.
+
+La documentación se mueve a subcarpetas de `docs/` sin borrar informes. Guía e índice vigentes arriba; hitos anteriores en historial. Se continúa un único registro de continuidad en lugar de crear un archivo por cada hito nuevo. La publicación no equivale a certificar proveedores, módulos aún locales o pruebas en teléfonos físicos.
+
 ### ADR-023: acceso simple y alta con contraseña persistida — 29 de octubre de 2026
 
 Sebas reporta usuarios/ediciones que desaparecen y un selector de perfiles en el acceso. La inspección confirma que el dominio principal todavía ejecuta `d291d5a` de main; PR 2 no se integró y la base productiva sigue vacía. No atribuir a PostgreSQL cambios realizados exclusivamente en el cliente antiguo. Verificar la revisión servida además de la fuente publicada.

@@ -67,6 +67,7 @@ import { calculateCommissionForSales } from '../utils/commissionUtils';
 import { calculateHousingDeduction, calculateWasteDeduction } from '../core/domain/settlementRules';
 import { soundAlerts } from '../utils/soundAlerts';
 import { authenticatedFetch, resetCsrfToken } from './apiClient';
+import { captureLegacyBackup, canReplaceLegacyCache } from './legacyRecovery';
 
 const STORAGE_KEY = 'SGMO_TEQUENOS_COSTA_V2';
 const OFFLINE_QUEUE_KEY = 'SGMO_OFFLINE_SALES_QUEUE';
@@ -148,6 +149,7 @@ export class StorageService {
   private hydrationPromise: Promise<boolean> | null = null;
 
   constructor() {
+    captureLegacyBackup();
     this.state = this.loadInitialState();
     // Remove legacy bearer/profile; the server's HttpOnly cookie is the only browser identity.
     if (typeof window !== 'undefined') {
@@ -169,6 +171,13 @@ export class StorageService {
       if (stored) {
         try {
           const parsed = JSON.parse(stored);
+          // Versiones anteriores pueden no tener colecciones agregadas después.
+          // Mantener sus registros y completar sólo las colecciones ausentes.
+          const collections = Object.fromEntries([
+            'users','shifts','sales','houses','carts','varieties','rawMaterials','supplyCategories','suppliers',
+            'recipes','productionOrders','factoryIncidents','materialPurchases','productionBatches','zones',
+            'incidents','beachReports','expenses','alerts','auditLogs','transfers'
+          ].map(key => [key, Array.isArray(parsed[key]) ? parsed[key] : []]));
           
           // Los perfiles locales contienen metadatos; nunca son fuente de
           // autenticación ni deben conservar credenciales del prototipo anterior.
@@ -211,6 +220,7 @@ export class StorageService {
 
           return {
             ...parsed,
+            ...collections,
             currentUser: null, // La identidad se restaura exclusivamente contra el servidor.
             centralHydrated: false, // Una caché anterior no confirma la vigencia de esta carga.
             centralStatus: 'not_loaded',
@@ -300,7 +310,7 @@ export class StorageService {
     }
     if (typeof window !== 'undefined') {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
+        if (canReplaceLegacyCache()) localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
       } catch (e) {
         this.state.saleSyncError = 'No se pudo guardar la caché operativa. Las ventas durables siguen pendientes; evitá recargar hasta confirmar la sincronización.';
       }
@@ -342,6 +352,10 @@ export class StorageService {
     this.notify();
     try {
       const response = await authenticatedFetch('/api/bootstrap');
+      if (response.status === 401 && this.state.currentUser?.id === sessionUser.id) {
+        this.clearSessionAfterPasswordChange();
+        return false;
+      }
       const payload = await response.json();
       if (!response.ok || payload.success !== true || (!payload.configured && payload.demoMode !== true)) {
         throw new Error(payload.message || 'No se pudo cargar la operación central.');
@@ -354,6 +368,10 @@ export class StorageService {
         throw new Error('El servidor no confirmó la configuración operativa.');
       }
       if (this.state.currentUser?.id !== sessionUser.id) return false;
+      // Reflejar cambios de nombre/base de esta cuenta confirmados por el servidor.
+      if (payload.currentUser?.id === sessionUser.id && payload.currentUser.role === sessionUser.role) {
+        this.state.currentUser = this.withoutCredentials(payload.currentUser);
+      }
       const pendingSales = this.readOfflineQueue().filter((sale) =>
         sessionUser.role !== 'seller' || sale.sellerId === sessionUser.id);
       const centralSales = new Map<string, SaleTransaction>(snapshot.sales.map((sale) => [sale.id, { ...sale, syncStatus: 'synced' as const }]));

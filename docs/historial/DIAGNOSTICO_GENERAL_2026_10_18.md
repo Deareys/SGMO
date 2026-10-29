@@ -134,7 +134,7 @@ La [CI del código inspeccionado](https://github.com/Deareys/SGMO/actions/runs/3
 5. **Preparar producción y recuperación:** versión revisada, variables Production, migraciones probadas, respaldo/restauración, cuentas propias, health/base/login/venta/pago/cierre en el dominio final. Mantener un regreso seguro a la versión anterior.
 6. **Completar o delimitar los módulos locales** según lo contratado. No dar por entregada toda la gestión multiusuario mientras estos datos dependan del navegador.
 
-Para repetir las comprobaciones sencillas: [PRUEBA_MANUAL_ENSAYO.md](PRUEBA_MANUAL_ENSAYO.md). Ver una pantalla o un check verde de build no demuestra por sí solo que un pago ingresó o que otro dispositivo recibió la venta.
+Para repetir las comprobaciones sencillas: [PRUEBA_MANUAL_ENSAYO.md](../guia/PRUEBA_MANUAL_ENSAYO.md). Ver una pantalla o un check verde de build no demuestra por sí solo que un pago ingresó o que otro dispositivo recibió la venta.
 
 ## Prompt utilizado por el principal
 

@@ -1,32 +1,15 @@
 # SGMO — Tequeños Costa
 
-Aplicación React/TypeScript + Express + PostgreSQL para gestión de venta ambulante. Entrega MVP en revisión: el estado de producción depende de las migraciones, configuración y pruebas del deployment.
+Aplicación de venta ambulante: React/TypeScript, Express y PostgreSQL en Neon.
 
-## Empezar a revisar
+- **Aplicación habitual:** https://sgmo-rose.vercel.app
+- **[Documentación ordenada](docs/README.md)**
+- **[Guía para usar, migrar y probar](docs/guia/GUIA_SEBAS.md)**
+- **[Estado y continuidad](docs/gestion/CONTINUIDAD_HITOS.md)**
 
-- [Hito 3.5: login simple y usuarios persistentes](docs/HITO_3_5_LOGIN_Y_USUARIOS.md)
-- [Probar alta, edición y contraseña, paso a paso](docs/PRUEBA_LOGIN_2026_10_29.md)
-- [Hito 3.4: contraseñas personales, prompts y evidencia técnica](docs/HITO_3_4_CONTRASENAS_Y_PRODUCCION.md)
-- [Cómo usar las contraseñas y qué falta para producción](docs/CONTRASENAS_Y_SALIDA_A_PRODUCCION.md)
-- [Hito 3.3: liquidaciones, acceso único, dueño y ensayos sin señal](docs/HITO_3_3_LIQUIDACIONES_Y_ACCESO.md)
-- [Cómo probar los cambios y preparar producción, paso a paso](docs/PRUEBAS_HITO_3_3_Y_PRODUCCION.md)
-- [Hito 3.2: base de ensayo y preview](docs/HITO_3_2_ENSAYO.md)
-- [Diagnóstico general vigente — 18/10/2026](docs/DIAGNOSTICO_GENERAL_2026_10_18.md)
-- [Repetir el ensayo paso a paso](docs/PRUEBA_MANUAL_ENSAYO.md)
-- [Verificación de Vercel y Neon — 15/10/2026](docs/VERIFICACION_2026_10_15.md)
-- [Informe de entrega y evidencia](docs/INFORME_ENTREGA_MVP.md)
-- [Guía para Sebas: probar y entender el código](docs/GUIA_SEBAS.md)
-- [Conectar credenciales y verificar servicios](docs/CREDENCIALES_Y_VERIFICACION.md)
-- [Hitos, prompts y criterios de aceptación](docs/HITOS_Y_PROMPTS_MVP.md)
-- [Operaciones y pruebas manuales](docs/OPERACIONES_MVP.md)
-- [Configuración central e inventario inicial](docs/CONFIGURACION_CENTRAL_MVP.md)
-- [Pruebas automatizadas en GitHub Actions](docs/CI.md)
-- [Autenticación](docs/AUTHENTICATION.md) y [sesiones de navegador](docs/HITO_1_3_SESIONES_BROWSER.md)
-- [Decisiones actuales e históricas](docs/DECISIONS.md)
+## Desarrollo y verificación
 
-## Verificación local
-
-Node.js 22. Desde la carpeta del repositorio:
+Requiere Node.js 22. Desde la carpeta del proyecto:
 
 ```bash
 npm ci
@@ -36,16 +19,8 @@ npm run build
 npm run test:auth:legacy
 ```
 
-La última orden usa demo aislada y cierra su propio servidor. Las pruebas PostgreSQL real de CI utilizan un contenedor desechable; no necesitan Neon ni credenciales bancarias.
+`npm run dev` usa variables inyectadas. Para desarrollo local, configurar una base de pruebas en `.env` a partir de `.env.example` y ejecutar `npm run dev:local`. No versionar secretos ni usar Production para tests.
 
-## Ejecutar el servidor
+Vercel utiliza el servidor Express exportado en `server.ts`. El build no ejecuta migraciones. Production tiene una inicialización mínima sin datos ficticios; el dueño activa su cuenta en `/setup` con el código privado de instalación. Nunca reejecutar una semilla de demostración sobre ese entorno.
 
-`npm run dev` usa las variables inyectadas en el entorno. Para desarrollo local, copiá `.env.example` a `.env`, completá **sólo una base de pruebas** y su origen, y ejecutá `npm run dev:local`. `.env` no se versiona. No hay credenciales por defecto.
-
-`npm run build` genera frontend, bundle Node y archivos públicos separados para Vercel. `npm start` ejecuta el bundle local. Vercel utiliza `server.ts` exportado; el build no inicia el servidor ni ejecuta migraciones.
-
-Las migraciones son una operación explícita. No aplicarlas a una base existente sin respaldo, revisión y prueba sobre copia. La 005 invalida credenciales heredadas; deben aprovisionarse nuevamente. El script `db:migrate` exige `.env`, `SGMO_MIGRATION_TARGET=host/base` y `--apply`; nunca se ejecuta automáticamente.
-
-## Alcance que aún necesita cierre
-
-Ventas y operaciones principales se confirman centralmente. Hay módulos de fábrica, gastos, incidencias/radar y mantenimiento que todavía conservan datos locales. PWA completa, imágenes durables, prueba bancaria y prueba de campo requieren verificación adicional. Consultar la guía antes de usarlo con ventas reales.
+Acceso, configuración/catálogo, stock por casa, jornadas, ventas y cierres usan confirmación central. Hay módulos heredados locales identificados en la app y guía. Los datos anteriores de cada navegador requieren respaldo/importación desde ese dispositivo; publicar código no los transporta por sí solo.

@@ -21,6 +21,7 @@ import { FactoryProductionView } from './components/FactoryProductionView';
 import { GeneralVouchersRepositoryView } from './components/GeneralVouchersRepositoryView';
 import { AuditAlertsModal } from './components/AuditAlertsModal';
 import { ChangePasswordModal } from './components/PasswordManagement';
+import { getLegacyBackup, downloadLegacyBackup } from './services/legacyRecovery';
 
 const InitialOwnerSetup = lazy(() => import('./components/InitialOwnerSetup'));
 const PasswordActivationScreen = lazy(() => import('./components/PasswordActivationScreen'));
@@ -53,10 +54,12 @@ export const App: React.FC = () => {
     void refresh();
     const refreshTimer = window.setInterval(() => { void refresh(); }, 30_000);
     window.addEventListener('online', refresh);
+    window.addEventListener('focus', refresh);
     return () => {
       stopped = true;
       window.clearInterval(refreshTimer);
       window.removeEventListener('online', refresh);
+      window.removeEventListener('focus', refresh);
     };
   }, [state.currentUser?.id]);
 
@@ -93,6 +96,17 @@ export const App: React.FC = () => {
 
   if (window.location.pathname === '/activate') {
     return <Suspense fallback={<p role="status" className="p-6">Preparando activación…</p>}><PasswordActivationScreen /></Suspense>;
+  }
+
+  // Exportación local de emergencia: no consulta ni expone registros del servidor.
+  if (window.location.pathname === '/respaldo') {
+    return <main className="min-h-screen bg-slate-50 p-6 text-slate-950 space-y-4">
+      <h1 className="text-xl font-bold">Respaldo del navegador anterior</h1>
+      <p>Este archivo contiene tus registros anteriores sin contraseñas. Guardalo en un lugar privado e importalo desde Configuración → Recuperar datos anteriores.</p>
+      {getLegacyBackup() ? <button className="min-h-12 p-3 border-2 bg-amber-300 rounded-xl font-bold" onClick={()=>downloadLegacyBackup()}>Descargar respaldo anterior</button>
+        : <p>No se detectaron datos anteriores en este navegador. Probá desde el dispositivo y dominio donde los cargaste.</p>}
+      <a href="/" className="block underline">Volver al ingreso</a>
+    </main>;
   }
 
   // Si no hay usuario autenticado, mostrar sólo ingreso/activación inicial.
@@ -171,6 +185,7 @@ export const App: React.FC = () => {
       {isPasswordOpen && <ChangePasswordModal onClose={() => setIsPasswordOpen(false)} />}
 
       <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-3 space-y-2">
+        {['factory','production','fleet','costs'].includes(currentTabSafe) && <p role="status" className="rounded-xl border-2 border-amber-600 bg-amber-50 p-3 text-sm text-slate-950">Esta vista contiene registros que todavía se guardan sólo en este dispositivo. Para la operación compartida usá Configuración, Despacho, Ventas y Liquidaciones; no tomes estos registros locales como un cierre confirmado.</p>}
         {state.demoMode && <p className="rounded-xl border-2 border-amber-500 bg-amber-50 p-3 text-sm font-bold">Demostración aislada: estos datos no pertenecen a producción.</p>}
         {(state.centralError || state.saleSyncError || state.operationSyncError || offlineQueueCount > 0) && (
           <div role="status" className="rounded-xl border-2 border-amber-500 bg-amber-50 p-3 text-sm text-slate-950">

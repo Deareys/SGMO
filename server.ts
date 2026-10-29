@@ -11,6 +11,7 @@ import { authRouter } from './src/server/auth/authRoutes.js';
 import { browserSecurityMiddleware } from './src/server/auth/browserSecurity.js';
 import { bootstrapRouter } from './src/server/routes/bootstrapRoutes.js';
 import { configRouter } from './src/server/routes/configRoutes.js';
+import { legacyRouter } from './src/server/routes/legacyRoutes.js';
 import { paymentRouter, handleMercadoPagoWebhook } from './src/server/routes/paymentRoutes.js';
 import { authenticateToken, requireRole } from './src/server/auth/authMiddleware.js';
 import { isIsolatedDemoEnabled } from './src/server/auth/authPolicy.js';
@@ -41,6 +42,7 @@ app.use('/api', (req, res, next) => {
 app.use('/api/auth', authRouter);
 app.use('/api', bootstrapRouter);
 app.use('/api', configRouter);
+app.use('/api', legacyRouter);
 
 // Lazy inicialización del cliente Gemini
 let aiClient: GoogleGenAI | null = null;

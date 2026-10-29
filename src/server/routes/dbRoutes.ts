@@ -42,6 +42,9 @@ dbRouter.get('/status', async (req: Request, res: Response) => {
 
 // 2. Ejecución de Migraciones (Restringido exclusivamente a Administradores)
 dbRouter.post('/migrate', authenticateToken, requireRole('admin'), async (req: Request, res: Response) => {
+  if ((process.env.NODE_ENV === 'production' || process.env.VERCEL) && process.env.SGMO_ENABLE_DB_MIGRATIONS_HTTP !== 'true') {
+    return res.status(403).json({success:false,message:'Las migraciones productivas se realizan por el operador con respaldo, fuera de la aplicación.'});
+  }
   try {
     if (!isDbConfigured()) {
       return res.status(503).json({

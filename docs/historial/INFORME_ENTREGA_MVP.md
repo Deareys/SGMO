@@ -6,7 +6,7 @@ Fecha: 13 de octubre de 2026. Rama: `codex/sgmo-preparacion-mvp`. Base recibida:
 
 Se recuperó seguridad perdida en la exportación de Studio y se integraron sesiones de navegador, persistencia autorizada, ventas offline, inventario y operaciones centrales, configuración y verificación bancaria. Se conservó React/Express, las fórmulas económicas de la pantalla activa y los registros previos. Los precios del vendedor ahora reflejan el catálogo; sólo la API bancaria y su ledger central confirman acreditación. Los errores no inventan enlaces, cantidades bancarias, IDs OCR o confirmaciones de guardado.
 
-Los hitos y prompts están en [HITOS_Y_PROMPTS_MVP.md](HITOS_Y_PROMPTS_MVP.md), y la explicación para Sebas en [GUIA_SEBAS.md](GUIA_SEBAS.md). El historial anterior en PR1/fef86d4 queda como antecedente; esta rama parte del main actualizado y recupera sus reparaciones necesarias.
+Los hitos y prompts están en [HITOS_Y_PROMPTS_MVP.md](HITOS_Y_PROMPTS_MVP.md), y la explicación para Sebas en [GUIA_SEBAS.md](../guia/GUIA_SEBAS.md). El historial anterior en PR1/fef86d4 queda como antecedente; esta rama parte del main actualizado y recupera sus reparaciones necesarias.
 
 ## Evidencia local de la revisión publicada
 
@@ -35,7 +35,7 @@ En el entorno local no se pudo iniciar PostgreSQL 16 porque el namespace no perm
 
 ## Historial PostgreSQL real en Actions
 
-La ejecución [38438746365](https://github.com/Deareys/SGMO/actions/runs/38438746365), commit `4eaf617`, ejecutó correctamente migraciones/autenticación (10 grupos), HTTP con dos procesos (6 grupos) y operaciones/pagos (18 escenarios, incluido dos conexiones concurrentes). Tipos,172 pruebas,35 regresiones,build y6 grupos de configuración WASM también pasaron. Browser empezó en Chromium real y detectó una carrera en el smoke al revisar cookie antes de finalizar logout; se corrigió la espera sin cambiar los asserts financieros/de seguridad. Consultar el siguiente commit para la conclusión completa. Más historial en [CI.md](CI.md).
+La ejecución [38438746365](https://github.com/Deareys/SGMO/actions/runs/38438746365), commit `4eaf617`, ejecutó correctamente migraciones/autenticación (10 grupos), HTTP con dos procesos (6 grupos) y operaciones/pagos (18 escenarios, incluido dos conexiones concurrentes). Tipos,172 pruebas,35 regresiones,build y6 grupos de configuración WASM también pasaron. Browser empezó en Chromium real y detectó una carrera en el smoke al revisar cookie antes de finalizar logout; se corrigió la espera sin cambiar los asserts financieros/de seguridad. Consultar el siguiente commit para la conclusión completa. Más historial en [CI.md](../pruebas/CI.md).
 
 Vercel marcó una preview automática como desplegada. La petición pública a `/api/health` redirigió a **Login – Vercel**: su protección impide comprobar desde esta sesión la app/backend. Esto no demuestra fallo de SGMO ni confirma su configuración. No se eludió esa protección ni se modificaron variables o datos remotos.
 

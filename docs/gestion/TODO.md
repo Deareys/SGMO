@@ -1,16 +1,32 @@
+# Prioridad de entrega — 29/10/2026
+
+- [x] Base production respaldada, inicializada sin personas/ventas demo, once migraciones y rol de app sin DDL.
+- [x] Usuarios/casas/carritos/montos centrales; porcentajes legibles y nuevos perfiles con comisión configurada; archivados ocultos y sesiones revocadas.
+- [x] Recuperación y archivo idempotente de datos del navegador; incorporación explícita de catálogo y configuración con errores parciales visibles. El historial financiero anterior se conserva como evidencia y no se presenta como verificado.
+- [x] Documentos agrupados bajo docs, enlaces relativos verificados y un registro activo de continuidad.
+- [ ] Publicar/validar main y dominio habitual con Production (registrar evidencia en CONTINUIDAD_HITOS.md).
+- [ ] Dueño activa cuenta privada; recibir datos que sigan sólo en navegadores o archivos mayores de 3,5 MB; revisar historial previo antes de incorporarlo a operaciones.
+- [ ] Confirmar datos reales (catálogo, stock físico, montos, cuentas), aceptación del dueño en teléfonos y proveedores reales.
+- [ ] Centralizar los módulos heredados de fábrica/gastos/mantenimiento/radar y PWA completa. Aviso visible en vistas locales; no certificarlas como compartidas.
+- [ ] Evitar actualizaciones concurrentes de configuración con control de versión/ETag. Hoy se confirma cada escritura SQL y se refresca, pero dos administradores guardando formularios antiguos pueden sustituir cambios del otro.
+
+La lista siguiente es histórica; consultar continuidad y guía para el estado vigente.
+
+---
+
 # TODO.md — Backlog Técnico y Plan de Mejoras Priorizado
 
-> **Actualización 13/10/2026:** el contenido histórico puede describir prototipo/localStorage o contratos sustituidos. Para alcance vigente, pruebas y pendientes leer [HITOS_Y_PROMPTS_MVP.md](HITOS_Y_PROMPTS_MVP.md), [GUIA_SEBAS.md](GUIA_SEBAS.md), [CI.md](CI.md) y los módulos nuevos. “Implementado” no certifica producción ni datos compartidos de todas las pantallas.
+> **Actualización 13/10/2026:** el contenido histórico puede describir prototipo/localStorage o contratos sustituidos. Para alcance vigente, pruebas y pendientes leer [HITOS_Y_PROMPTS_MVP.md](../historial/HITOS_Y_PROMPTS_MVP.md), [GUIA_SEBAS.md](../guia/GUIA_SEBAS.md), [CI.md](../pruebas/CI.md) y los módulos nuevos. “Implementado” no certifica producción ni datos compartidos de todas las pantallas.
 
 ## Diagnóstico vigente — 18 de octubre de 2026
 
-**Prioridad 29/10 — Acceso/usuarios:** reparar el recorrido de alta/edición con contraseña inicial y correo único; retirar modos/teclado/enlaces del login. Ver [Hito 3.5](HITO_3_5_LOGIN_Y_USUARIOS.md). Confirmado que el dominio principal sigue en main antiguo, PR 2 sin integrar y base productiva vacía; una prueba en la rama no actualiza esa dirección. Preservar cachés antiguas hasta revisar si contienen información sin respaldo central.
+**Prioridad 29/10 — Acceso/usuarios:** reparar el recorrido de alta/edición con contraseña inicial y correo único; retirar modos/teclado/enlaces del login. Ver [Hito 3.5](../historial/HITO_3_5_LOGIN_Y_USUARIOS.md). Confirmado que el dominio principal sigue en main antiguo, PR 2 sin integrar y base productiva vacía; una prueba en la rama no actualiza esa dirección. Preservar cachés antiguas hasta revisar si contienen información sin respaldo central.
 
-Actualización 20/10: contraseñas personales, activación presencial, cambio propio y recuperación excepcional del dueño implementados en el [Hito 3.4](HITO_3_4_CONTRASENAS_Y_PRODUCCION.md). Migración 009 aplicada sólo a ensayo después de copia y comprobación de integridad. El [plan ordenado de producción](CONTRASENAS_Y_SALIDA_A_PRODUCCION.md) prevalece sobre tareas históricas de autenticación ya sustituidas. No se integró esta rama automáticamente en main.
+Actualización 20/10: contraseñas personales, activación presencial, cambio propio y recuperación excepcional del dueño implementados en el [Hito 3.4](../historial/HITO_3_4_CONTRASENAS_Y_PRODUCCION.md). Migración 009 aplicada sólo a ensayo después de copia y comprobación de integridad. El [plan ordenado de producción](../guia/CONTRASENAS_Y_SALIDA_A_PRODUCCION.md) prevalece sobre tareas históricas de autenticación ya sustituidas. No se integró esta rama automáticamente en main.
 
 Actions [39419629886](https://github.com/Deareys/SGMO/actions/runs/39419629886), `cf27d832…`, aprobado: 193 pruebas, 35 históricas, SQL PostgreSQL 16, nueve grupos HTTP de dos procesos y tres suites Chromium. **Pendiente operativo:** alta privada del dueño, aceptación en teléfonos, proveedores, alcance offline/local y preparación productiva. El dominio público antiguo y la base productiva vacía siguen siendo bloqueantes; no equivale a un fallo del preview reparado.
 
-Informe inicial: [DIAGNOSTICO_GENERAL_2026_10_18.md](DIAGNOSTICO_GENERAL_2026_10_18.md). La intervención posterior autorizada repara liquidaciones y acceso; su evidencia y límites están en [HITO_3_3_LIQUIDACIONES_Y_ACCESO.md](HITO_3_3_LIQUIDACIONES_Y_ACCESO.md).
+Informe inicial: [DIAGNOSTICO_GENERAL_2026_10_18.md](../historial/DIAGNOSTICO_GENERAL_2026_10_18.md). La intervención posterior autorizada repara liquidaciones y acceso; su evidencia y límites están en [HITO_3_3_LIQUIDACIONES_Y_ACCESO.md](../historial/HITO_3_3_LIQUIDACIONES_Y_ACCESO.md).
 
 - [ ] **Alta — D-01:** preparar release de la rama reparada. Main/productivo siguen en `d291d5a`; el dominio público sirve la interfaz pero sus rutas API responden 404, no tiene variables principales Production ni tablas en la rama Neon productiva. La contingencia insegura de admin local permanece en main.
 - [x] **Código — D-02:** corregidos ceros, excepción individual y exención de vivienda, comisión y tarifa cero; PDF/recibo conservan efectivo declarado cero. Regresiones SQL y PDF verifican el cierre y su snapshot inmutable. Validación de la nueva revisión en CI/deployment: ver informe del hito.
@@ -45,8 +61,8 @@ La verificación del diagnóstico inicial usó 177 pruebas; el hito posterior am
 
 ## Prioridades vigentes de esta entrega
 
-- **Actualización 15/10 — Hito 3.2:** base `sgmo-pruebas` respaldada e inicializada; preview accesible y arranque ESM corregido; login, permisos, venta compartida/idempotente y cierre comprobados por HTTP y SQL. Mercado Pago consulta oficial 200. OCR llega a Gemini pero devuelve 402 de facturación. Webhook del proveedor y ensayo desde teléfonos siguen pendientes. Evidencia y próximos hitos: [HITO_3_2_ENSAYO.md](HITO_3_2_ENSAYO.md); pasos: [PRUEBA_MANUAL_ENSAYO.md](PRUEBA_MANUAL_ENSAYO.md).
-- [x] Código: cookies/CSRF/TLS, venta y stock centrales, cola ACK, ledger banco/webhooks, configuración, CI y packaging Vercel. Evidencia/limitaciones: [INFORME_ENTREGA_MVP.md](INFORME_ENTREGA_MVP.md).
+- **Actualización 15/10 — Hito 3.2:** base `sgmo-pruebas` respaldada e inicializada; preview accesible y arranque ESM corregido; login, permisos, venta compartida/idempotente y cierre comprobados por HTTP y SQL. Mercado Pago consulta oficial 200. OCR llega a Gemini pero devuelve 402 de facturación. Webhook del proveedor y ensayo desde teléfonos siguen pendientes. Evidencia y próximos hitos: [HITO_3_2_ENSAYO.md](../historial/HITO_3_2_ENSAYO.md); pasos: [PRUEBA_MANUAL_ENSAYO.md](../guia/PRUEBA_MANUAL_ENSAYO.md).
+- [x] Código: cookies/CSRF/TLS, venta y stock centrales, cola ACK, ledger banco/webhooks, configuración, CI y packaging Vercel. Evidencia/limitaciones: [INFORME_ENTREGA_MVP.md](../historial/INFORME_ENTREGA_MVP.md).
 - [x] Verificar Actions PostgreSQL/Chromium de la revisión y preview HTTPS con base aislada. Código `aec673f`, Actions `38680069628` aprobado.
 - [x] Respaldar/identificar y aplicar migraciones 001–008 exclusivamente en la rama Neon de ensayo, con verificación SQL. Production no se modificó.
 - [ ] Aprovisionar cuentas propias; las credenciales QA se retiraron y las semillas permanecen sin claves predeterminadas.

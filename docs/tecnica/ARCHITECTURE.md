@@ -1,6 +1,6 @@
 # ARCHITECTURE.md — Arquitectura de Software del Sistema SGMO
 
-> **Actualización 13/10/2026:** el contenido histórico puede describir prototipo/localStorage o contratos sustituidos. Para alcance vigente, pruebas y pendientes leer [HITOS_Y_PROMPTS_MVP.md](HITOS_Y_PROMPTS_MVP.md), [GUIA_SEBAS.md](GUIA_SEBAS.md), [CI.md](CI.md) y los módulos nuevos. “Implementado” no certifica producción ni datos compartidos de todas las pantallas.
+> **Actualización 13/10/2026:** el contenido histórico puede describir prototipo/localStorage o contratos sustituidos. Para alcance vigente, pruebas y pendientes leer [HITOS_Y_PROMPTS_MVP.md](../historial/HITOS_Y_PROMPTS_MVP.md), [GUIA_SEBAS.md](../guia/GUIA_SEBAS.md), [CI.md](../pruebas/CI.md) y los módulos nuevos. “Implementado” no certifica producción ni datos compartidos de todas las pantallas.
 
 
 > **Sistema:** SGMO — Tequeños Costa  

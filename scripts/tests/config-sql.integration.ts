@@ -12,7 +12,7 @@ for(const key of ['DATABASE_URL','POSTGRES_URL','PGHOST','PGDATABASE','PGUSER','
 process.env.DATABASE_URL='postgresql://config-wasm@127.0.0.1:1/sgmo_auth_test_configuration';process.env.DATABASE_SSL='false';
 const {PGlite}=await import(pathToFileURL(resolve(runtimeRoot,'dist/index.js')).href);
 const {uuid_ossp}=await import(pathToFileURL(resolve(runtimeRoot,'dist/contrib/uuid_ossp.js')).href);
-const engine=new PGlite({extensions:{uuid_ossp}});await engine.waitReady;
+let engine=new PGlite({extensions:{uuid_ossp}});await engine.waitReady;
 const originalQuery=Pool.prototype.query;const originalConnect=Pool.prototype.connect;
 let previous=Promise.resolve();
 const acquire=async()=>{let release!:()=>void;const next=new Promise<void>(resolveNext=>{release=resolveNext;});const ready=previous;previous=next;await ready;return release;};
@@ -74,6 +74,15 @@ try {
   await userRepository.update('USR-VEND-01',{commissionRate:0.3,housingCostExempt:true,housingCostOverride:7});
   const updated=await query("SELECT commission_rate,housing_cost_exempt,housing_cost_override FROM users WHERE id='USR-VEND-01'");
   assert.equal(Number(updated.rows[0].commission_rate),0.3);assert.equal(updated.rows[0].housing_cost_exempt,true);assert.equal(Number(updated.rows[0].housing_cost_override),7);
+ });
+ await check('Inicialización productiva no inserta personas/ventas ficticias y el runner no reintroduce la semilla demo',async()=>{
+  await engine.close();engine=new PGlite({extensions:{uuid_ossp}});await engine.waitReady;
+  for(const filename of (await readdir(resolve('migrations'))).filter(filename=>filename.endsWith('.sql')).sort()) await engine.exec(await readFile(filename==='002_seed_initial_data.sql'?resolve('scripts/sql/production-baseline.sql'):resolve('migrations',filename),'utf8'));
+  const {runMigrations}=await import('../../src/server/db/migrator');
+  const result=await runMigrations();assert.equal(result.success,true);
+  assert.match(result.results.find(step=>step.version==='002_seed_initial_data')!.message,/Omitida/);
+  const profiles=await query('SELECT name,is_provisioned FROM users');assert.equal(profiles.rows.length,1);assert.equal(profiles.rows[0].is_provisioned,false);assert.match(profiles.rows[0].name,/Dueño/);
+  assert.equal((await query('SELECT id FROM sales')).rows.length,0);assert.equal((await query('SELECT id FROM operational_houses')).rows.length,0);
  });
  console.log(`RESULTADO: ${passed} grupos SQL de configuración aprobados en WASM; concurrencia real pendiente.`);
 } finally {

@@ -1,3 +1,38 @@
+# Estado vigente — entrega del 29 de octubre de 2026
+
+## Objetivo y autorización
+
+Preparar production y el dominio habitual hoy, corregir cambios compartidos de casas/carritos/usuarios/montos, conservar datos previos y agrupar la documentación. La ampliación expresa del usuario queda registrada por el principal en AGENTS.md; no se delegó a auxiliares.
+
+## Prompt utilizado por el principal
+
+```text
+Trabajar sobre SGMO existente y la revisión remota, sin rehacer la aplicación. Preparar production con respaldo y ensayo previo. Usar sólo el proyecto Vercel sgmo y el dominio habitual; no mezclar Deareys Studio. Esperar confirmación PostgreSQL en altas/ediciones y verificar lectura en otra sesión. Mantener scrypt, cookies HttpOnly, CSRF, permisos, revocación y reglas que protegen jornadas abiertas. Mostrar porcentajes humanos y conservar borradores durante refrescos. Archivar usuarios sin perder historia. Antes de sustituir caché antigua, conservar datos y permitir respaldo/importación explícita. No transformar estados locales de pagos en acreditaciones reales, ni sembrar personas o ventas ficticias en production. Documentar qué se incorporó y qué sigue pendiente de fuentes privadas. Reorganizar documentos existentes bajo docs sin borrarlos y seguir este registro en cada hito. Ejecutar tipos, build, pruebas SQL/navegador y CI de la revisión exacta; publicar en main y comprobar el dominio principal. No declarar producción completa sólo por existir un deploy o por cambiar API keys.
+```
+
+## Cambios y alcance
+
+- Neon production respaldado en `br-silent-boat-b6cvphw3`. Ensayo de migraciones en `br-steep-smoke-b6y1kh4s`. Once versiones aplicadas; inicialización mínima `002_production_baseline`, sin datos ficticios ni sobrescritura. El control automático rechazó la semilla de ejemplo 002 por personas ficticias/configuración; se sustituyó por inicialización segura y probada. El runner no vuelve a introducir demo. `sgmo_app` sin DDL ni escritura de migraciones, conexión TLS/pooler y variables Production configuradas.
+- Configuración administrativa ya usa PostgreSQL. Ajustes: porcentajes 17,5 % ↔ 0,175; alta toma comisión base actual; borradores no se borran al refrescar; actualización al recuperar foco; identidad propia actualizada desde servidor; sesión revocada vuelve al acceso. Usuarios inactivos ocultos por defecto, recuperables en lista de archivados.
+- Recuperación anterior: copia local sanitizada antes de hidratar; sin espacio para respaldo no sustituye caché original. `/respaldo` exporta desde el mismo dispositivo sin sesión. Administrador guarda evidencia idempotente en `legacy_imports`, descarga desde Neon e incorpora catálogo/configuración mediante validaciones de repositorio. No pisa cuentas activadas. Historial anterior conservado en archivo, no convertido automáticamente en operación financiera validada. Envíos web limitados a 3,5 MB, con error explícito y conservación del original.
+- Un solo proyecto SGMO en Vercel: `prj_Rgf45jsEOVpwllWa1Sw3Swby11C6`. El segundo proyecto es `deareys-studio`, independiente y preservado. Los previews pertenecen al mismo SGMO, no son proyectos duplicados.
+- Se agruparon 37 documentos/evidencias existentes; no se eliminaron informes. Raíz con README corto e instrucciones. Guía vigente en `docs/guia/GUIA_SEBAS.md`, decisiones en `docs/tecnica/DECISIONS.md`, tareas en `docs/gestion/TODO.md` e historial en `docs/historial/`.
+
+## Evidencia de esta revisión
+
+Validación local: tipos/build y 199 pruebas aprobadas. SQL configuración: siete grupos, incluido baseline productivo y rechazo de reseed. Navegador de configuración/recuperación: cinco recorridos aprobados con API real y SQL WASM, incluidos respaldo idempotente, importación de perfiles sin claves, historial separado, casas/carritos de formularios y permisos de otra sesión. CI/deployment: registrar revisión y resultados antes de cerrar esta entrega. La evidencia de hitos previos no se presenta como prueba del nuevo código.
+
+## Pendientes para aceptar la entrega
+
+1. Publicar revisión verificada y comprobar el dominio principal contra production.
+2. El dueño activa su cuenta privada. Los datos que sólo están en un navegador deben enviarse desde ese origen o como archivo; no afirmar que ya migraron sin recibo y conteo. No hay credenciales de dueño predeterminadas.
+3. Confirmar datos reales del negocio: casas, personas, catálogo/precios, tramos, stock contado y medios de pago. Production arranca sin importes supuestos.
+4. Aceptación en teléfonos y proveedores reales (Mercado Pago, webhook, OCR/facturación). Módulos heredados locales y PWA completa siguen pendientes y se identifican en la interfaz/guía.
+
+---
+
+## Registro histórico conservado
+
 # SGMO — Continuidad del desarrollo por hitos
 
 Fecha: 12 de octubre de 2026.

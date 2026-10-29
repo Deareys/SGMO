@@ -61,7 +61,7 @@ Destino del ensayo: exclusivamente `sgmo-pruebas/neondb`, identificado por los I
 | 007 | Configuración e inventario por casa; requiere conteo real de stock |
 | 008 | Ledger bancario y recepción durable de avisos |
 
-El runner `scripts/migrate-database.ts` requiere una configuración privada, `SGMO_MIGRATION_TARGET=host/base` que coincida exactamente con la conexión y la opción `--apply`. No se ejecutó en esta verificación. Después se debe aprovisionar el primer administrador por el procedimiento protegido de [AUTHENTICATION.md](AUTHENTICATION.md), y crear usuarios de ensayo.
+El runner `scripts/migrate-database.ts` requiere una configuración privada, `SGMO_MIGRATION_TARGET=host/base` que coincida exactamente con la conexión y la opción `--apply`. No se ejecutó en esta verificación. Después se debe aprovisionar el primer administrador por el procedimiento protegido de [AUTHENTICATION.md](../tecnica/AUTHENTICATION.md), y crear usuarios de ensayo.
 
 ## Vercel: revisión y momento de las variables
 
@@ -108,3 +108,4 @@ No se procesaron cobros, transferencias, liquidaciones ni modificaciones de stoc
 ```text
 Verificar SGMO después de la configuración de credenciales indicada por el usuario. Inspeccionar la rama y revisión efectivas, metadatos de variables y la rama Neon de ensayo. Ejecutar tipos, suites del repositorio y build sin credenciales operativas. Consultar SQL de diagnóstico sin alterar datos. Probar health/estado de base del preview correcto mediante el acceso autorizado disponible y detener el recorrido desplegado ante una barrera de autenticación o esquema ausente. Diferenciar resultados locales, CI, conexión del operador y comportamiento real de proveedores. Registrar los bloqueos con evidencia y preparar los pasos de inicialización, sin simular pagos ni dar por aprobado un servicio por tener su clave. Publicar un informe sin secretos en la rama de trabajo, preservando cambios ajenos.
 ```
+

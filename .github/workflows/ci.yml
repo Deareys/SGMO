@@ -112,6 +112,13 @@ jobs:
           SGMO_PGLITE_ROOT: ${{ runner.temp }}/sgmo-browser-runtime/node_modules/@electric-sql/pglite
           SGMO_BROWSER_QA_DIR: ${{ runner.temp }}/sgmo-browser-report/passwords
           SGMO_BROWSER_PASSWORD_PORT: '3104'
+      - name: Browser shared configuration, archival and legacy recovery
+        run: node scripts/tests/browser-configuration.smoke.cjs
+        env:
+          SGMO_PLAYWRIGHT_MODULES: ${{ runner.temp }}/sgmo-browser-runtime/node_modules
+          SGMO_PGLITE_ROOT: ${{ runner.temp }}/sgmo-browser-runtime/node_modules/@electric-sql/pglite
+          SGMO_BROWSER_QA_DIR: ${{ runner.temp }}/sgmo-browser-report/configuration
+          SGMO_BROWSER_CONFIGURATION_PORT: '3105'
       - name: Preserve browser QA evidence
         if: always()
         uses: actions/upload-artifact@v4

@@ -56,7 +56,7 @@ El acceso temporal resuelve las comprobaciones del operador. **No resuelve todav
 
 ## Cómo revisar y seguir
 
-Guía de pasos y resultados esperados, sin necesidad de leer todo el código: [PRUEBA_MANUAL_ENSAYO.md](PRUEBA_MANUAL_ENSAYO.md). Código y documentación se guardan en la rama de trabajo y [PR 2](https://github.com/Deareys/SGMO/pull/2); no se integra main automáticamente. En este hito no se lanzaron agentes auxiliares: todos los prompts operativos del principal aparecen a continuación.
+Guía de pasos y resultados esperados, sin necesidad de leer todo el código: [PRUEBA_MANUAL_ENSAYO.md](../guia/PRUEBA_MANUAL_ENSAYO.md). Código y documentación se guardan en la rama de trabajo y [PR 2](https://github.com/Deareys/SGMO/pull/2); no se integra main automáticamente. En este hito no se lanzaron agentes auxiliares: todos los prompts operativos del principal aparecen a continuación.
 
 | Hito siguiente | Trabajo y criterio de cierre |
 | --- | --- |
