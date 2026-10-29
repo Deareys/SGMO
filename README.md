@@ -4,6 +4,8 @@ Aplicación React/TypeScript + Express + PostgreSQL para gestión de venta ambul
 
 ## Empezar a revisar
 
+- [Hito 3.5: login simple y usuarios persistentes](docs/HITO_3_5_LOGIN_Y_USUARIOS.md)
+- [Probar alta, edición y contraseña, paso a paso](docs/PRUEBA_LOGIN_2026_10_29.md)
 - [Hito 3.4: contraseñas personales, prompts y evidencia técnica](docs/HITO_3_4_CONTRASENAS_Y_PRODUCCION.md)
 - [Cómo usar las contraseñas y qué falta para producción](docs/CONTRASENAS_Y_SALIDA_A_PRODUCCION.md)
 - [Hito 3.3: liquidaciones, acceso único, dueño y ensayos sin señal](docs/HITO_3_3_LIQUIDACIONES_Y_ACCESO.md)

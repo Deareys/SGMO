@@ -1,5 +1,11 @@
 # SGMO — Autenticación actual y registro histórico
 
+## Acceso y alta vigentes — Hito 3.5, 29/10/2026
+
+El login muestra únicamente identificador, contraseña y envío, sin perfiles, modos, teclado PIN ni enlaces de configuración. El administrador asigna contraseña inicial en Nuevo Usuario y puede reemplazarla explícitamente al editar; dejar ambos campos vacíos conserva el hash previo. Cada titular mantiene Mi contraseña y la recuperación presencial por enlace. El correo es opcional, normalizado y único por el índice de migración 010; un código numérico se conserva como string, incluidos ceros iniciales. Contraseñas nuevas: política compartida 12–128 y scrypt/salt; nunca se publican ni se guardan en caché. El guardado requiere confirmación del backend y los cambios de clave revocan sesiones. La compatibilidad PIN histórica permanece dentro del servicio, sin modos visibles. Ver [prueba paso a paso](PRUEBA_LOGIN_2026_10_29.md) e [informe](HITO_3_5_LOGIN_Y_USUARIOS.md).
+
+Los apartados siguientes describen las entregas anteriores. La UI actual amplía el alta por activación de ADR-022 con la contraseña inicial solicitada por Sebas en ADR-023.
+
 ## Estado actual — Hito 3.4, 20/10/2026
 
 El formulario no tiene selector de perfiles. Todos los roles ingresan con `{ identifier, password }`, por código o correo; el backend determina los permisos. Las claves nuevas tienen 12–128 caracteres, permiten frases y rechazan una lista local de claves comunes/patrones. Los PIN anteriores de ocho dígitos siguen con `{ userCode, pin }` hasta elegir contraseña. No se transforma ni trunca un secreto histórico.

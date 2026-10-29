@@ -62,7 +62,7 @@ async function migration(number: string): Promise<string> {
   const filenames: Record<string, string> = {
     '001': '001_initial_schema.sql', '002': '002_seed_initial_data.sql',
     '003': '003_auth_sessions_security.sql', '004': '004_auth_credentials_modernization.sql',
-    '005': '005_auth_security_hardening.sql'
+    '005': '005_auth_security_hardening.sql', '010': '010_unique_user_email.sql'
   };
   return readFile(resolve(projectRoot, 'migrations', filenames[number]), 'utf8');
 }
@@ -348,6 +348,22 @@ try {
     });
   });
 
+  await check('010 con correos duplicados aborta sin borrar ni reasignar cuentas previas', async () => {
+    const client = await setupPool!.connect();
+    try {
+      await client.query('BEGIN'); await client.query(`SET LOCAL search_path TO ${existingSchema}`);
+      await client.query(`INSERT INTO users(id,user_code,name,role,email) VALUES
+        ('MAIL-PREV-A','MAIL-PREV-A','Cuenta A','seller',' previous@example.invalid '),
+        ('MAIL-PREV-B','MAIL-PREV-B','Cuenta B','seller','PREVIOUS@EXAMPLE.INVALID')`);
+      await client.query('SAVEPOINT email_index');
+      await assert.rejects(client.query(await migration('010')));
+      await client.query('ROLLBACK TO SAVEPOINT email_index');
+      assert.equal((await client.query("SELECT count(*)::int AS count FROM users WHERE id IN ('MAIL-PREV-A','MAIL-PREV-B')")).rows[0].count, 2);
+      assert.equal((await client.query("SELECT count(*)::int AS count FROM schema_migrations WHERE version='010_unique_user_email'")).rows[0].count, 0);
+      await client.query('COMMIT');
+    } catch (error) { await client.query('ROLLBACK'); throw error; }
+    finally { client.release(); }
+  });
   console.log(`RESULTADO: ${passed} grupos aprobados; ${mode === '--wasm' ? 'concurrencia PostgreSQL real PENDIENTE' : 'bootstrap y contador concurrentes comprobados en pool local'}.`);
 } catch (error) {
   // No mostrar SQL/params/credenciales generadas si una aserción o driver falla.

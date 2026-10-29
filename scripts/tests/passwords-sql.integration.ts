@@ -190,6 +190,35 @@ try {
     const audit = (await query('SELECT details FROM audit_logs')).rows;
     assert.ok(audit.length > 0); assert.ok(audit.every(row => !row.details.includes(activation.token)));
   });
+  await check('Correo normalizado y único: duplicados no sustituyen el perfil ni su contraseña', async () => {
+    const selected = password();
+    await userRepository.create({ ...profile('PW-IDENTITY'), userCode: '001234', email: '  Identity-QA@Example.Invalid  ', password: selected });
+    const stored = (await userRepository.getAuthRecordByIdentifier(' IDENTITY-QA@EXAMPLE.INVALID '))!;
+    assert.equal(stored.id, 'PW-IDENTITY'); assert.equal(stored.email, 'identity-qa@example.invalid');
+    assert.equal(verifyPassword(selected, stored.passwordHash, stored.passwordSalt), true);
+    await assert.rejects(userRepository.create({ ...profile('PW-IDENTITY-DUP'), email: 'IDENTITY-QA@example.invalid', password: password() }),
+      (error: any) => error.code === '23505');
+    assert.equal(await userRepository.getById('PW-IDENTITY-DUP'), null);
+    const unchanged = (await userRepository.getAuthRecordById('PW-IDENTITY'))!;
+    assert.equal(unchanged.passwordHash, stored.passwordHash);
+    await userRepository.create(profile('PW-NO-MAIL-A'));
+    await userRepository.create(profile('PW-NO-MAIL-B'));
+  });
+  await check('Editar perfil conserva contraseña; editar contraseña revoca sesiones y permite código/correo actualizados', async () => {
+    const before = (await userRepository.getAuthRecordById('PW-IDENTITY'))!;
+    const current = await sessionManager.createSession(profile('PW-IDENTITY'));
+    await userRepository.update('PW-IDENTITY', { name: ' Persona editada ', email: ' Changed-QA@Example.Invalid ' });
+    const edited = (await userRepository.getAuthRecordByIdentifier('changed-qa@example.invalid'))!;
+    assert.equal(edited.passwordHash, before.passwordHash); assert.equal(edited.name, 'Persona editada');
+    assert.ok(await sessionManager.validateToken(current.token));
+    const selected = password();
+    await userRepository.update('PW-IDENTITY', { password: selected, userCode: '009876' });
+    assert.equal(await sessionManager.validateToken(current.token), null);
+    const changed = (await userRepository.getAuthRecordByIdentifier('009876'))!;
+    assert.equal(changed.id, 'PW-IDENTITY'); assert.equal(changed.pinHash, null);
+    assert.equal(verifyPassword(selected, changed.passwordHash, changed.passwordSalt), true);
+    assert.notEqual(changed.passwordHash, before.passwordHash);
+  });
   console.log(`RESULTADO: ${passed} grupos de contraseñas SQL aprobados (${mode}; WASM no prueba transporte distribuido).`);
 } finally {
   await applicationPool?.end();

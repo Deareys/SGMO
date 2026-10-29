@@ -8,7 +8,8 @@ import type { PoolClient } from 'pg';
 import { createHash } from 'crypto';
 import { UserProfile } from '../../../types';
 import { DataIntegrityError } from '../salesValidation.js';
-import { hashPin, hashPassword, validateWorkerPin, validateAdminPassword } from '../../auth/cryptoUtils.js';
+import { hashPin, hashPassword, validateWorkerPin } from '../../auth/cryptoUtils.js';
+import { validateAccountPassword } from '../../../shared/passwordPolicy.js';
 
 export interface UserAuthRecord extends UserProfile {
   pinHash?: string | null;
@@ -155,7 +156,7 @@ export class UserRepository {
         (password_hash IS NOT NULL) as "hasPassword"
       FROM users
       WHERE LOWER(user_code) = LOWER($1) 
-         OR LOWER(email) = LOWER($1)
+         OR LOWER(BTRIM(email)) = LOWER($1)
          OR id = $1
       ${client ? 'FOR UPDATE' : ''}
     `, [clean]);
@@ -202,7 +203,10 @@ export class UserRepository {
   async create(user: UserProfile & { pin?: string; password?: string }): Promise<UserProfile> {
     this.validateRole(user.role);
     if (typeof user.isActive !== 'boolean') throw new UserCredentialValidationError('El estado activo debe ser booleano.');
-    const credential = this.prepareCredential(user.role, user.pin, user.password);
+    const userCode = user.userCode === undefined ? 'USR-' + createHash('md5').update(user.id).digest('hex').slice(0, 24) : this.validateUserCode(user.userCode);
+    const email = this.normalizeEmail(user.email);
+    const name = this.validateName(user.name);
+    const credential = this.prepareCredential(user.role, user.pin, user.password, [userCode, email]);
     const credentialType = credential.credentialType;
 
     await withTransaction(async (client) => {
@@ -221,9 +225,9 @@ export class UserRepository {
         )
       `, [
         user.id,
-        user.userCode === undefined ? 'USR-' + createHash('md5').update(user.id).digest('hex').slice(0, 24) : this.validateUserCode(user.userCode),
-        user.name,
-        user.email || null,
+        userCode,
+        name,
+        email,
         user.role,
         user.phone || null,
         credential.pinHash,
@@ -275,7 +279,7 @@ export class UserRepository {
         || typeof owner.email !== 'string' || owner.email.trim().length > 160 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(owner.email.trim()))) {
       throw new UserCredentialValidationError('Nombre o correo del propietario inválidos.');
     }
-    const credential = this.prepareCredential('admin', undefined, password);
+    const credential = this.prepareCredential('admin', undefined, password, [identifier, owner?.email]);
     return withTransaction(async (client) => {
       await client.query("SELECT pg_advisory_xact_lock(hashtext('sgmo.initial-admin'))");
       await client.query('LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE');
@@ -290,7 +294,7 @@ export class UserRepository {
           failed_attempt_window_started_at = NULL, updated_at = CURRENT_TIMESTAMP,
           name = COALESCE($4, name), email = COALESCE($5, email)
         WHERE id = $3
-      `, [credential.passwordHash, credential.passwordSalt, administrator.id, owner?.name.trim() ?? null, owner?.email.trim() ?? null]);
+      `, [credential.passwordHash, credential.passwordSalt, administrator.id, owner?.name.trim() ?? null, owner ? this.normalizeEmail(owner.email) : null]);
       await this.revokeUserSessions(client, administrator.id);
       return true;
     });
@@ -303,6 +307,8 @@ export class UserRepository {
     if (updates.isActive !== undefined && typeof updates.isActive !== 'boolean') {
       throw new UserCredentialValidationError('El estado activo debe ser booleano.');
     }
+    if (updates.email !== undefined) this.normalizeEmail(updates.email);
+    if (updates.name !== undefined) this.validateName(updates.name);
     const financialInput = updates.commissionRate !== undefined || updates.housingCostExempt !== undefined || updates.housingCostOverride !== undefined || updates.assignedHouseId !== undefined;
     if (updates.commissionRate !== undefined && (typeof updates.commissionRate !== 'number' || !Number.isFinite(updates.commissionRate) || updates.commissionRate < 0 || updates.commissionRate > 1 || Math.abs(updates.commissionRate * 10000 - Math.round(updates.commissionRate * 10000)) > 0.00001)) throw new DataIntegrityError('INVALID_COMMISSION_RATE', 'Comisión inválida.');
     if (updates.housingCostExempt !== undefined && typeof updates.housingCostExempt !== 'boolean') throw new DataIntegrityError('INVALID_HOUSING_EXEMPTION', 'Exención de vivienda inválida.');
@@ -312,7 +318,7 @@ export class UserRepository {
       // active shifts and changing a worker's settlement inputs.
       if (financialInput) await client.query("SELECT pg_advisory_xact_lock(hashtext('sgmo_financial_configuration'))");
       await client.query('LOCK TABLE users IN ROW EXCLUSIVE MODE');
-      const current = await client.query('SELECT role, is_active, commission_rate, housing_cost_exempt, housing_cost_override, assigned_house_id FROM users WHERE id = $1 FOR UPDATE', [id]);
+      const current = await client.query('SELECT role, is_active, commission_rate, housing_cost_exempt, housing_cost_override, assigned_house_id, user_code, email FROM users WHERE id = $1 FOR UPDATE', [id]);
       if (!current.rows.length) throw new UserCredentialValidationError('Usuario no disponible.');
       const previous = current.rows[0];
       const financialChanged = (updates.commissionRate !== undefined && updates.commissionRate !== Number(previous.commission_rate))
@@ -326,7 +332,8 @@ export class UserRepository {
       const role = updates.role ?? current.rows[0].role;
       this.validateRole(role);
       const roleChanged = role !== current.rows[0].role;
-      const credential = this.prepareCredential(role, updates.pin, updates.password);
+      const credential = this.prepareCredential(role, updates.pin, updates.password,
+        [updates.userCode ?? previous.user_code, updates.email ?? previous.email]);
       const fields: string[] = [];
       const values: unknown[] = [];
       let idx = 1;
@@ -337,11 +344,11 @@ export class UserRepository {
       }
       if (updates.name !== undefined) {
         fields.push(`name = $${idx++}`);
-        values.push(updates.name);
+        values.push(this.validateName(updates.name));
       }
       if (updates.email !== undefined) {
         fields.push(`email = $${idx++}`);
-        values.push(updates.email);
+        values.push(this.normalizeEmail(updates.email));
       }
       if (updates.role !== undefined) {
         fields.push(`role = $${idx++}`);
@@ -411,6 +418,25 @@ export class UserRepository {
     return userCode.trim();
   }
 
+  /** Correo opcional: se normaliza antes de persistir; el índice SQL resuelve altas concurrentes. */
+  private normalizeEmail(email?: string | null): string | null {
+    if (email === undefined || email === null || email === '') return null;
+    if (typeof email !== 'string') throw new UserCredentialValidationError('Correo electrónico inválido.');
+    const normalized = email.trim().toLowerCase();
+    if (!normalized) return null;
+    if (normalized.length > 160 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+      throw new UserCredentialValidationError('Correo electrónico inválido.');
+    }
+    return normalized;
+  }
+
+  private validateName(name: string): string {
+    if (typeof name !== 'string' || !name.trim() || name.trim().length > 120) {
+      throw new UserCredentialValidationError('El nombre debe tener entre 1 y 120 caracteres.');
+    }
+    return name.trim();
+  }
+
   private validateRole(role: UserProfile['role']): void {
     if (!['admin', 'coordinator', 'seller', 'factory_worker'].includes(role)) {
       throw new UserCredentialValidationError('Rol de usuario inválido.');
@@ -418,7 +444,7 @@ export class UserRepository {
   }
 
   /** Valida toda escritura; ausencia de credencial implica cuenta sin aprovisionar. */
-  private prepareCredential(role: UserProfile['role'], pin?: string, password?: string) {
+  private prepareCredential(role: UserProfile['role'], pin?: string, password?: string, identifiers: Array<string | null | undefined> = []) {
     if ((role === 'admin' && pin !== undefined) || (pin !== undefined && password !== undefined)) {
       throw new UserCredentialValidationError('El tipo de credencial no corresponde al rol.');
     }
@@ -437,7 +463,7 @@ export class UserRepository {
       credential.isProvisioned = true;
     }
     if (password !== undefined) {
-      const validation = validateAdminPassword(password);
+      const validation = validateAccountPassword(password, identifiers);
       if (!validation.isValid) throw new UserCredentialValidationError(validation.error ?? 'Credencial inválida.');
       const hashed = hashPassword(password);
       credential.passwordHash = hashed.hash;

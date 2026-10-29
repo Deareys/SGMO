@@ -1813,7 +1813,7 @@ export class StorageService {
       });
       result = await response.json();
     } catch {
-      throw new Error('No se pudo conectar con el servidor. El perfil no se guardó.');
+      throw new Error('No se pudo confirmar el guardado. Reconectá y recargá la lista antes de repetirlo.');
     }
     if (!response.ok || result.success !== true) {
       throw new Error(result.error || result.message || 'El servidor rechazó la modificación del perfil.');

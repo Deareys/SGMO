@@ -120,6 +120,9 @@ function userWriteError(error: unknown, res: Response) {
     return res.status(400).json({ success: false, code: 'INVALID_USER_INPUT', error: error.message });
   }
   if ((error as { code?: string })?.code === '23505') {
+    if ((error as { constraint?: string }).constraint === 'idx_users_email_normalized_unique') {
+      return res.status(409).json({ success: false, code: 'DUPLICATE_USER_EMAIL', error: 'Ese correo ya está asignado a otra cuenta.' });
+    }
     return res.status(409).json({ success: false, code: 'DUPLICATE_USER_CODE', error: 'El identificador de usuario ya está asignado.' });
   }
   return res.status(503).json({ success: false, code: 'SERVICE_UNAVAILABLE', error: 'No se pudo confirmar la operación central.' });

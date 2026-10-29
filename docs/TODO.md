@@ -4,6 +4,8 @@
 
 ## Diagnóstico vigente — 18 de octubre de 2026
 
+**Prioridad 29/10 — Acceso/usuarios:** reparar el recorrido de alta/edición con contraseña inicial y correo único; retirar modos/teclado/enlaces del login. Ver [Hito 3.5](HITO_3_5_LOGIN_Y_USUARIOS.md). Confirmado que el dominio principal sigue en main antiguo, PR 2 sin integrar y base productiva vacía; una prueba en la rama no actualiza esa dirección. Preservar cachés antiguas hasta revisar si contienen información sin respaldo central.
+
 Actualización 20/10: contraseñas personales, activación presencial, cambio propio y recuperación excepcional del dueño implementados en el [Hito 3.4](HITO_3_4_CONTRASENAS_Y_PRODUCCION.md). Migración 009 aplicada sólo a ensayo después de copia y comprobación de integridad. El [plan ordenado de producción](CONTRASENAS_Y_SALIDA_A_PRODUCCION.md) prevalece sobre tareas históricas de autenticación ya sustituidas. No se integró esta rama automáticamente en main.
 
 Actions [39419629886](https://github.com/Deareys/SGMO/actions/runs/39419629886), `cf27d832…`, aprobado: 193 pruebas, 35 históricas, SQL PostgreSQL 16, nueve grupos HTTP de dos procesos y tres suites Chromium. **Pendiente operativo:** alta privada del dueño, aceptación en teléfonos, proveedores, alcance offline/local y preparación productiva. El dominio público antiguo y la base productiva vacía siguen siendo bloqueantes; no equivale a un fallo del preview reparado.

@@ -294,6 +294,33 @@ try {
     personalPassword = replacement;
     assert.equal((await clients[0].request(second.origin, '/api/auth/login', { identifier: 'HTTP-PASSWORD', password: personalPassword })).status, 200);
   });
+  await check('Alta y edición persisten después de logout y reinicio; código/correo y clave actual funcionan', async () => {
+    const initial = password(), replacement = password();
+    assert.equal((await admin.request(first.origin, '/api/users', { id: 'HTTP-PERSIST', userCode: '001234',
+      name: 'Persistencia QA', email: ' Persist-QA@Example.Invalid ', password: initial, role: 'seller', commissionRate: 0, isActive: true })).status, 201);
+    assert.equal((await clients[0].request(second.origin, '/api/auth/login', { identifier: 'PERSIST-QA@EXAMPLE.INVALID', password: initial })).status, 200);
+    assert.equal((await clients[0].request(second.origin, '/api/auth/logout', {})).status, 200);
+    assert.equal((await clients[0].request(first.origin, '/api/auth/login', { identifier: '001234', password: initial })).status, 200);
+    assert.equal((await admin.request(second.origin, '/api/users/HTTP-PERSIST', { name: 'Perfil guardado', email: 'new-persist-qa@example.invalid', password: replacement }, 'PUT')).status, 200);
+    assert.equal((await clients[0].request(first.origin, '/api/auth/me')).status, 401);
+    assert.equal((await clients[0].request(first.origin, '/api/auth/login', { identifier: '001234', password: initial })).status, 401);
+    assert.equal((await clients[0].request(first.origin, '/api/auth/login', { identifier: 'new-persist-qa@example.invalid', password: replacement })).status, 200);
+    await stopWorker(first.process); first = await startWorker();
+    const persisted = await clients[0].request(first.origin, '/api/auth/me');
+    assert.equal(persisted.status, 200); assert.equal(persisted.body.user.name, 'Perfil guardado');
+    const list = await admin.request(first.origin, '/api/users'); assert.equal(list.status, 200);
+    assert.equal(list.body.users.find((user: any) => user.id === 'HTTP-PERSIST').email, 'new-persist-qa@example.invalid');
+  });
+  await check('Dos altas con el mismo correo: sólo una se confirma y el rechazo explica el duplicado', async () => {
+    const results = await Promise.all(['A','B'].map((suffix,index) => admin.request(index ? second.origin : first.origin, '/api/users', {
+      id: `HTTP-DUP-MAIL-${suffix}`, userCode: `DUP-${suffix}`, name: 'Correo único QA', email: index ? 'DUP-QA@EXAMPLE.INVALID' : 'dup-qa@example.invalid',
+      password: password(), role: 'seller', commissionRate: 0, isActive: true })));
+    assert.equal(results.filter(result => result.status === 201).length, 1);
+    const rejected = results.find(result => result.status === 409)!;
+    assert.equal(rejected.body.code, 'DUPLICATE_USER_EMAIL');
+    const list = await admin.request(first.origin, '/api/users');
+    assert.equal(list.body.users.filter((user: any) => user.email === 'dup-qa@example.invalid').length, 1);
+  });
   console.log(`RESULTADO: ${outcomes.length} grupos PostgreSQL HTTP multiproceso aprobados.`);
 } catch (error) {
   console.error(`FAIL ${currentTest}; ${error instanceof Error ? error.name : 'Error'}.`);

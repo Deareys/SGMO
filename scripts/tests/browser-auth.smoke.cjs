@@ -107,12 +107,9 @@ async function assertVisible(locator) {
   await locator.waitFor({ state: 'visible' });
 }
 
-async function pressPin(page, credential) {
-  await page.getByLabel('PIN o contraseña', { exact:true }).fill('');
-  const keyboard=page.locator('details');
-  if (!await keyboard.evaluate(element=>element.open)) await keyboard.locator('summary').click();
-  for (const digit of credential) await page.getByRole('button', { name: digit, exact: true }).click();
-  await page.getByRole('button', { name:'Ingresar',exact:true }).click();
+async function pressPin(page, pin) {
+  await page.getByLabel('Contraseña', { exact: true }).fill(pin);
+  await page.getByRole('button', { name: 'Ingresar', exact: true }).click();
 }
 
 async function currentUserId(page) {
@@ -153,11 +150,12 @@ async function main() {
 
   await assertValue(page.getByLabel('Código de usuario o correo'), '');
   assert.equal(await page.locator('select').count(), 0);
-  await assertVisible(page.getByText('Teclado numérico para PIN', { exact: true }));
+  assert.equal(await page.locator('input').count(), 2);
+  assert.equal(await page.locator('details,select,a').count(), 0);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true,
     'Acceso móvil desborda horizontalmente');
   await page.screenshot({ path: path.join(outputDirectory, 'login-mobile-390x844.png'), fullPage: true });
-  checks.push('Acceso móvil: identificador vacío, sin perfiles públicos, teclado desplegable y sin desborde horizontal');
+  checks.push('Acceso móvil: dos campos vacíos, sin perfiles, modos, enlaces de configuración ni teclado PIN');
 
   let loginRequests = 0;
   page.on('request', (request) => { if (request.url().endsWith('/api/auth/login')) loginRequests++; });
@@ -222,7 +220,8 @@ async function main() {
   await newUserForm.getByPlaceholder('Ej: VEND-05').fill('QA-TEMP');
   await newUserForm.locator('input[type="email"]').fill('qa@example.invalid');
   await newUserForm.locator('input[type="tel"]').fill('000000000');
-  assert.equal(await newUserForm.locator('input[type="password"]').count(), 0, 'Cada usuario elige su contraseña fuera del alta administrativa');
+  await newUserForm.getByLabel('Contraseña inicial', { exact: true }).fill(administratorPassword);
+  await newUserForm.getByLabel('Repetir contraseña', { exact: true }).fill(administratorPassword);
   await newUserForm.getByRole('button', { name: 'Guardar Usuario', exact: true }).click();
   await assertVisible(newUserForm.getByRole('alert'));
   await assertEventually(async () => assert.equal(await newUserForm.getByRole('button', { name: 'Guardar Usuario', exact: true }).isEnabled(), true));
@@ -233,7 +232,8 @@ async function main() {
 
   await page.getByRole('button', { name: 'Editar Usuario', exact: true }).nth(1).click();
   const editUserForm = page.locator('form').filter({ has: page.getByPlaceholder('Ej: VEND-05') });
-  assert.equal(await editUserForm.locator('input[type="password"]').count(), 0);
+  assert.equal(await editUserForm.getByLabel('Nueva contraseña', { exact: true }).inputValue(), '');
+  assert.equal(await editUserForm.getByLabel('Repetir contraseña', { exact: true }).inputValue(), '');
   let updateRequestBody;
   page.on('request', (request) => {
     if (request.method() === 'PUT' && request.url().includes('/api/users/')) updateRequestBody = request.postDataJSON();

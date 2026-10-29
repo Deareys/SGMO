@@ -44,7 +44,7 @@ async function identity(page, userId) {
 async function login(page, identifier, credential) {
   await page.goto(origin, { waitUntil: 'networkidle' });
   await page.getByLabel('Código de usuario o correo').fill(identifier);
-  await page.getByLabel('PIN o contraseña', { exact: true }).fill(credential);
+  await page.getByLabel('Contraseña', { exact: true }).fill(credential);
   await page.getByRole('button', { name: 'Ingresar', exact: true }).click();
 }
 async function write(context, endpoint, body, method = 'POST') {
@@ -92,7 +92,9 @@ async function main() {
   await ownerPage.getByRole('button', { name: /Usuarios & Roles/ }).click();
   await ownerPage.getByRole('button', { name: 'Nuevo Usuario', exact: true }).click();
   const form = ownerPage.locator('form').filter({ has: ownerPage.getByPlaceholder('Ej: VEND-05') });
-  assert.equal(await form.locator('input[type=password]').count(), 0);
+  const initialPassword = randomBytes(6).toString('hex'); secrets.push(initialPassword);
+  await form.getByLabel('Contraseña inicial', { exact: true }).fill(initialPassword);
+  await form.getByLabel('Repetir contraseña', { exact: true }).fill(initialPassword);
   await form.getByPlaceholder('Ej: Marcos Benavídez').fill('Persona QA contraseña');
   await form.getByPlaceholder('Ej: VEND-05').fill('QA-PERSONAL');
   await form.locator('input[type=email]').fill('personal-qa@example.invalid');
@@ -103,7 +105,72 @@ async function main() {
   await form.getByRole('button', { name: 'Guardar Usuario', exact: true }).click();
   const response = await saved; assert.equal(response.status(), 201);
   const userId = (await response.json()).user.id;
-  checks.push('Alta real por administrador sin elegir ni enviar la contraseña del trabajador');
+  checks.push('Alta real por administrador con contraseña inicial, seguida de elección privada por enlace');
+
+  // Reproduce el reporte: guardar, salir de administración y entrar a esa cuenta.
+  await otherPage.goto(origin, { waitUntil: 'networkidle' });
+  assert.equal(await otherPage.locator('input').count(), 2);
+  assert.equal(await otherPage.locator('select,details,a').count(), 0);
+  await login(otherPage, 'personal-qa@example.invalid', initialPassword); await identity(otherPage, userId);
+  await otherPage.reload({ waitUntil: 'networkidle' }); await identity(otherPage, userId);
+  await ownerPage.reload({ waitUntil: 'networkidle' }); await identity(ownerPage, 'USR-ADMIN-01');
+  async function openUsers() {
+    await ownerPage.getByTitle('Abrir menú de navegación').click();
+    await ownerPage.getByRole('button', { name: 'Configuración', exact: true }).click();
+    await ownerPage.getByRole('button', { name: /Usuarios & Roles/ }).click();
+  }
+  const userCard = name => ownerPage.locator('div.border.rounded-xl.p-5').filter({ has: ownerPage.getByText(name, { exact: true }) });
+  await openUsers();
+  assert.equal(await userCard('Persona QA contraseña').count(), 1);
+  assert.equal((await write(owner, '/api/auth/logout', {})).status(), 200);
+  await ownerPage.reload({ waitUntil: 'networkidle' });
+  await ownerPage.getByLabel('Código de usuario o correo').waitFor();
+  await login(ownerPage, 'ADM-01', administratorPassword); await identity(ownerPage, 'USR-ADMIN-01'); await openUsers();
+  assert.equal(await userCard('Persona QA contraseña').count(), 1);
+  checks.push('Usuario guardado sobrevive recarga y logout del administrador; otro navegador ingresa con la contraseña inicial sin selector de perfiles');
+
+  const editedPassword = randomBytes(6).toString('hex'); secrets.push(editedPassword);
+  await userCard('Persona QA contraseña').getByRole('button', { name: 'Editar Usuario', exact: true }).click();
+  const edit = ownerPage.locator('form').filter({ has: ownerPage.getByPlaceholder('Ej: VEND-05') });
+  await edit.getByPlaceholder('Ej: Marcos Benavídez').fill('Persona QA editada');
+  await edit.locator('input[type=email]').fill('editada-qa@example.invalid');
+  await edit.getByLabel('Nueva contraseña', { exact: true }).fill(editedPassword);
+  await edit.getByLabel('Repetir contraseña', { exact: true }).fill(editedPassword);
+  const updated = ownerPage.waitForResponse(reply => reply.url() === `${origin}/api/users/${userId}` && reply.request().method() === 'PUT');
+  await edit.getByRole('button', { name: 'Guardar Usuario', exact: true }).click();
+  assert.equal((await updated).status(), 200);
+  assert.equal((await otherDevice.request.get(`${origin}/api/auth/me`)).status(), 401);
+  assert.equal((await write(otherDevice, '/api/auth/login', { identifier: 'QA-PERSONAL', password: initialPassword })).status(), 401);
+  await login(otherPage, 'editada-qa@example.invalid', editedPassword); await identity(otherPage, userId);
+  const me = await (await otherDevice.request.get(`${origin}/api/auth/me`)).json();
+  assert.equal(me.user.name, 'Persona QA editada');
+  await userCard('Persona QA editada').getByRole('button', { name: 'Editar Usuario', exact: true }).click();
+  const keepPassword = ownerPage.locator('form').filter({ has: ownerPage.getByPlaceholder('Ej: VEND-05') });
+  assert.equal(await keepPassword.getByLabel('Nueva contraseña', { exact: true }).inputValue(), '');
+  await keepPassword.getByPlaceholder('Ej: Marcos Benavídez').fill('Persona QA contraseña');
+  await keepPassword.locator('input[type=email]').fill('personal-qa@example.invalid');
+  const kept = ownerPage.waitForResponse(reply => reply.url() === `${origin}/api/users/${userId}` && reply.request().method() === 'PUT');
+  await keepPassword.getByRole('button', { name: 'Guardar Usuario', exact: true }).click();
+  assert.equal((await kept).status(), 200);
+  assert.equal((await write(otherDevice, '/api/auth/logout', {})).status(), 200);
+  await otherPage.reload({ waitUntil: 'networkidle' });
+  await login(otherPage, 'QA-PERSONAL', editedPassword); await identity(otherPage, userId);
+  assert.equal((await write(otherDevice, '/api/auth/logout', {})).status(), 200);
+  await otherPage.reload({ waitUntil: 'networkidle' });
+  checks.push('Editar identidad y contraseña persiste y revoca la sesión previa; editar con clave vacía conserva el acceso');
+
+  await ownerPage.getByRole('button', { name: 'Nuevo Usuario', exact: true }).click();
+  const duplicate = ownerPage.locator('form').filter({ has: ownerPage.getByPlaceholder('Ej: VEND-05') });
+  await duplicate.getByPlaceholder('Ej: Marcos Benavídez').fill('Duplicado rechazado');
+  await duplicate.getByPlaceholder('Ej: VEND-05').fill('QA-DUPLICADO');
+  await duplicate.locator('input[type=email]').fill('PERSONAL-QA@EXAMPLE.INVALID');
+  await duplicate.getByLabel('Contraseña inicial', { exact: true }).fill(initialPassword);
+  await duplicate.getByLabel('Repetir contraseña', { exact: true }).fill(initialPassword);
+  await duplicate.getByRole('button', { name: 'Guardar Usuario', exact: true }).click();
+  await duplicate.getByRole('alert').filter({ hasText: 'correo ya está asignado' }).waitFor();
+  await duplicate.getByRole('button', { name: 'Cancelar', exact: true }).click();
+  assert.equal((await (await owner.request.get(`${origin}/api/users`)).json()).users.filter(account => account.userCode === 'QA-DUPLICADO').length, 0);
+  checks.push('Correo duplicado muestra error y no agrega un perfil local inexistente');
 
   async function issueLink() {
     await ownerPage.getByRole('button', { name: 'Activar o restablecer contraseña de Persona QA contraseña', exact: true }).click();

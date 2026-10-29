@@ -1,5 +1,7 @@
 # Contraseñas y pasos para poner SGMO en producción
 
+**Actualización 29/10:** el alta administrativa ahora solicita contraseña inicial y confirmación. En edición, una contraseña nueva la reemplaza; ambos campos vacíos conservan la anterior. El login sólo muestra correo/código y contraseña. Para probar esa versión usar la [guía del Hito 3.5](PRUEBA_LOGIN_2026_10_29.md). El flujo por enlace de esta guía anterior se conserva como recuperación/elección privada adicional.
+
 Actualizado: 20/10/2026. Esta guía corresponde a `codex/sgmo-preparacion-mvp`, PR 2. **La app productiva todavía no está certificada.** GitHub guarda el código; Vercel ejecuta la app; Neon guarda los datos. Que una prueba pase en uno no demuestra el funcionamiento de los otros.
 
 ## Cómo funciona el acceso

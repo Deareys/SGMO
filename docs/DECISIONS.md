@@ -8,6 +8,16 @@
 
 ## Actualización vigente — 13 de octubre de 2026
 
+### ADR-023: acceso simple y alta con contraseña persistida — 29 de octubre de 2026
+
+Sebas reporta usuarios/ediciones que desaparecen y un selector de perfiles en el acceso. La inspección confirma que el dominio principal todavía ejecuta `d291d5a` de main; PR 2 no se integró y la base productiva sigue vacía. No atribuir a PostgreSQL cambios realizados exclusivamente en el cliente antiguo. Verificar la revisión servida además de la fuente publicada.
+
+Se prioriza únicamente acceso y persistencia de cuentas. La pantalla ofrece identificador (correo o código/número) y contraseña, sin selector de perfil, alternancia admin/trabajador, teclado PIN ni accesos de configuración. El backend decide el rol; se preservan credenciales históricas válidas internamente sin exponer modos en la UI. El administrador puede asignar una contraseña al crear/editar un usuario; una edición con contraseña vacía conserva el hash anterior. Cada titular conserva Mi contraseña y recuperación presencial existentes. Esto amplía el flujo UI de ADR-022 por pedido explícito; no añade un proveedor de autenticación ni servicios pagos.
+
+PostgreSQL confirma altas/ediciones antes de mostrar éxito. Contraseñas con scrypt/salt individual, nunca texto plano, respuestas/caché/auditoría sin secretos, revocación transaccional al restablecer y errores sin falso guardado. Código único y correo opcional normalizado/único evitan identidades ambiguas. La migración 010 sólo agrega un índice; aborta ante correos duplicados sin borrar ni reasignar cuentas. Se ensaya en SQL aislado y copia Neon antes de aplicarla a ensayo. Producción y release se distinguen expresamente de preview; preservar datos y cambios ajenos.
+
+Prompt y evidencia: `HITO_3_5_LOGIN_Y_USUARIOS.md`.
+
 ### ADR-022: contraseña personal y recuperación presencial — 18 de octubre de 2026
 
 Sebas autoriza implementar elección/cambio de contraseña y recuperación asistida por el administrador, con una clave más corta que la propuesta de 15 caracteres. Se adopta mínimo **12 caracteres**, máximo 128 para nuevas claves, sin mezclas de caracteres obligatorias y con bloqueo local de claves comunes, patrones repetidos y claves derivadas del identificador. Es un compromiso de usabilidad: no equivale a la recomendación NIST de 15 caracteres sin segundo factor. Las claves existentes no se invalidan automáticamente; los PIN de ocho dígitos anteriores permanecen como transición hasta que su titular elija contraseña.

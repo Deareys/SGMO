@@ -191,7 +191,7 @@ test('HTTP rechazado/red caída no crea ni modifica perfiles', async () => {
   await assert.rejects(service.updateUser(worker.id, { pin: testWorkerPin, name: 'Rejected name' }), /Rejected/);
   await assert.rejects(service.toggleUserActive(worker.id), /Rejected/);
   responseFactory = async () => { throw new Error('Network unavailable'); };
-  await assert.rejects(service.createUser(worker), /no se guardó/);
+  await assert.rejects(service.createUser(worker), /No se pudo confirmar el guardado/);
   assert.equal(JSON.stringify(service.getState().users), originalUsers);
 });
 
@@ -216,6 +216,8 @@ test('Semilla sin credenciales y acceso no enumera personas ni preselecciona cue
   assert.equal(markup.includes('PIN Personal (8d)'),false);
   assert.equal(markup.includes('Ingresar a Administración'),false);
   assert.match(markup,/id="login-credential"/);
+  assert.equal((markup.match(/<input\b/g) || []).length, 2);
+  assert.equal(/<select|<details|<a\b|Teclado numérico|PIN o contraseña/.test(markup), false);
 });
 
 test('ingreso único envía sólo el contrato PIN y recibe el rol del servidor', async () => {

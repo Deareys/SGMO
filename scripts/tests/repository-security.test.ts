@@ -220,3 +220,19 @@ test('create con ID existente no reemplaza rol, comisión, credenciales ni estad
   assert.deepEqual(transactionCommands(), ['BEGIN', 'ROLLBACK']);
   assert.ok(!statements.some(({ sql }) => sql.includes('INSERT INTO users') || sql.includes('UPDATE users') || sql.includes('UPDATE auth_sessions')));
 });
+
+test('alta normaliza correo/nombre y permite código numérico sin convertirlo a número', async () => {
+  reset();
+  await repository.create({ ...publicProfile, userCode: '001234', name: ' Persona QA ', email: '  Persona@Example.Invalid  ', password: adminPassword() });
+  const insert = statements.find(({ sql }) => sql.includes('INSERT INTO users'))!;
+  assert.deepEqual(insert.parameters.slice(1, 4), ['001234', 'Persona QA', 'persona@example.invalid']);
+});
+
+test('identidad malformada se rechaza antes de SQL y no sustituye una cuenta', async () => {
+  for (const updates of [{ email: 'sin correo' }, { email: 'a'.repeat(161) + '@example.invalid' }, { email: 42 }, { name: ' ' }, { name: 'a'.repeat(121) }]) {
+    reset();
+    await assert.rejects(repository.create({ ...publicProfile, ...updates } as UserProfile), UserCredentialValidationError);
+    await assert.rejects(repository.update(publicProfile.id, updates as Partial<UserProfile>), UserCredentialValidationError);
+    assert.equal(statements.length, 0);
+  }
+});

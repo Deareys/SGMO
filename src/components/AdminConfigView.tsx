@@ -38,6 +38,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { IssuePasswordActivationModal } from './PasswordManagement';
+import { validateAccountPassword, MIN_PASSWORD_LENGTH, MAX_NEW_PASSWORD_LENGTH } from '../shared/passwordPolicy';
 import { CommissionTiersTab } from './CommissionTiersTab';
 import { MercadoPagoTestLabModal } from './MercadoPagoTestLabModal';
 import { AppState, storageService } from '../services/storageService';
@@ -1235,8 +1236,8 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
                       </strong>
                     </div>
                     <div className="flex justify-between text-slate-300">
-                      <span>Credencial privada:</span>
-                      <strong className="text-slate-200 font-mono">••••</strong>
+                      <span>Acceso:</span>
+                      <strong className="text-slate-200">{u.hasPassword ? 'Contraseña configurada' : 'Pendiente de contraseña'}</strong>
                     </div>
                   </div>
 
@@ -2054,13 +2055,13 @@ interface UserModalProps {
 const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [passwordConfirmation, setPasswordConfirmation] = useState('');
   const [formData, setFormData] = useState({
     name: user?.name || '',
     userCode: user?.userCode || '',
     email: user?.email || '',
     phone: user?.phone || '',
     role: user?.role || ('seller' as UserRole),
-    pin: '',
     password: '',
     assignedHouseId: user?.assignedHouseId || houses[0]?.id || '',
     commissionRate: user?.commissionRate ?? 0.20,
@@ -2069,8 +2070,8 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) 
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full my-auto p-6 space-y-4 shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <h3 className="text-base font-bold text-white">
             {user ? `Editar a ${user.name}` : 'Nuevo Usuario / Personal'}
@@ -2089,12 +2090,23 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) 
               alert('El código de usuario es obligatorio (ej: VEND-05, COORD-03, ADM-02).');
               return;
             }
-            const { pin, password, ...profile } = formData;
+            const { password, ...profile } = formData;
+            if ((!user || formData.role !== user.role) && !password) {
+              setSaveError('Asigná una contraseña para habilitar el acceso de esta cuenta.'); return;
+            }
+            if (password) {
+              const policy = validateAccountPassword(password, [formData.userCode, formData.email]);
+              if (!policy.isValid) { setSaveError(policy.error || 'Contraseña inválida.'); return; }
+              if (password !== passwordConfirmation) { setSaveError('Las contraseñas no coinciden.'); return; }
+            } else if (passwordConfirmation) { setSaveError('Ingresá la nueva contraseña y su confirmación.'); return; }
             setIsSaving(true);
             setSaveError(null);
             try {
               await onSave({
                 ...profile,
+                name: formData.name.trim(),
+                email: formData.email.trim().toLowerCase(),
+                ...(password ? { password } : {}),
                 userCode: formData.userCode.trim().toUpperCase(),
                 commissionRate: Number(formData.commissionRate)
               });
@@ -2116,6 +2128,7 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) 
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white"
                 placeholder="Ej: Marcos Benavídez"
+                maxLength={120}
                 required
               />
             </div>
@@ -2127,6 +2140,8 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) 
                 onChange={(e) => setFormData({ ...formData, userCode: e.target.value.toUpperCase() })}
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono"
                 placeholder="Ej: VEND-05"
+                maxLength={32}
+                pattern="[A-Za-z0-9_-]+"
                 required
               />
             </div>
@@ -2137,10 +2152,11 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) 
               <label className="block text-slate-300 font-semibold mb-1">Correo Electrónico</label>
               <input
                 type="email"
+                maxLength={160}
+                autoComplete="off"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white"
-                required
               />
             </div>
             <div>
@@ -2150,7 +2166,6 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) 
                 value={formData.phone}
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white"
-                required
               />
             </div>
           </div>
@@ -2171,9 +2186,21 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) 
             </div>
 
             <div>
-              <p className="rounded-lg border border-slate-500 bg-slate-800 p-3 text-slate-100">Cada persona elige su contraseña. Guardá el perfil y usá su botón «Contraseña» para preparar la activación o recuperación presencial.</p>
+              <p className="rounded-lg border border-slate-500 bg-slate-800 p-3 text-slate-100">El usuario ingresa con su código o correo y su contraseña. Después puede cambiarla desde «Mi contraseña».</p>
             </div>
           </div>
+
+          <fieldset className="space-y-3 rounded-xl border border-slate-600 p-3">
+            <legend className="px-1 font-bold text-slate-100">Contraseña de acceso</legend>
+            <p className="text-slate-200">{user ? 'Dejá ambos campos vacíos para conservar la contraseña actual. Una nueva contraseña cierra las sesiones anteriores.' : 'Asigná una contraseña inicial. La persona puede cambiarla después desde su cuenta.'}</p>
+            <label className="block font-semibold text-slate-100">{user ? 'Nueva contraseña' : 'Contraseña inicial'}
+              <input type="password" autoComplete="new-password" value={formData.password} disabled={isSaving} required={!user || formData.role !== user.role} minLength={MIN_PASSWORD_LENGTH} maxLength={MAX_NEW_PASSWORD_LENGTH} onChange={event => setFormData({ ...formData, password: event.target.value })} className="mt-1 w-full min-h-12 rounded-lg border border-slate-500 bg-white px-3 text-base text-slate-950" />
+            </label>
+            <label className="block font-semibold text-slate-100">Repetir contraseña
+              <input type="password" autoComplete="new-password" value={passwordConfirmation} disabled={isSaving} required={!!formData.password} minLength={MIN_PASSWORD_LENGTH} maxLength={MAX_NEW_PASSWORD_LENGTH} onChange={event => setPasswordConfirmation(event.target.value)} className="mt-1 w-full min-h-12 rounded-lg border border-slate-500 bg-white px-3 text-base text-slate-950" />
+            </label>
+            <p className="text-slate-200">Mínimo {MIN_PASSWORD_LENGTH} caracteres; podés usar una frase. La contraseña anterior no se puede consultar.</p>
+          </fieldset>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -2431,6 +2458,8 @@ const SupplierModal: React.FC<SupplierModalProps> = ({ supplier, categories, onC
               <label className="block text-slate-300 font-semibold mb-1">Email</label>
               <input
                 type="email"
+                maxLength={160}
+                autoComplete="off"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white"

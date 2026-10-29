@@ -44,7 +44,7 @@ async function identity(page, userId) {
 async function login(page, identifier, credential) {
   await page.goto(origin, { waitUntil: 'networkidle' });
   await page.getByLabel('Código de usuario o correo').fill(identifier);
-  await page.getByLabel('PIN o contraseña', { exact: true }).fill(credential);
+  await page.getByLabel('Contraseña', { exact: true }).fill(credential);
   await page.getByRole('button', { name: 'Ingresar', exact: true }).click();
 }
 async function write(context, endpoint, body, method = 'POST') {
