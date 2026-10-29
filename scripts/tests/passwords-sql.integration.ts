@@ -219,6 +219,14 @@ try {
     assert.equal(verifyPassword(selected, changed.passwordHash, changed.passwordSalt), true);
     assert.notEqual(changed.passwordHash, before.passwordHash);
   });
+  await check('Una cuenta sin base admite cambio de contraseña y mantiene la FK vacía como NULL', async () => {
+    await userRepository.create({ ...profile('PW-NO-HOUSE','factory_worker'), password: password() });
+    const selected=password();
+    await userRepository.update('PW-NO-HOUSE',{assignedHouseId:'',password:selected});
+    const account=(await userRepository.getAuthRecordById('PW-NO-HOUSE'))!;
+    assert.equal(account.assignedHouseId,null);
+    assert.equal(verifyPassword(selected,account.passwordHash,account.passwordSalt),true);
+  });
   console.log(`RESULTADO: ${passed} grupos de contraseñas SQL aprobados (${mode}; WASM no prueba transporte distribuido).`);
 } finally {
   await applicationPool?.end();

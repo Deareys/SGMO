@@ -2063,7 +2063,7 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) 
     phone: user?.phone || '',
     role: user?.role || ('seller' as UserRole),
     password: '',
-    assignedHouseId: user?.assignedHouseId || houses[0]?.id || '',
+    assignedHouseId: user ? (user.assignedHouseId || '') : (houses[0]?.id || ''),
     commissionRate: user?.commissionRate ?? 0.20,
     housingCostExempt: !!user?.housingCostExempt,
     notes: user?.notes || ''
@@ -2210,6 +2210,7 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) 
                 onChange={(e) => setFormData({ ...formData, assignedHouseId: e.target.value })}
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white"
               >
+                <option value="">Sin base asignada</option>
                 {houses.map((h) => (
                   <option key={h.id} value={h.id}>{h.name}</option>
                 ))}

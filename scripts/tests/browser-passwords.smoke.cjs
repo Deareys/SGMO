@@ -251,6 +251,24 @@ async function main() {
   assert.equal((await write(worker, '/api/auth/complete-password-activation', { token, newPassword: changed, confirmPassword: changed })).status(), 400);
   assert.equal((await centralSales(owner)).length, 1);
   checks.push('Recuperación presencial y respuesta perdida después del COMMIT: nuevo login funciona, enlace consumido no se reutiliza y ventas intactas');
+  // Hay una jornada abierta: editar la clave no debe asignar otra casa por defecto
+  // ni disparar el bloqueo económico de un cambio de base que no se pidió.
+  assert.equal((await write(owner,'/api/users',{id:'USR-QA-NO-HOUSE',userCode:'QA-NO-HOUSE',name:'Cuenta QA sin base',
+    role:'factory_worker',commissionRate:0.2,isActive:true})).status(),201);
+  await ownerPage.reload({waitUntil:'networkidle'}); await identity(ownerPage,'USR-ADMIN-01'); await openUsers();
+  await userCard('Cuenta QA sin base').getByRole('button',{name:'Editar Usuario',exact:true}).click();
+  const unassigned=ownerPage.locator('form').filter({has:ownerPage.getByPlaceholder('Ej: VEND-05')});
+  assert.equal(await unassigned.locator('select').nth(1).inputValue(),'');
+  const unassignedPassword=randomBytes(6).toString('hex'); secrets.push(unassignedPassword);
+  await unassigned.getByLabel('Nueva contraseña',{exact:true}).fill(unassignedPassword);
+  await unassigned.getByLabel('Repetir contraseña',{exact:true}).fill(unassignedPassword);
+  const unassignedSaved=ownerPage.waitForResponse(reply=>reply.url()===`${origin}/api/users/USR-QA-NO-HOUSE`&&reply.request().method()==='PUT');
+  await unassigned.getByRole('button',{name:'Guardar Usuario',exact:true}).click();
+  const unassignedResponse=await unassignedSaved; assert.equal(unassignedResponse.status(),200);
+  assert.equal((await unassignedResponse.json()).user.assignedHouseId,null);
+  const factoryLogin=await write(otherDevice,'/api/auth/login',{identifier:'QA-NO-HOUSE',password:unassignedPassword});
+  assert.equal(factoryLogin.status(),200); assert.equal((await factoryLogin.json()).user.role,'factory_worker');
+  checks.push('Asignación vacía se conserva al editar contraseña aun con una jornada abierta; fábrica ingresa con su nueva clave');
   for (const page of [ownerPage,workerPage,otherPage]) await assertNoLocalSecrets(page);
   assert.deepEqual(pageErrors, []);
   await workerPage.screenshot({ path: path.join(outputDirectory, 'password-changed-pending-recovered.png'), fullPage: true });

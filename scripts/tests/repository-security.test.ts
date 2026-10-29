@@ -236,3 +236,11 @@ test('identidad malformada se rechaza antes de SQL y no sustituye una cuenta', a
     assert.equal(statements.length, 0);
   }
 });
+
+test('editar contraseña de una cuenta sin base conserva NULL y no cambia su asignación económica', async () => {
+  reset();
+  await repository.update(publicProfile.id, { assignedHouseId: '', password: adminPassword() });
+  const update = statements.find(({sql}) => sql.includes('assigned_house_id = $'))!;
+  assert.ok(update); assert.ok(update.parameters.includes(null)); assert.equal(update.parameters.includes(''),false);
+  assert.equal(statements.some(({sql}) => sql.includes('SELECT 1 FROM daily_shifts')),false);
+});

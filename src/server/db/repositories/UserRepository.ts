@@ -368,7 +368,7 @@ export class UserRepository {
       }
       if (updates.assignedHouseId !== undefined) {
         fields.push(`assigned_house_id = $${idx++}`);
-        values.push(updates.assignedHouseId);
+        values.push(updates.assignedHouseId || null);
       }
       if (updates.commissionRate !== undefined) {
         fields.push(`commission_rate = $${idx++}`);
