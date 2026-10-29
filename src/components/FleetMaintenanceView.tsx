@@ -18,6 +18,7 @@ import {
   Layers
 } from 'lucide-react';
 import { AppState, storageService } from '../services/storageService';
+import { LocalOperationNotice } from './LocalOperationNotice';
 import { CartIncident } from '../types';
 
 interface FleetMaintenanceViewProps {
@@ -65,6 +66,7 @@ export const FleetMaintenanceView: React.FC<FleetMaintenanceViewProps> = ({ stat
 
   return (
     <div className="space-y-6 pb-12">
+      <LocalOperationNotice>Las incidencias y reparaciones se guardan en este navegador. Avisá a coordinación por el canal habitual; estos registros no confirman por sí solos el estado central del carrito.</LocalOperationNotice>
       
       {/* Encabezado */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">

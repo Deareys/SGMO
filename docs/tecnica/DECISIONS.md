@@ -6,7 +6,79 @@
 
 ---
 
-## Estado actual (12 de octubre de 2026)
+## Actualización vigente — 13 de octubre de 2026
+
+### ADR-024: entrega sobre el dominio principal, recuperación local y documentación agrupada — 29/10/2026
+
+Sebas autoriza preparar production, integrar main y publicar sobre el proyecto Vercel `sgmo`, preservando el otro proyecto `deareys-studio`, que es otro negocio. La base productiva tiene respaldo `br-silent-boat-b6cvphw3`. Se ensayan las migraciones en `br-steep-smoke-b6y1kh4s`. El control automático rechaza aplicar la semilla 002 en producción por sus personas ficticias y posibilidad de sobrescritura. Se utiliza la alternativa `scripts/sql/production-baseline.sql`: sólo el espacio del dueño sin credenciales, parámetros iniciales cero y ninguna venta, casa, producto o carrito ficticio; INSERT con ON CONFLICT DO NOTHING. El runner reconoce `002_production_baseline` y nunca reintroduce la semilla demo. El acceso de la aplicación usa `sgmo_app`, sin DDL ni escritura de versiones; migraciones HTTP deshabilitadas por defecto en producción.
+
+Antes de reemplazar la caché del prototipo, conservar un respaldo sanitizado; si la cuota no permite guardarlo, no sobrescribir el original. El administrador puede guardarlo de forma idempotente en `legacy_imports` y descargarlo desde otro dispositivo. La incorporación de catálogo usa validaciones/autorización normales, no reemplaza cuentas ya aprovisionadas y muestra resultados parciales. Ventas, comprobantes, jornadas y módulos antiguos se conservan íntegros como evidencia sanitizada en el respaldo; no se transforman automáticamente en pagos ni liquidaciones verificadas. Los datos de un navegador al que no se tiene acceso siguen pendientes hasta que su responsable los envíe. Se limita el envío web a 3,5 MB por el límite de la plataforma; archivos mayores requieren importación del operador y permanecen sin borrar.
+
+La economía central conserva el bloqueo durante jornadas abiertas para no cambiar liquidaciones en curso. Las nuevas cuentas toman la comisión base configurada; los campos de porcentaje muestran 20 para 20 %, guardando 0,20. No perder formularios por refresco automático. Las cuentas desactivadas desaparecen de las listas operativas y del listado administrativo por defecto; se conservan bajo «Mostrar usuarios archivados». El cliente renueva configuración al recuperar foco y periódicamente, sin adoptar datos de otra sesión.
+
+La documentación se mueve a subcarpetas de `docs/` sin borrar informes. Guía e índice vigentes arriba; hitos anteriores en historial. Se continúa un único registro de continuidad en lugar de crear un archivo por cada hito nuevo. La publicación no equivale a certificar proveedores, módulos aún locales o pruebas en teléfonos físicos.
+
+### ADR-023: acceso simple y alta con contraseña persistida — 29 de octubre de 2026
+
+Sebas reporta usuarios/ediciones que desaparecen y un selector de perfiles en el acceso. La inspección confirma que el dominio principal todavía ejecuta `d291d5a` de main; PR 2 no se integró y la base productiva sigue vacía. No atribuir a PostgreSQL cambios realizados exclusivamente en el cliente antiguo. Verificar la revisión servida además de la fuente publicada.
+
+Se prioriza únicamente acceso y persistencia de cuentas. La pantalla ofrece identificador (correo o código/número) y contraseña, sin selector de perfil, alternancia admin/trabajador, teclado PIN ni accesos de configuración. El backend decide el rol; se preservan credenciales históricas válidas internamente sin exponer modos en la UI. El administrador puede asignar una contraseña al crear/editar un usuario; una edición con contraseña vacía conserva el hash anterior. Cada titular conserva Mi contraseña y recuperación presencial existentes. Esto amplía el flujo UI de ADR-022 por pedido explícito; no añade un proveedor de autenticación ni servicios pagos.
+
+PostgreSQL confirma altas/ediciones antes de mostrar éxito. Contraseñas con scrypt/salt individual, nunca texto plano, respuestas/caché/auditoría sin secretos, revocación transaccional al restablecer y errores sin falso guardado. Código único y correo opcional normalizado/único evitan identidades ambiguas. La migración 010 sólo agrega un índice; aborta ante correos duplicados sin borrar ni reasignar cuentas. Se ensaya en SQL aislado y copia Neon antes de aplicarla a ensayo. Producción y release se distinguen expresamente de preview; preservar datos y cambios ajenos.
+
+Prompt y evidencia: `HITO_3_5_LOGIN_Y_USUARIOS.md`.
+
+### ADR-022: contraseña personal y recuperación presencial — 18 de octubre de 2026
+
+Sebas autoriza implementar elección/cambio de contraseña y recuperación asistida por el administrador, con una clave más corta que la propuesta de 15 caracteres. Se adopta mínimo **12 caracteres**, máximo 128 para nuevas claves, sin mezclas de caracteres obligatorias y con bloqueo local de claves comunes, patrones repetidos y claves derivadas del identificador. Es un compromiso de usabilidad: no equivale a la recomendación NIST de 15 caracteres sin segundo factor. Las claves existentes no se invalidan automáticamente; los PIN de ocho dígitos anteriores permanecen como transición hasta que su titular elija contraseña.
+
+Cada cuenta conserva su rol independiente de la credencial. El administrador crea el perfil y, después de verificar presencialmente la identidad, genera una activación de un solo uso que vence en 15 minutos, autenticando nuevamente su propia contraseña. El usuario elige el secreto final; el administrador jamás puede consultar la clave anterior. Cambiar la propia contraseña exige la credencial actual. Restablecer/activar cambia hash, consume el código, revoca enlaces pendientes y sesiones atómicamente, sin borrar ventas pendientes del dispositivo. Emitir un código no cambia ni bloquea por sí solo la cuenta.
+
+La migración 009 es aditiva y sustituye una restricción por rol por otra que permite contraseñas personales en todos los roles. Conserva hashes/PIN y datos operativos; añade versión de credencial y activaciones hasheadas. Primero se prueba en SQL efímero/PostgreSQL CI y una rama Neon aislada; sólo se aplica a `sgmo-pruebas` después de respaldo/verificación. No se migra ni se promueve producción automáticamente. Recuperación del propio dueño: procedimiento de infraestructura privado, sin reabrir el bootstrap público. Se preservan Express, PostgreSQL, scrypt, cookies HttpOnly, CSRF y bloqueo de intentos.
+
+Estado, prompts y pasos de producción: `HITO_3_4_CONTRASENAS_Y_PRODUCCION.md`.
+
+### ADR-021: liquidaciones coherentes y acceso sin selector — 18 de octubre de 2026
+
+Sebas autorizó reparar las liquidaciones, retirar el selector de perfiles del ingreso, preparar el administrador **del dueño del negocio** y probar sesiones independientes y cortes de red. Las correcciones respetan valores cero y distinguen datos ausentes. Vivienda: exención → cero; excepción individual → su importe, incluido cero; costo diario central → su importe, incluido cero; valor predeterminado sólo si falta la configuración. La comisión cero y la tarifa de faltante cero se conservan también en UI/PDF. Los cierres históricos no se recalculan.
+
+La fórmula operativa vigente sigue siendo `max(0, comisión + incentivo − faltantes − vivienda)`; el faltante de efectivo se informa por separado. Alinear cálculos auxiliares con esa fórmula no autoriza a introducir descuentos nuevos. Otra política exige validación del dueño. El login unificado decide únicamente el contrato de credencial (PIN de ocho dígitos o contraseña) y el servidor confirma identidad/rol; nunca se autentica por apariencia del código ni se enumeran usuarios.
+
+Al recargar se invalida `centralHydrated`, aunque la caché conserve datos y pendientes: confirmar `/me` valida identidad, no la vigencia del catálogo/ventas. El arranque espera la nueva carga central sin eliminar la cola ni utilizar el perfil local para autenticar.
+
+El propietario elegirá su contraseña privadamente durante el aprovisionamiento inicial; no se crea una cuenta personal de Sebas ni se publica una contraseña del negocio. Las pruebas usarán cuentas/entornos efímeros. La preparación productiva mantiene base/credenciales separadas y verifica el código antes de su promoción. Estado y prompts: `HITO_3_3_LIQUIDACIONES_Y_ACCESO.md`.
+
+### ADR-020: imports ejecutables en Node ESM — 15 de octubre de 2026
+
+Se confirmó que el backend emitido con la configuración ESM del proyecto no iniciaba en Node nativo por imports relativos sin extensión y directorios sin `index.js`; tsx ocultaba esa incompatibilidad. Los especificadores del grafo ejecutable ahora señalan archivos `.js`, que TypeScript y el bundler resuelven a sus fuentes `.ts`. No cambia el framework ni la lógica del negocio. Una prueba compila el grafo, lo carga con Node sin cargador de desarrollo y solicita health por HTTP. La reparación local aprobó; su confirmación en el preview se registra en `HITO_3_2_ENSAYO.md`.
+
+Las decisiones históricas de PIN de 4 dígitos, bearer en navegador, fallback de sesiones o aprobación simulada no describen el código actual. Ver `HITOS_Y_PROMPTS_MVP.md`, `GUIA_SEBAS.md` y el informe de esta entrega. La fuente de verdad sigue siendo el código y su evidencia, no el estado “implementado” de una nota antigua.
+
+### ADR-014: navegador con cookies, CSRF y PostgreSQL TLS
+
+Estado: implementado; validación del deployment pendiente. Se conserva Express/React. Navegador usa cookie HttpOnly host-only, Secure en producción, SameSite Strict; CSRF y origen exacto protegen escrituras. Bearer queda como API explícita opt-in, nunca localStorage del navegador. Base remota exige certificado TLS verificado; se retiran parámetros URL que puedan sustituir esa política. Health sin secretos reporta commit, no certifica base ni banco.
+
+### ADR-015: operación central confirmada y cola durable
+
+Estado: implementado; prueba de campo pendiente. Las ventas se guardan en cola incluso online, con UUID, copia por clave de venta y ACK explícito; servidor valida propietario, precio, unidades y saldo en transacciones idempotentes. Un ID económico modificado produce409. Despacho/reposición/merma/sobrantes/cierre/pago de comisión esperan confirmación central. Sobrantes físicos no son cierre ni devolución confirmada. Catálogo e inventario se hidratan por rol, no se inventa stock inicial. Fábrica, gastos, radar y otros módulos locales no están certificados como persistencia compartida.
+
+### ADR-016: preservar fórmula económica activa
+
+Estado: conservada con decisión de negocio pendiente. La pantalla operativa anterior liquidaba `max(0, comisión+incentivo−faltantes−vivienda)`. El módulo alternativo de dominio descontaba además diferencia de efectivo. No se impuso esa deducción; cierre central calcula la regla operativa existente y registra snapshot de configuración/importes. El incentivo se recibe como decisión autorizada del coordinador, los totales se derivan del servidor. Cambiar esta política requiere acuerdo explícito del negocio y prueba de liquidación.
+
+### ADR-017: Express y frontend en Vercel
+
+Estado: configuración implementada; deployment no certificado. Se actualiza ADR-002/007: la documentación vigente de Vercel admite Express mediante `server.ts` con exportdefault. Los assets de React se generan en `public/**`; `express.static` no sirve esos assets en Vercel. El build copia sólo `index.html` y assets, jamás `server.cjs` o su mapa; API desconocida devuelve JSON404 antes de SPA. No se migra framework ni se necesita inventar un segundo backend por limitación histórica del hosting. Migraciones se incluyen como archivos del servidor, nunca se ejecutan automáticamente al arrancar/build. Fuente primaria consultada: https://vercel.com/docs/frameworks/backend/express y https://vercel.com/docs/project-configuration/vercel-json.
+
+### ADR-019: precios explícitos del catálogo central
+
+Estado: implementado. Se corrige la contradicción entre configuración administrativa y precios fijos de la terminal. En producción, unidad/combos/adicional usan su precio de variedad en catálogo y servidor compara centavos exactos. Las promociones fijas de ADR-011 se conservan únicamente en pruebas/demo sin base. No se actualizan importes históricos ni se eligen precios comerciales nuevos. La semilla SQL anterior tiene valores de referencia diferentes del prototipo: el administrador debe revisar catálogo, nombres y valores antes del primer despacho. Precios, disponibilidad y política económica se bloquean mientras hay jornadas abiertas. El alta de usuario no utiliza UPSERT: un ID existente409 debe editarse mediante la ruta que aplica los controles económicos.
+
+### ADR-018: OCR y banco como autoridades diferentes
+
+Estado: implementación en entrega actual; sandbox/deployment pendiente. OCR extrae campos sólo si la API respondió de forma utilizable; desconocido sigue desconocido. Banco sólo confirma un pago aprobado, con receptor/moneda/importe de la venta central autorizada. Firma de webhook no reemplaza la consulta de estado bancaria. Persistencia y unicidad de la operación impiden reutilizarla para otra venta. No se usan fallbacks positivos o enlaces Checkout ficticios.
+
+## Estado histórico (12 de octubre de 2026)
 
 ADR-013 sustituye los contratos antiguos de autenticación y sus contingencias. Los estados históricos no certifican producción. Consultar `AUTHENTICATION.md`, `HITO_1_2_1_INFORME.md` y `POSTGRES_AUTH_TESTS.md` antes de continuar.
 

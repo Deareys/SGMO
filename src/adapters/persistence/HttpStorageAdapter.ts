@@ -22,6 +22,7 @@ import {
   CartIncident
 } from '../../core/domain/types';
 import { storageService } from '../../services/storageService';
+import { authenticatedFetch } from '../../services/apiClient';
 
 export class HttpStorageAdapter implements IStorageRepository {
   private localFallback = storageService;
@@ -33,7 +34,7 @@ export class HttpStorageAdapter implements IStorageRepository {
 
   async checkServerDbStatus(): Promise<boolean> {
     try {
-      const res = await fetch('/api/db/status');
+      const res = await authenticatedFetch('/api/db/status');
       if (res.ok) {
         const data = await res.json();
         this.isServerDbConfigured = data.configured === true;
@@ -42,8 +43,7 @@ export class HttpStorageAdapter implements IStorageRepository {
     } catch {
       // Sin conexión o servidor apagado
     }
-    this.isServerDbConfigured = false;
-    return false;
+    return this.isServerDbConfigured === true;
   }
 
   getDbConfiguredSync(): boolean {
@@ -52,10 +52,6 @@ export class HttpStorageAdapter implements IStorageRepository {
 
   private getAuthHeaders(): Record<string, string> {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    const token = this.localFallback.getAuthToken();
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
     return headers;
   }
 
@@ -88,16 +84,16 @@ export class HttpStorageAdapter implements IStorageRepository {
     return this.localFallback.getState().carts.find((c) => c.id === cartId);
   }
 
-  updateCart(cartId: string, updates: Partial<SellingCart>): void {
-    this.localFallback.updateCart(cartId, updates);
+  updateCart(cartId: string, updates: Partial<SellingCart>): Promise<void> {
+    return this.localFallback.updateCart(cartId, updates);
   }
 
   getVarieties(): ProductVariety[] {
     return this.localFallback.getState().varieties;
   }
 
-  updateVariety(id: string, updates: Partial<ProductVariety>): void {
-    this.localFallback.updateVariety(id, updates);
+  updateVariety(id: string, updates: Partial<ProductVariety>): Promise<void> {
+    return this.localFallback.updateVariety(id, updates);
   }
 
   getActiveShiftForUser(userId: string): DailyShift | undefined {
@@ -114,12 +110,12 @@ export class HttpStorageAdapter implements IStorageRepository {
     cartId: string,
     sellerId: string,
     initialStock: { varietyId: string; quantity: number }[]
-  ): DailyShift {
+  ): Promise<DailyShift> {
     const shift = this.localFallback.dispatchSellerShift({
-      houseId: this.localFallback.getState().selectedHouseId || 'HOUSE-NORTE',
+      houseId: this.localFallback.getState().selectedHouseId,
       sellerId,
       cartId,
-      zoneId: 'ZONE-STA-TERESITA-CENTRO',
+      zoneId: this.localFallback.getState().zones[0]?.id || '',
       stockToDeliver: initialStock,
       gasPercentStart: 100,
       napkinsDelivered: 5,
@@ -127,19 +123,13 @@ export class HttpStorageAdapter implements IStorageRepository {
       saucesProvided: []
     });
 
-    if (this.isServerDbConfigured) {
-      fetch('/api/shifts', {
-        method: 'POST',
-        headers: this.getAuthHeaders(),
-        body: JSON.stringify(shift)
-      }).catch((err) => console.warn('Sync POST /api/shifts error:', err));
-    }
+
 
     return shift;
   }
 
-  closeShift(shiftId: string, closingData: any): void {
-    this.localFallback.closeAndReconcileShift({
+  async closeShift(shiftId: string, closingData: any): Promise<void> {
+    await this.localFallback.closeAndReconcileShift({
       shiftId,
       cashDeclared: closingData.cashDeclared || 0,
       gasPercentEnd: closingData.gasPercentEnd || 80,
@@ -150,27 +140,13 @@ export class HttpStorageAdapter implements IStorageRepository {
       coordinatorSignature: closingData.coordinatorSignature || 'Firma Coordinación'
     });
 
-    if (this.isServerDbConfigured) {
-      fetch(`/api/shifts/${shiftId}/close`, {
-        method: 'PUT',
-        headers: this.getAuthHeaders(),
-        body: JSON.stringify(closingData)
-      }).catch((err) => console.warn('Sync PUT /api/shifts/close error:', err));
-    }
+
   }
 
   recordSale(sale: any): SaleTransaction {
     const recorded = this.localFallback.registerSale(sale);
 
-    if (this.isServerDbConfigured) {
-      fetch('/api/sales', {
-        method: 'POST',
-        headers: this.getAuthHeaders(),
-        body: JSON.stringify(recorded)
-      }).catch((err) => {
-        console.warn('Sync POST /api/sales error, encolada en local:', err);
-      });
-    }
+
 
     return recorded;
   }
@@ -189,7 +165,7 @@ export class HttpStorageAdapter implements IStorageRepository {
     units: number;
     reason: string;
     notes?: string;
-  }): ShiftWasteRecord | undefined {
+  }): Promise<ShiftWasteRecord | undefined> {
     const record = this.localFallback.recordShiftWaste(
       params.shiftId,
       params.varietyId,
@@ -198,13 +174,7 @@ export class HttpStorageAdapter implements IStorageRepository {
       params.notes
     );
 
-    if (record && this.isServerDbConfigured) {
-      fetch(`/api/shifts/${params.shiftId}/waste`, {
-        method: 'POST',
-        headers: this.getAuthHeaders(),
-        body: JSON.stringify(record)
-      }).catch((err) => console.warn('Sync POST /api/shifts/waste error:', err));
-    }
+
 
     return record;
   }
@@ -222,22 +192,14 @@ export class HttpStorageAdapter implements IStorageRepository {
     return allWastes;
   }
 
-  recordRestock(data: {
+  async recordRestock(data: {
     shiftId: string;
     items: { varietyId: string; quantity: number }[];
     notes?: string;
-  }): ShiftRestockRecord[] {
-    const result = this.localFallback.addShiftRestock(data);
+  }): Promise<ShiftRestockRecord[]> {
+    const result = await this.localFallback.addShiftRestock(data);
 
-    if (this.isServerDbConfigured && result.restockRecords.length > 0) {
-      for (const rec of result.restockRecords) {
-        fetch(`/api/shifts/${data.shiftId}/restock`, {
-          method: 'POST',
-          headers: this.getAuthHeaders(),
-          body: JSON.stringify(rec)
-        }).catch((err) => console.warn('Sync POST /api/shifts/restock error:', err));
-      }
-    }
+
 
     return result.restockRecords;
   }
@@ -246,8 +208,10 @@ export class HttpStorageAdapter implements IStorageRepository {
     return this.localFallback.getCommissionTiers();
   }
 
-  updateCommissionTiers(tiers: CommissionTier[]): void {
-    this.localFallback.saveCommissionTiers(tiers);
+  getSystemConfig() { return this.localFallback.getState().systemConfig; }
+
+  updateCommissionTiers(tiers: CommissionTier[]): Promise<void> {
+    return this.localFallback.saveCommissionTiers(tiers);
   }
 
   getOperatingCosts(): OperationalExpense[] {

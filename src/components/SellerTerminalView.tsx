@@ -156,6 +156,12 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
   const [wasteUnits, setWasteUnits] = useState(1);
   const [wasteReason, setWasteReason] = useState('Caído en la arena');
   const [wasteSuccessMessage, setWasteSuccessMessage] = useState<string | null>(null);
+  const [pendingOperation, setPendingOperation] = useState<'dispatch' | 'waste' | 'closing' | 'leftovers' | 'sync' | 'verify' | 'checkout' | null>(null);
+  const operationInFlight = React.useRef(false);
+  const [operationError, setOperationError] = useState<string | null>(null);
+  const [saleSavedMessage, setSaleSavedMessage] = useState<string | null>(null);
+  const [lastSavedSaleId, setLastSavedSaleId] = useState<string | null>(null);
+  const [paymentSaleId, setPaymentSaleId] = useState<string | null>(null);
 
   // Estados para Cierre de Jornada y Sobrantes
   const [closingReturnedCounts, setClosingReturnedCounts] = useState<Record<string, number>>({});
@@ -181,12 +187,15 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
 
   const fallbackGalleryInputRef = useRef<HTMLInputElement>(null);
 
-  // Precios estándar de referencia
+  // La configuración central por variedad determina precios. Nunca sustituir un dato
+  // ausente por una tarifa fija: el servidor rechazaría o se registraría una venta equivocada.
+  const selectedVariety = varieties.find((variety) => variety.id === selectedVarietyId);
+  const confirmedPrice = (price: number | undefined) => typeof price === 'number' && Number.isFinite(price) && price > 0 ? price : 0;
   const itemPrices: Record<string, { price: number; units: number; label: string }> = {
-    unidad: { price: 1500, units: 1, label: '1 Tequeño Individual' },
-    combo3: { price: 4000, units: 3, label: 'Combo x3 Tequeños' },
-    combo6: { price: 7500, units: 6, label: 'Combo x6 Tequeños' },
-    combo12: { price: 14000, units: 12, label: 'Super Promo x12' }
+    unidad: { price: confirmedPrice(selectedVariety?.basePriceIndividual), units: 1, label: '1 Tequeño Individual' },
+    combo3: { price: confirmedPrice(selectedVariety?.comboPrices?.combo3), units: 3, label: 'Combo x3 Tequeños' },
+    combo6: { price: confirmedPrice(selectedVariety?.comboPrices?.combo6), units: 6, label: 'Combo x6 Tequeños' },
+    combo12: { price: confirmedPrice(selectedVariety?.comboPrices?.combo12), units: 12, label: 'Super Promo x12' }
   };
 
   const currentSaleConfig = itemPrices[selectedItemType];
@@ -205,6 +214,7 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
 
   // Procesar imagen de comprobante con Gemini OCR y auto-verificación en Mercado Pago
   const processVoucherBase64 = async (base64: string) => {
+    if (paymentSaleId) { setOperationError('Esta venta ya está guardada. Revisá su comprobante desde Mis Comprobantes.'); return; }
     setVoucherImage(base64);
     setVoucherAnalysis(null);
     setMpVerification(null);
@@ -226,43 +236,46 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
     setVoucherAnalysis(result);
     setIsAnalyzingVoucher(false);
 
-    // Si la IA detectó un número de operación, poblar el campo manual y disparar verificación segura con MP
-    if (result.extractedData.operationId) {
-      const extractedOp = result.extractedData.operationId;
-      setManualOperationId(extractedOp);
-      
-      setIsVerifyingMp(true);
-      const mpResult = await verifyMercadoPagoPayment({
-        operationId: extractedOp,
-        expectedAmount: calculatedTotalAmount,
-        existingOperationIds: existingOpIds
-      });
-      setMpVerification(mpResult);
-      setIsVerifyingMp(false);
-    }
+    // OCR sólo identifica la operación. La acreditación necesita primero una venta central.
+    if (result.extractedData.operationId) setManualOperationId(result.extractedData.operationId);
   };
 
-  // Verificar manualmente el número de operación ingresado o corregido
+  /** La API bancaria usa importe/actor de una venta persistida; nunca un formulario todavía local. */
+  const ensurePaymentSaleReady = async () => {
+    if (!paymentSaleId) throw new Error('Primero registrá la venta. Después podés verificar el pago o generar su enlace.');
+    const sync = await storageService.flushOfflineQueue();
+    const sale = storageService.getState().sales.find((transaction) => transaction.id === paymentSaleId);
+    if (!sync.success || !sale || sale.syncStatus !== 'synced') {
+      throw new Error('La venta todavía no está confirmada en el servidor. Se conserva pendiente; reintentá con conexión.');
+    }
+    return sale;
+  };
+
   const handleVerifyOperationId = async (opIdOverride?: string) => {
     const targetId = (opIdOverride || manualOperationId || '').trim();
-    if (!targetId) {
-      alert('Por favor ingresá un número de operación para verificar con Mercado Pago.');
-      return;
-    }
-
+    if (!targetId || operationInFlight.current) return;
+    operationInFlight.current = true;
+    setPendingOperation('verify');
     setIsVerifyingMp(true);
-    const existingOpIds = sales
-      .map((s) => s.voucherExtractedData?.operationId || s.mpApiVerification?.mpTransactionId)
-      .filter(Boolean) as string[];
-
-    const mpResult = await verifyMercadoPagoPayment({
-      operationId: targetId,
-      expectedAmount: calculatedTotalAmount,
-      existingOperationIds: existingOpIds
-    });
-
-    setMpVerification(mpResult);
-    setIsVerifyingMp(false);
+    setOperationError(null);
+    setMpVerification(null);
+    try {
+      const sale = await ensurePaymentSaleReady();
+      const mpResult = await verifyMercadoPagoPayment({
+        saleId: sale.id, operationId: targetId, expectedAmount: sale.totalAmount,
+        existingOperationIds: sales.filter((transaction) => transaction.id !== sale.id)
+          .map((transaction) => transaction.voucherExtractedData?.operationId || transaction.mpApiVerification?.mpTransactionId)
+          .filter(Boolean) as string[]
+      });
+      setMpVerification(mpResult);
+      await storageService.refreshCentralState();
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : 'No se pudo verificar. El pago sigue pendiente.');
+    } finally {
+      operationInFlight.current = false;
+      setPendingOperation(null);
+      setIsVerifyingMp(false);
+    }
   };
 
   const handleCameraCapture = (base64: string) => {
@@ -283,31 +296,50 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
 
   // Generar link de pago directo oficial de Mercado Pago para el cliente
   const handleGenerateDirectPaymentLink = async () => {
+    if (operationInFlight.current) return;
+    operationInFlight.current = true;
+    setPendingOperation('checkout');
     setIsGeneratingPref(true);
+    setOperationError(null);
+    setGeneratedPrefLink(null);
     try {
-      const varietyName = varieties.find((v) => v.id === selectedVarietyId)?.name || 'Tequeño';
-      const res = await createMercadoPagoPreference({
-        title: `${currentSaleConfig.label} (${varietyName})`,
-        quantity: 1,
-        amount: calculatedTotalAmount
-      });
-      if (res.success) {
-        const link = res.initPoint || res.sandboxInitPoint || null;
-        setGeneratedPrefLink(link);
-      } else {
-        alert(res.message || 'No se pudo generar el link de pago.');
+      const sale = await ensurePaymentSaleReady();
+      const result = await createMercadoPagoPreference({ saleId: sale.id });
+      if (!result.success || !result.initPoint || !/^https:\/\/([a-z0-9-]+\.)*mercadopago\.(com|com\.ar)\//i.test(result.initPoint)) {
+        throw new Error(result.message || 'El servidor no confirmó un enlace oficial de pago.');
       }
-    } catch (err: any) {
-      alert('Error al generar link: ' + (err.message || 'Error de red'));
+      setGeneratedPrefLink(result.initPoint);
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : 'No se pudo generar el enlace oficial.');
     } finally {
+      operationInFlight.current = false;
+      setPendingOperation(null);
       setIsGeneratingPref(false);
     }
   };
 
+  const handlePrepareNextSale = () => {
+    if (operationInFlight.current) return;
+    setPaymentSaleId(null);
+    setVoucherImage(null);
+    setVoucherAnalysis(null);
+    setManualOperationId('');
+    setMpVerification(null);
+    setGeneratedPrefLink(null);
+    setQuantityMultiplier(1);
+    setOperationError(null);
+  };
+
   // 1. Confirmar y Registrar Venta
   const handleConfirmSale = () => {
-    if (!activeShift) {
+    if (operationInFlight.current || paymentSaleId) return;
+    if (!activeShift || activeShift.status !== 'en_curso') {
       alert('No tenés una jornada activa despachada hoy.');
+      return;
+    }
+
+    if (!selectedVariety?.isActive || !selectedVariety.isAvailable || currentSaleConfig.price <= 0) {
+      setOperationError('La variedad o su precio no están disponibles. Pedí a administración que confirme la configuración.');
       return;
     }
 
@@ -332,57 +364,57 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
       finalValidationStatus = 'pendiente_revision';
     }
 
-    storageService.registerSale({
-      shiftId: activeShift.id,
-      itemType: selectedItemType,
-      varietyId: selectedVarietyId,
-      quantityUnitsEquivalent: calculatedTotalUnits,
-      totalAmount: calculatedTotalAmount,
-      paymentMethod,
-      locationName: saleLocation,
-      beachSector: saleSectorDetail.trim() || undefined,
-      voucherPhotoUrl: voucherImage || undefined,
-      voucherExtractedData: finalOpId || voucherAnalysis ? {
-        ...(voucherAnalysis ? voucherAnalysis.extractedData : {}),
-        operationId: finalOpId,
-        amount: calculatedTotalAmount,
-        senderName: mpVerification?.payerName || voucherAnalysis?.extractedData.senderName,
-        confidenceScore: voucherAnalysis ? voucherAnalysis.extractedData.confidenceScore : 0.95,
-        aiNotes: voucherAnalysis?.extractedData.aiNotes || (finalOpId ? `Comprobante ingresado manualmente: ${finalOpId}` : undefined)
-      } : undefined,
-      validationStatus: finalValidationStatus,
-      mpApiVerification: mpVerification ? {
-        matchedInApi: mpVerification.verified,
-        mpTransactionId: mpVerification.operationId,
-        apiStatus: mpVerification.status,
-        verifiedAt: new Date().toISOString(),
-        payerName: mpVerification.payerName,
-        payerEmail: mpVerification.payerEmail,
-        amount: mpVerification.amount,
-        amountMatches: mpVerification.amountMatches,
-        isDuplicate: mpVerification.isDuplicate,
-        isLiveApi: mpVerification.isLiveApi,
-        message: mpVerification.message
-      } : undefined
-    });
-
+    setOperationError(null);
+    setSaleSavedMessage(null);
     try {
-      confetti({
-        particleCount: 40,
-        spread: 60,
-        origin: { y: 0.8 },
-        colors: ['#f59e0b', '#10b981', '#38bdf8']
+      const savedSale = storageService.registerSale({
+        shiftId: activeShift.id,
+        itemType: selectedItemType,
+        varietyId: selectedVarietyId,
+        quantityUnitsEquivalent: calculatedTotalUnits,
+        totalAmount: calculatedTotalAmount,
+        paymentMethod,
+        locationName: saleLocation,
+        beachSector: saleSectorDetail.trim() || undefined,
+        voucherPhotoUrl: voucherImage || undefined,
+        voucherExtractedData: finalOpId || voucherAnalysis ? {
+          ...(voucherAnalysis ? voucherAnalysis.extractedData : {}),
+          operationId: finalOpId,
+          amount: calculatedTotalAmount,
+          senderName: mpVerification?.payerName || voucherAnalysis?.extractedData.senderName,
+          confidenceScore: voucherAnalysis ? voucherAnalysis.extractedData.confidenceScore : 0,
+          aiNotes: voucherAnalysis?.extractedData.aiNotes || (finalOpId ? `Comprobante ingresado manualmente: ${finalOpId}` : undefined)
+        } : undefined,
+        validationStatus: finalValidationStatus,
+        mpApiVerification: mpVerification ? {
+          matchedInApi: mpVerification.verified,
+          mpTransactionId: mpVerification.operationId,
+          apiStatus: mpVerification.status,
+          verifiedAt: new Date().toISOString(),
+          payerName: mpVerification.payerName,
+          payerEmail: mpVerification.payerEmail,
+          amount: mpVerification.amount,
+          amountMatches: mpVerification.amountMatches,
+          isDuplicate: mpVerification.isDuplicate,
+          isLiveApi: mpVerification.isLiveApi,
+          message: mpVerification.message
+        } : undefined
       });
-    } catch (e) {
-      // Ignorar si no está soportado en iframe
-    }
 
-    // Resetear formulario para la próxima venta
-    setVoucherImage(null);
-    setVoucherAnalysis(null);
-    setManualOperationId('');
-    setMpVerification(null);
-    setQuantityMultiplier(1);
+      setLastSavedSaleId(savedSale.id);
+      setSaleSavedMessage(savedSale.syncStatus === 'synced'
+        ? 'Venta guardada en el servidor. La acreditación del pago se verifica por separado.'
+        : 'Venta guardada en este dispositivo, pendiente de sincronizar. La acreditación del pago se verifica por separado.');
+
+      if (savedSale.paymentMethod !== 'efectivo') {
+        // Conservar comprobante/operación para verificar este UUID sin registrar una segunda venta.
+        setPaymentSaleId(savedSale.id);
+      } else {
+        handlePrepareNextSale();
+      }
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : 'No se pudo guardar la venta. Conservamos los datos y el comprobante.');
+    }
   };
 
   // Manejar envío de Reporte de Estado de Playa
@@ -406,7 +438,7 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
       temperatureOrWeather: beachReportWeather.trim() || undefined
     });
 
-    setBeachReportSuccessMsg(`¡Reporte de ${beachReportLocality} emitido! Coordinación y compañeros alertados.`);
+    setBeachReportSuccessMsg(`Reporte de ${beachReportLocality} guardado en este dispositivo. Avisá a coordinación por el canal habitual.`);
     setTimeout(() => {
       setBeachReportSuccessMsg(null);
       setShowBeachReportModal(false);
@@ -416,24 +448,35 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
   };
 
   // 2. Registrar Merma (rotura o caída)
-  const handleConfirmWaste = (e: React.FormEvent) => {
+  const handleConfirmWaste = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeShift) return;
-
-    storageService.recordShiftWaste(activeShift.id, wasteVarietyId, wasteUnits, wasteReason);
-
-    const varietyName = varieties.find((v) => v.id === wasteVarietyId)?.name || 'Tequeño';
-    setWasteSuccessMessage(`Merma de ${wasteUnits} u de ${varietyName} registrada correctamente.`);
-    setTimeout(() => {
-      setWasteSuccessMessage(null);
-      setShowWasteModal(false);
-      setWasteUnits(1);
-    }, 1800);
+    if (!activeShift || operationInFlight.current) return;
+    operationInFlight.current = true;
+    setPendingOperation('waste');
+    setOperationError(null);
+    setWasteSuccessMessage(null);
+    try {
+      const recordedWaste = await storageService.recordShiftWaste(activeShift.id, wasteVarietyId, wasteUnits, wasteReason);
+      if (!recordedWaste) throw new Error('El servidor no confirmó la merma.');
+      const varietyName = varieties.find((variety) => variety.id === wasteVarietyId)?.name || 'Tequeño';
+      setWasteSuccessMessage(`Merma de ${wasteUnits} u de ${varietyName} confirmada en el servidor.`);
+      setTimeout(() => {
+        setWasteSuccessMessage(null);
+        setShowWasteModal(false);
+        setWasteUnits(1);
+      }, 1800);
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : 'No se pudo confirmar la merma. Conservamos el formulario.');
+    } finally {
+      operationInFlight.current = false;
+      setPendingOperation(null);
+    }
   };
 
   // 3. Abrir modal de cierre e inicializar conteo de sobrantes
   const handleOpenClosingModal = () => {
-    if (!activeShift) return;
+    if (!activeShift || operationInFlight.current) return;
+    setOperationError(null);
     const initialReturned: Record<string, number> = {};
     const initialWaste: Record<string, number> = {};
 
@@ -455,16 +498,26 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
   };
 
   // Guardar solo sobrantes
-  const handleSaveLeftoversOnly = () => {
-    if (!activeShift) return;
-    storageService.recordShiftLeftovers(activeShift.id, closingReturnedCounts);
-    alert('Sobrantes contados guardados correctamente en la base de datos.');
+  const handleSaveLeftoversOnly = async () => {
+    if (!activeShift || operationInFlight.current) return;
+    operationInFlight.current = true;
+    setPendingOperation('leftovers');
+    setOperationError(null);
+    try {
+      await storageService.recordShiftLeftovers(activeShift.id, closingReturnedCounts);
+      alert('Conteo de sobrantes confirmado en el servidor. La jornada sigue abierta; coordinación debe confirmar el cierre.');
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : 'No se pudo confirmar el conteo. Conservamos los datos.');
+    } finally {
+      operationInFlight.current = false;
+      setPendingOperation(null);
+    }
   };
 
   // 4. Realizar Cierre y Conciliación de Jornada
-  const handleConfirmCloseShift = (e: React.FormEvent) => {
+  const handleConfirmCloseShift = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeShift) return;
+    if (!activeShift || currentUser.role === 'seller') return;
 
     const returnedItems = activeShift.stockItems.map((item) => ({
       varietyId: item.varietyId,
@@ -472,33 +525,45 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
       wasteCount: Number(closingWasteCounts[item.varietyId] || 0)
     }));
 
-    const closed = storageService.closeAndReconcileShift({
-      shiftId: activeShift.id,
-      returnedItems,
-      cashDeclared: Number(closingCashDeclared),
-      gasPercentEnd: Number(closingGasPercent),
-      bonusIncentive: 0,
-      deductionMissingRatePerUnit: 1500,
-      coordinatorSignature: currentUser.name || 'Coordinador Operativo',
-      notes: closingNotes || `Cierre registrado en terminal por ${currentUser.name} (${currentUser.role})`
-    });
+    if (operationInFlight.current) return;
+    operationInFlight.current = true;
+    setPendingOperation('closing');
+    setOperationError(null);
+    try {
+      const closed = await storageService.closeAndReconcileShift({
+        shiftId: activeShift.id,
+        returnedItems,
+        cashDeclared: Number(closingCashDeclared),
+        gasPercentEnd: Number(closingGasPercent),
+        bonusIncentive: 0,
+        deductionMissingRatePerUnit: 1500,
+        coordinatorSignature: currentUser.name || 'Coordinador Operativo',
+        notes: closingNotes || `Cierre registrado en terminal por ${currentUser.name} (${currentUser.role})`
+      });
 
-    if (closed) {
-      try {
-        confetti({
-          particleCount: 70,
-          spread: 80,
-          origin: { y: 0.7 },
-          colors: ['#10b981', '#f59e0b', '#3b82f6']
-        });
-      } catch (e) {}
+      if (!closed) throw new Error('El servidor no confirmó el cierre.');
+      if (closed) {
+        try {
+          confetti({
+            particleCount: 70,
+            spread: 80,
+            origin: { y: 0.7 },
+            colors: ['#10b981', '#f59e0b', '#3b82f6']
+          });
+        } catch (e) {}
 
-      setClosingSuccessSummary(closed);
+        setClosingSuccessSummary(closed);
+      }
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : 'No se pudo confirmar el cierre. Conservamos el conteo y las notas.');
+    } finally {
+      operationInFlight.current = false;
+      setPendingOperation(null);
     }
   };
 
   // 5. Iniciar autodespacho si el coordinador o administrador quiere salir a vender
-  const handleSelfDispatch = (e: React.FormEvent) => {
+  const handleSelfDispatch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (currentUser.role === 'seller') {
       alert('Los vendedores no pueden autoasignarse carrito ni productos. Esta acción solo la puede realizar un coordinador o administrador.');
@@ -515,20 +580,31 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
       { varietyId: 'VAR-DULCE', quantity: Number(selfDispatchDulce) }
     ].filter((s) => s.quantity > 0);
 
-    storageService.dispatchSellerShift({
-      houseId: house?.id || 'HOUSE-NORTE',
-      sellerId: currentUser.id,
-      cartId: selfDispatchCartId,
-      zoneId: selfDispatchZoneId,
-      stockToDeliver,
-      gasPercentStart: cart?.gasLevelPercent || 95,
-      napkinsDelivered: 5,
-      conesDelivered: 60,
-      saucesProvided: ['Mayonesa Ajo Vegana', 'Chutney Mango'],
-      notes: `Jornada iniciada por ${currentUser.name} (${currentUser.role}) en ${zone?.name || 'Playa'}`
-    });
+    if (operationInFlight.current) return;
+    operationInFlight.current = true;
+    setPendingOperation('dispatch');
+    setOperationError(null);
+    try {
+      await storageService.dispatchSellerShift({
+        houseId: house?.id || 'HOUSE-NORTE',
+        sellerId: currentUser.id,
+        cartId: selfDispatchCartId,
+        zoneId: selfDispatchZoneId,
+        stockToDeliver,
+        gasPercentStart: cart?.gasLevelPercent || 95,
+        napkinsDelivered: 5,
+        conesDelivered: 60,
+        saucesProvided: ['Mayonesa Ajo Vegana', 'Chutney Mango'],
+        notes: `Jornada iniciada por ${currentUser.name} (${currentUser.role}) en ${zone?.name || 'Playa'}`
+      });
 
-    setShowSelfDispatchModal(false);
+      setShowSelfDispatchModal(false);
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : 'No se pudo confirmar la jornada. Conservamos las cantidades.');
+    } finally {
+      operationInFlight.current = false;
+      setPendingOperation(null);
+    }
   };
 
   // Enviar reporte de emergencia / insumos
@@ -542,7 +618,7 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
       description: incidentDescription
     });
 
-    alert('¡Aviso enviado a la base de coordinación! Recibirás asistencia a la brevedad.');
+    alert('Incidencia guardada en este dispositivo. Avisá a coordinación por el canal habitual.');
     setShowIncidentModal(false);
     setIncidentDescription('');
   };
@@ -553,13 +629,13 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
     return calculateCommissionForSales(
       activeShift.totalGrossSales,
       state.systemConfig?.commissionTiers || [],
-      activeShift.commissionRate || currentUser.commissionRate || 0.20
+      activeShift.commissionRate ?? currentUser.commissionRate ?? 0.20
     );
   }, [activeShift, state.systemConfig?.commissionTiers, currentUser.commissionRate]);
 
   const myCommissionRate = dynamicCommissionCalc
     ? dynamicCommissionCalc.rate
-    : (activeShift?.commissionRate || currentUser.commissionRate || 0.10);
+    : (activeShift?.commissionRate ?? currentUser.commissionRate ?? 0.10);
 
   const myEarnedCommission = dynamicCommissionCalc
     ? dynamicCommissionCalc.grossCommission
@@ -737,6 +813,8 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
               </div>
 
               <form onSubmit={handleSelfDispatch} className="space-y-4">
+              <fieldset disabled={pendingOperation !== null} className="contents">
+                {operationError && <p role="alert" className="text-rose-900 bg-rose-50 border-2 border-rose-500 p-3 rounded-xl">{operationError}</p>}
                 <div>
                   <label className="block text-xs font-black text-slate-800 mb-1">Carrito Disponible</label>
                   <select
@@ -816,6 +894,7 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
                 <div className="flex justify-end space-x-2 pt-3 border-t border-slate-200">
                   <button
                     type="button"
+                    disabled={pendingOperation !== null}
                     onClick={() => setShowSelfDispatchModal(false)}
                     className="px-4 py-2 bg-slate-100 text-xs font-bold text-slate-700 rounded-xl hover:bg-slate-200 cursor-pointer"
                   >
@@ -823,12 +902,14 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
                   </button>
                   <button
                     type="submit"
+                    disabled={pendingOperation !== null}
                     className="px-5 py-2.5 bg-amber-400 hover:bg-amber-300 border-2 border-amber-500 text-slate-950 text-xs font-black rounded-xl shadow-sm cursor-pointer"
                   >
-                    Iniciar Mi Jornada de Venta
+                    {pendingOperation === 'dispatch' ? 'Confirmando jornada…' : 'Iniciar Mi Jornada de Venta'}
                   </button>
                 </div>
-              </form>
+                </fieldset>
+</form>
             </div>
           </div>
         )}
@@ -845,7 +926,31 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
       {/* 1. Header Compacto de Rendimiento y Selector de Pantallas de la Terminal */}
       <div className="bg-white border-2 border-slate-200 rounded-2xl p-3 sm:p-4 shadow-sm space-y-3 text-slate-900">
         
-        {/* Fila Superior: Vendedor, Carrito y Saldo de Comisión */}
+        {operationError && <p role="alert" className="text-rose-900 bg-rose-50 border-2 border-rose-500 p-3 rounded-xl">{operationError}</p>}
+      {saleSavedMessage && <p role="status" className="text-slate-950 bg-amber-50 border-2 border-amber-500 p-3 rounded-xl text-sm">{sales.find((sale) => sale.id === lastSavedSaleId)?.syncStatus === 'synced' ? 'Venta guardada en el servidor. La acreditación del pago se verifica por separado.' : saleSavedMessage}</p>}
+      {sales.some((sale) => sale.sellerId === currentUser.id && sale.syncStatus === 'pending') && (
+        <div className="text-slate-950 bg-amber-50 border-2 border-amber-500 p-3 rounded-xl text-sm">
+          <p>Hay ventas guardadas en este dispositivo pendientes de confirmación central. No borres los datos del navegador.</p>
+          {state.saleSyncError && <p role="alert">{state.saleSyncError}</p>}
+          <button type="button" disabled={pendingOperation !== null} className="mt-2 min-h-12 px-4 border-2 border-slate-900 rounded-xl font-bold" onClick={async () => {
+            if (operationInFlight.current) return;
+            operationInFlight.current = true;
+            setPendingOperation('sync');
+            setOperationError(null);
+            try {
+              const result = await storageService.flushOfflineQueue();
+              if (!result.success) throw new Error(result.error || 'No se confirmó la sincronización.');
+              setSaleSavedMessage(result.pending ? 'Todavía quedan ventas pendientes.' : 'Ventas confirmadas en el servidor.');
+            } catch (error) {
+              setOperationError(error instanceof Error ? error.message : 'No se pudo sincronizar. Las ventas siguen guardadas.');
+            } finally {
+              operationInFlight.current = false;
+              setPendingOperation(null);
+            }
+          }}>{pendingOperation === 'sync' ? 'Sincronizando…' : 'Reintentar sincronización'}</button>
+        </div>
+      )}
+      {/* Fila Superior: Vendedor, Carrito y Saldo de Comisión */}
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <div className="flex items-center space-x-2 sm:space-x-3">
             <div className="w-10 h-10 rounded-xl bg-amber-400 border border-amber-500 text-slate-950 flex items-center justify-center font-black text-xl shadow-sm shrink-0">
@@ -973,6 +1078,7 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
                 <span className="text-[11px] text-slate-700 font-bold">Cant:</span>
                 <button
                   type="button"
+                  disabled={paymentSaleId !== null || pendingOperation !== null}
                   onClick={() => setQuantityMultiplier((prev) => Math.max(1, prev - 1))}
                   className="w-7 h-7 rounded-lg bg-white hover:bg-slate-200 text-slate-900 border border-slate-300 flex items-center justify-center font-black text-sm active:scale-95 transition-transform"
                 >
@@ -983,6 +1089,7 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
                 </span>
                 <button
                   type="button"
+                  disabled={paymentSaleId !== null || pendingOperation !== null}
                   onClick={() => setQuantityMultiplier((prev) => prev + 1)}
                   className="w-7 h-7 rounded-lg bg-white hover:bg-slate-200 text-slate-900 border border-slate-300 flex items-center justify-center font-black text-sm active:scale-95 transition-transform"
                 >
@@ -1000,6 +1107,7 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
                   <button
                     key={key}
                     type="button"
+                    disabled={paymentSaleId !== null || pendingOperation !== null}
                     onClick={() => setSelectedItemType(key)}
                     className={`p-3 rounded-xl text-left border-2 transition-all flex flex-col justify-between cursor-pointer min-h-[72px] ${
                       isSelected
@@ -1050,6 +1158,7 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
                   <button
                     key={v.id}
                     type="button"
+                    disabled={paymentSaleId !== null || pendingOperation !== null}
                     onClick={() => setSelectedVarietyId(v.id)}
                     className={`p-2.5 rounded-xl text-center border-2 text-xs font-black transition-all cursor-pointer flex flex-col items-center justify-center min-h-[58px] ${
                       isSelected
@@ -1088,6 +1197,7 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
                   <button
                     key={loc}
                     type="button"
+                    disabled={paymentSaleId !== null || pendingOperation !== null}
                     onClick={() => setSaleLocation(loc)}
                     className={`p-2 rounded-xl border-2 text-left text-xs font-black transition-all cursor-pointer flex items-center justify-between min-h-[42px] ${
                       isSelected
@@ -1121,6 +1231,7 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
                   type="text"
                   placeholder="Ej: Bajada Calle 38, Muelle, Carpa 4..."
                   value={saleSectorDetail}
+                  disabled={paymentSaleId !== null || pendingOperation !== null}
                   onChange={(e) => setSaleSectorDetail(e.target.value)}
                   className="flex-1 bg-slate-50 border-2 border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-950 font-bold placeholder-slate-400 focus:outline-none focus:border-amber-500"
                 />
@@ -1147,6 +1258,7 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
+                disabled={paymentSaleId !== null || pendingOperation !== null}
                 onClick={() => setPaymentMethod('efectivo')}
                 className={`p-3 rounded-xl border-2 flex flex-col items-center justify-center space-y-1 font-black text-xs sm:text-sm transition-all cursor-pointer min-h-[64px] ${
                   paymentMethod === 'efectivo'
@@ -1160,6 +1272,7 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
 
               <button
                 type="button"
+                disabled={paymentSaleId !== null || pendingOperation !== null}
                 onClick={() => setPaymentMethod('mercado_pago')}
                 className={`p-3 rounded-xl border-2 flex flex-col items-center justify-center space-y-1 font-black text-xs sm:text-sm transition-all cursor-pointer min-h-[64px] ${
                   paymentMethod === 'mercado_pago'
@@ -1173,6 +1286,7 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
 
               <button
                 type="button"
+                disabled={paymentSaleId !== null || pendingOperation !== null}
                 onClick={() => setPaymentMethod('transferencia')}
                 className={`p-3 rounded-xl border-2 flex flex-col items-center justify-center space-y-1 font-black text-xs sm:text-sm transition-all cursor-pointer min-h-[64px] ${
                   paymentMethod === 'transferencia'
@@ -1197,12 +1311,13 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
                     </span>
                     <div className="flex items-center space-x-2 mt-0.5">
                       <span className="text-sm sm:text-base font-black text-slate-950 font-mono">
-                        {state.systemConfig?.mercadoPagoConfig?.alias || 'tequenos.costa.mp'}
+                        {state.systemConfig?.mercadoPagoConfig?.alias || 'Cuenta pendiente de configurar'}
                       </span>
                       <button
                         type="button"
                         onClick={() => {
-                          navigator.clipboard.writeText(state.systemConfig?.mercadoPagoConfig?.alias || 'tequenos.costa.mp');
+                          if (!state.systemConfig?.mercadoPagoConfig?.alias) return;
+                          navigator.clipboard.writeText(state.systemConfig.mercadoPagoConfig.alias);
                           setCopiedAlias(true);
                           setTimeout(() => setCopiedAlias(false), 2000);
                         }}
@@ -1214,7 +1329,7 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
                       </button>
                     </div>
                     <span className="text-[11px] text-slate-600 font-semibold block">
-                      Titular: {state.systemConfig?.mercadoPagoConfig?.accountHolder || 'Tequeños Costa SRL'}
+                      Titular: {state.systemConfig?.mercadoPagoConfig?.accountHolder || 'Titular pendiente de configurar'}
                     </span>
                   </div>
 
@@ -1222,9 +1337,10 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
                     {/* Botón Laboratorio de Pruebas (SE MANTIENE PARA QUE PUEDAS HACER PRUEBAS) */}
                     <button
                       type="button"
+                      disabled={!state.demoMode}
                       onClick={() => setShowTestLabModal(true)}
                       className="px-3 py-2 bg-gradient-to-r from-amber-400 to-yellow-400 hover:from-amber-300 hover:to-yellow-300 text-slate-950 rounded-xl text-xs font-black flex items-center justify-center space-x-1.5 border border-amber-500 shadow-sm cursor-pointer"
-                      title="Generar comprobante de prueba o link de pago sandbox"
+                      title={state.demoMode ? "Simulaciones sin validez bancaria" : "Solo disponible en un entorno demo aislado"}
                     >
                       <Sparkles className="w-3.5 h-3.5" />
                       <span>Lab de Pruebas</span>
@@ -1236,7 +1352,7 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
                       className="px-3 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-black flex items-center justify-center space-x-1.5 border border-sky-700 shadow-sm cursor-pointer"
                     >
                       <QrCode className="w-3.5 h-3.5" />
-                      <span>Ver QR</span>
+                      <span>Datos de pago</span>
                     </button>
                   </div>
                 </div>
@@ -1320,7 +1436,7 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
                             ) : (
                               <ShieldAlert className="w-4 h-4 mr-1 text-rose-700" />
                             )}
-                            Diagnóstico IA: {voucherAnalysis.validationStatus.toUpperCase()}
+                            Lectura OCR: {voucherAnalysis.validationStatus === 'validada' ? 'DATOS COINCIDENTES; PAGO NO CONFIRMADO' : voucherAnalysis.validationStatus.toUpperCase()}
                           </span>
                           <span className="font-mono">Op: #{voucherAnalysis.extractedData.operationId}</span>
                         </div>
@@ -1337,7 +1453,7 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
                       Número de Operación / Transferencia:
                     </label>
                     <span className="text-[10px] text-slate-500 font-bold">
-                      {manualOperationId ? 'Listo para verificar' : 'Dictado o manual'}
+                      {!paymentSaleId ? 'Registrá la venta antes de verificar' : manualOperationId ? 'Listo para verificar' : 'Dictado o manual'}
                     </span>
                   </div>
 
@@ -1370,7 +1486,7 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
                     <button
                       type="button"
                       onClick={() => handleVerifyOperationId()}
-                      disabled={isVerifyingMp || !manualOperationId.trim()}
+                      disabled={isVerifyingMp || pendingOperation !== null || !paymentSaleId || !manualOperationId.trim()}
                       className="px-3.5 py-2 bg-sky-600 hover:bg-sky-500 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-xl text-xs font-black flex items-center space-x-1.5 border border-sky-700 shadow-sm cursor-pointer disabled:cursor-not-allowed shrink-0"
                     >
                       {isVerifyingMp ? (
@@ -1452,18 +1568,27 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
             )}
           </div>
 
+          {currentSaleConfig.price <= 0 && <p role="alert" className="text-rose-900 bg-rose-50 border-2 border-rose-500 p-3 rounded-xl text-sm">Falta el precio confirmado de esta variedad y combo. Administración debe configurar el catálogo antes de registrar ventas.</p>}
           {/* SECCIÓN 5: Botón de Cobro Gigante (Touch Target Principal para el Pulgar) */}
           <button
             type="button"
             onClick={handleConfirmSale}
+            disabled={pendingOperation !== null || paymentSaleId !== null || activeShift.status !== 'en_curso' || currentSaleConfig.price <= 0 || !selectedVariety?.isActive || !selectedVariety.isAvailable}
             className="w-full py-4 px-4 bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 hover:from-amber-300 hover:to-yellow-300 text-slate-950 font-black text-base sm:text-lg rounded-2xl border-2 border-amber-600 shadow-lg shadow-amber-500/20 flex items-center justify-center space-x-2 transition-all active:scale-[0.98] cursor-pointer min-h-[58px]"
           >
             <CheckCircle2 className="w-6 h-6 shrink-0" />
             <span className="truncate">
-              COBRAR ${calculatedTotalAmount.toLocaleString()} ({quantityMultiplier > 1 ? `${quantityMultiplier}x ` : ''}
+              REGISTRAR ${calculatedTotalAmount.toLocaleString()} ({quantityMultiplier > 1 ? `${quantityMultiplier}x ` : ''}
               {currentSaleConfig.label})
             </span>
           </button>
+
+          {paymentSaleId && (
+            <div className="border-2 border-sky-500 bg-sky-50 p-3 rounded-xl text-xs font-semibold text-slate-950 space-y-2">
+              <p>Venta registrada. Verificá el pago usando su operación o generá un enlace desde “Datos de pago”. No vuelvas a registrar esta venta.</p>
+              <button type="button" disabled={pendingOperation !== null} onClick={handlePrepareNextSale} className="min-h-12 px-4 border-2 border-slate-900 rounded-xl font-bold">Preparar otra venta</button>
+            </div>
+          )}
 
           {/* Accesos rápidos inferiores */}
           <div className="flex items-center justify-between px-1 text-xs">
@@ -1605,7 +1730,8 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
           <div className="grid grid-cols-2 gap-2 pt-1">
             <button
               type="button"
-              onClick={() => setShowWasteModal(true)}
+              onClick={() => { setOperationError(null); setShowWasteModal(true); }}
+              disabled={pendingOperation !== null || activeShift.status !== 'en_curso'}
               className="p-3 bg-white hover:bg-slate-50 border-2 border-slate-300 rounded-xl flex items-center justify-center space-x-2 text-slate-900 font-black text-xs cursor-pointer shadow-xs min-h-[48px]"
             >
               <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
@@ -1615,6 +1741,7 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
             <button
               type="button"
               onClick={handleOpenClosingModal}
+              disabled={pendingOperation !== null || activeShift.status !== 'en_curso'}
               className="p-3 bg-emerald-600 hover:bg-emerald-500 border-2 border-emerald-700 text-white rounded-xl flex items-center justify-center space-x-2 font-black text-xs cursor-pointer shadow-md min-h-[48px]"
             >
               <Coins className="w-4 h-4 shrink-0" />
@@ -1979,7 +2106,8 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
                 </div>
               </div>
               <button
-                onClick={() => setShowWasteModal(false)}
+                disabled={pendingOperation !== null}
+                    onClick={() => setShowWasteModal(false)}
                 className="text-slate-500 hover:text-slate-900 p-1 rounded-lg hover:bg-slate-100 cursor-pointer"
               >
                 <X className="w-5 h-5" />
@@ -1994,6 +2122,8 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
               </div>
             ) : (
               <form onSubmit={handleConfirmWaste} className="space-y-4">
+              <fieldset disabled={pendingOperation !== null} className="contents">
+                {operationError && <p role="alert" className="text-rose-900 bg-rose-50 border-2 border-rose-500 p-3 rounded-xl">{operationError}</p>}
                 <div>
                   <label className="block text-xs font-black text-slate-800 mb-1">Variedad de Tequeño</label>
                   <select
@@ -2055,6 +2185,7 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
                 <div className="flex justify-end space-x-2 pt-2 border-t border-slate-200">
                   <button
                     type="button"
+                    disabled={pendingOperation !== null}
                     onClick={() => setShowWasteModal(false)}
                     className="px-4 py-2 bg-slate-100 text-xs font-bold text-slate-700 rounded-xl hover:bg-slate-200 cursor-pointer"
                   >
@@ -2062,12 +2193,14 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
                   </button>
                   <button
                     type="submit"
+                    disabled={pendingOperation !== null}
                     className="px-5 py-2 bg-amber-400 hover:bg-amber-300 border-2 border-amber-500 text-slate-950 text-xs font-black rounded-xl shadow-sm cursor-pointer"
                   >
-                    Confirmar Merma
+                    {pendingOperation === 'waste' ? 'Confirmando merma…' : 'Confirmar Merma'}
                   </button>
                 </div>
-              </form>
+                </fieldset>
+</form>
             )}
           </div>
         </div>
@@ -2146,6 +2279,8 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
               </div>
             ) : (
               <form onSubmit={handleConfirmCloseShift} className="space-y-4">
+              <fieldset disabled={pendingOperation !== null} className="contents">
+                {operationError && <p role="alert" className="text-rose-900 bg-rose-50 border-2 border-rose-500 p-3 rounded-xl">{operationError}</p>}
                 
                 {/* 1. Conteo de Sobrantes por Variedad */}
                 <div className="space-y-2">
@@ -2157,9 +2292,10 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
                     <button
                       type="button"
                       onClick={handleSaveLeftoversOnly}
+                      disabled={pendingOperation !== null}
                       className="text-[11px] text-amber-900 hover:text-amber-800 font-black cursor-pointer underline"
                     >
-                      Guardar Sobrantes sin Cerrar
+                      {pendingOperation === 'leftovers' ? 'Confirmando conteo…' : 'Guardar Sobrantes sin Cerrar'}
                     </button>
                   </div>
 
@@ -2311,6 +2447,7 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
                 <div className="flex justify-end space-x-2 pt-3 border-t border-slate-200">
                   <button
                     type="button"
+                    disabled={pendingOperation !== null}
                     onClick={() => setShowClosingModal(false)}
                     className="px-4 py-2 bg-slate-100 text-xs font-bold text-slate-700 rounded-xl hover:bg-slate-200 cursor-pointer"
                   >
@@ -2318,13 +2455,15 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
                   </button>
                   <button
                     type="submit"
+                    disabled={pendingOperation !== null || currentUser.role === 'seller'}
                     className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black rounded-xl shadow-md flex items-center space-x-1.5 cursor-pointer"
                   >
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>Realizar Cierre de Mi Jornada</span>
+                    <span>{currentUser.role === 'seller' ? 'El cierre lo confirma coordinación' : pendingOperation === 'closing' ? 'Confirmando cierre…' : 'Realizar Cierre de Mi Jornada'}</span>
                   </button>
                 </div>
-              </form>
+                </fieldset>
+</form>
             )}
           </div>
         </div>
@@ -2661,7 +2800,7 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
                   <QrCode className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black text-slate-950">QR de Pago Mercado Pago</h3>
+                  <h3 className="text-sm font-black text-slate-950">Datos y enlace oficial de pago</h3>
                   <p className="text-[11px] text-slate-500 font-medium">Mostrale esta pantalla al comprador</p>
                 </div>
               </div>
@@ -2674,51 +2813,15 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
               </button>
             </div>
 
-            <div className="p-3 bg-white rounded-2xl inline-block border-2 border-slate-200 shadow-sm mx-auto">
-              <div className="w-48 h-48 bg-white flex flex-col items-center justify-center relative p-2">
-                <svg viewBox="0 0 100 100" className="w-full h-full">
-                  <rect x="5" y="5" width="28" height="28" fill="#000" rx="3" />
-                  <rect x="9" y="9" width="20" height="20" fill="#fff" rx="2" />
-                  <rect x="13" y="13" width="12" height="12" fill="#0284c7" rx="1" />
-
-                  <rect x="67" y="5" width="28" height="28" fill="#000" rx="3" />
-                  <rect x="71" y="9" width="20" height="20" fill="#fff" rx="2" />
-                  <rect x="75" y="13" width="12" height="12" fill="#0284c7" rx="1" />
-
-                  <rect x="5" y="67" width="28" height="28" fill="#000" rx="3" />
-                  <rect x="9" y="71" width="20" height="20" fill="#fff" rx="2" />
-                  <rect x="13" y="75" width="12" height="12" fill="#0284c7" rx="1" />
-
-                  <rect x="38" y="8" width="6" height="6" fill="#000" />
-                  <rect x="48" y="8" width="6" height="6" fill="#000" />
-                  <rect x="58" y="8" width="6" height="6" fill="#000" />
-                  
-                  <rect x="8" y="38" width="6" height="6" fill="#000" />
-                  <rect x="18" y="38" width="6" height="6" fill="#000" />
-                  <rect x="28" y="38" width="6" height="6" fill="#000" />
-                  <rect x="38" y="38" width="8" height="8" fill="#0284c7" />
-                  <rect x="50" y="38" width="6" height="6" fill="#000" />
-                  <rect x="60" y="38" width="6" height="6" fill="#000" />
-                  <rect x="70" y="38" width="6" height="6" fill="#000" />
-                  <rect x="82" y="38" width="6" height="6" fill="#000" />
-
-                  <rect x="38" y="50" width="6" height="6" fill="#000" />
-                  <rect x="48" y="50" width="8" height="8" fill="#000" />
-                  <rect x="60" y="50" width="6" height="6" fill="#0284c7" />
-                  <rect x="74" y="50" width="6" height="6" fill="#000" />
-
-                  <rect x="38" y="65" width="6" height="6" fill="#000" />
-                  <rect x="52" y="65" width="6" height="6" fill="#000" />
-                  <rect x="65" y="65" width="8" height="8" fill="#000" />
-                  <rect x="78" y="65" width="6" height="6" fill="#000" />
-
-                  <rect x="38" y="78" width="8" height="8" fill="#0284c7" />
-                  <rect x="52" y="78" width="6" height="6" fill="#000" />
-                  <rect x="65" y="78" width="6" height="6" fill="#000" />
-                  <rect x="78" y="78" width="8" height="8" fill="#000" />
-                </svg>
-              </div>
-            </div>
+            <p className="bg-amber-50 border-2 border-amber-400 text-amber-950 p-3 rounded-xl text-xs font-semibold">
+              No hay un QR de cobro configurado. Usá el alias confirmado o un enlace oficial para una venta registrada.
+            </p>
+            {operationError && <p role="alert" className="text-rose-900 bg-rose-50 p-3 rounded-xl">{operationError}</p>}
+            <button type="button" disabled={!paymentSaleId || pendingOperation !== null} onClick={handleGenerateDirectPaymentLink}
+              className="w-full py-3 rounded-xl bg-sky-600 text-white font-bold disabled:opacity-50">
+              {isGeneratingPref ? 'Generando enlace…' : 'Generar enlace para la venta registrada'}
+            </button>
+            {generatedPrefLink && <a href={generatedPrefLink} target="_blank" rel="noopener noreferrer" className="block underline text-sky-900 font-bold">Abrir pago oficial</a>}
 
             <div className="space-y-1.5 text-xs">
               <div className="font-black text-slate-950 text-base font-mono">
@@ -2729,12 +2832,13 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
               </p>
               <div className="p-2.5 bg-slate-50 border-2 border-slate-300 rounded-xl flex items-center justify-between">
                 <span className="font-mono font-black text-sky-800 text-sm">
-                  {state.systemConfig?.mercadoPagoConfig?.alias || 'tequenos.costa.mp'}
+                  {state.systemConfig?.mercadoPagoConfig?.alias || 'Cuenta pendiente de configurar'}
                 </span>
                 <button
                   type="button"
                   onClick={() => {
-                    navigator.clipboard.writeText(state.systemConfig?.mercadoPagoConfig?.alias || 'tequenos.costa.mp');
+                    if (!state.systemConfig?.mercadoPagoConfig?.alias) return;
+                          navigator.clipboard.writeText(state.systemConfig.mercadoPagoConfig.alias);
                     setCopiedAlias(true);
                     setTimeout(() => setCopiedAlias(false), 2000);
                   }}
@@ -2744,7 +2848,7 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
                 </button>
               </div>
               <p className="text-[10px] text-slate-500 font-medium">
-                Titular: {state.systemConfig?.mercadoPagoConfig?.accountHolder || 'Tequeños Costa SRL'}
+                Titular: {state.systemConfig?.mercadoPagoConfig?.accountHolder || 'Titular pendiente de configurar'}
               </p>
             </div>
 
@@ -2769,6 +2873,7 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
       {/* MODAL: Laboratorio de Pruebas Mercado Pago & Generador de Comprobantes */}
       <MercadoPagoTestLabModal
         isOpen={showTestLabModal}
+        demoMode={state.demoMode === true}
         onClose={() => setShowTestLabModal(false)}
         varieties={varieties}
         onUseVoucherInTerminal={(base64, amount, opId) => {

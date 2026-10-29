@@ -5,6 +5,7 @@
  */
 
 import React, { useState } from 'react';
+import { LegacyRecoveryPanel } from './LegacyRecoveryPanel';
 import {
   Settings,
   Truck,
@@ -37,6 +38,8 @@ import {
   QrCode,
   Sparkles
 } from 'lucide-react';
+import { IssuePasswordActivationModal } from './PasswordManagement';
+import { validateAccountPassword, MIN_PASSWORD_LENGTH, MAX_NEW_PASSWORD_LENGTH } from '../shared/passwordPolicy';
 import { CommissionTiersTab } from './CommissionTiersTab';
 import { MercadoPagoTestLabModal } from './MercadoPagoTestLabModal';
 import { AppState, storageService } from '../services/storageService';
@@ -67,11 +70,19 @@ type AdminTab =
   | 'supplies'
   | 'recipes'
   | 'suppliers'
-  | 'users';
+  | 'users'
+  | 'recovery';
 
 export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
   const [activeTab, setActiveTab] = useState<AdminTab>('params');
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
+  const [configError, setConfigError] = useState<string | null>(null);
+  const [stockHouseId, setStockHouseId] = useState('');
+  const [stockVarietyId, setStockVarietyId] = useState('');
+  const [stockQuantity, setStockQuantity] = useState(0);
+  const [stockReason, setStockReason] = useState('');
+  const [stockSaving, setStockSaving] = useState(false);
+  const [newZoneName, setNewZoneName] = useState('');
 
   // Estados para Modales de Creación / Edición
   const [editingCart, setEditingCart] = useState<SellingCart | null>(null);
@@ -93,10 +104,13 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
   const [isCreatingRecipe, setIsCreatingRecipe] = useState(false);
 
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
+  const [activationUser, setActivationUser] = useState<UserProfile | null>(null);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
+  const [showArchivedUsers, setShowArchivedUsers] = useState(false);
 
   // Estado temporal para Parámetros Globales
   const [globalParams, setGlobalParams] = useState<SystemConfig>(state.systemConfig);
+  const globalParamsDirty = React.useRef(false);
   const [mpStatus, setMpStatus] = useState<any | null>(null);
   const [showTestLabModal, setShowTestLabModal] = useState(false);
 
@@ -109,15 +123,23 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
     setTimeout(() => setSaveSuccessMsg(null), 3000);
   };
 
+  // La actualización central no debe borrar un formulario que se está editando.
+  React.useEffect(() => { if (!globalParamsDirty.current) setGlobalParams(state.systemConfig); }, [state.systemConfig]);
+  const reportConfigError = (error: unknown) => setConfigError(error instanceof Error ? error.message : 'No se confirmó el cambio.');
+
   // Guardar Parámetros Globales
-  const handleSaveGlobalParams = (e: React.FormEvent) => {
+  const handleSaveGlobalParams = async (e: React.FormEvent) => {
     e.preventDefault();
-    storageService.updateSystemConfig(globalParams);
-    notifySuccess('Parámetros del sistema actualizados con éxito');
+    setConfigError(null);
+    try { await storageService.updateSystemConfig(globalParams);
+    globalParamsDirty.current = false;
+    setGlobalParams(storageService.getState().systemConfig);
+    notifySuccess('Parámetros confirmados por el servidor'); } catch (error) { reportConfigError(error); }
   };
 
   return (
     <div className="space-y-6 pb-16">
+      {configError && <p role="alert" className="bg-rose-100 text-rose-900 border-2 border-rose-500 p-4 rounded-xl">{configError}</p>}
       
       {/* Encabezado Principal */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -150,6 +172,7 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
 
       {/* Selector de Submódulos de Configuración */}
       <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 scrollbar-none border-b border-slate-800 text-xs font-medium">
+        <button type="button" onClick={()=>setActiveTab('recovery')} className="min-h-12 px-4 whitespace-nowrap border-2 border-amber-500 rounded-xl text-amber-400 font-bold">Recuperar datos anteriores</button>
         <button
           onClick={() => setActiveTab('params')}
           className={`px-4 py-2.5 rounded-xl flex items-center space-x-2 transition-all whitespace-nowrap ${
@@ -272,7 +295,14 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
             </p>
           </div>
 
-          <form onSubmit={handleSaveGlobalParams} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <form onSubmit={handleSaveGlobalParams} onChange={() => { globalParamsDirty.current = true; }} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <label className="block bg-slate-800/60 border border-slate-700 rounded-xl p-4 text-sm text-slate-100">Nombre del sistema
+              <input value={globalParams.systemName} maxLength={120} required onChange={event=>setGlobalParams({...globalParams,systemName:event.target.value})} className="mt-2 w-full min-h-12 bg-slate-950 border border-slate-500 rounded-lg px-3" />
+            </label>
+            <label className="block bg-slate-800/60 border border-slate-700 rounded-xl p-4 text-sm text-slate-100">Descuento unitario de respaldo ($)
+              <input type="number" min="0" step="0.01" required value={globalParams.deductionRatePerMissingUnit} onChange={event=>setGlobalParams({...globalParams,deductionRatePerMissingUnit:Number(event.target.value)})} className="mt-2 w-full min-h-12 bg-slate-950 border border-slate-500 rounded-lg px-3" />
+              <span className="block mt-2 text-xs text-slate-300">Se usa cuando no está definida la política escalonada de faltantes. Los importes de esa política se configuran abajo.</span>
+            </label>
             <div className="bg-slate-800/60 border border-slate-700/70 rounded-xl p-4 space-y-2">
               <label className="block text-xs font-semibold text-slate-300">
                 Costo Diario de Vivienda por Persona ($)
@@ -314,10 +344,11 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
                   type="number"
                   step="0.01"
                   min="0"
-                  max="1"
-                  value={globalParams.defaultCommissionRate}
+                  max="100"
+                  aria-label="Comisión base de respaldo (%)"
+                  value={Number((globalParams.defaultCommissionRate * 100).toFixed(2))}
                   onChange={(e) =>
-                    setGlobalParams({ ...globalParams, defaultCommissionRate: Number(e.target.value) })
+                    setGlobalParams({ ...globalParams, defaultCommissionRate: Number(e.target.value) / 100 })
                   }
                   className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-8 pr-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400"
                   required
@@ -485,14 +516,14 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
                   </label>
                   <input
                     type="text"
-                    value={globalParams.mercadoPagoConfig?.alias || 'tequenos.costa.mp'}
+                    value={globalParams.mercadoPagoConfig?.alias || ''}
                     onChange={(e) =>
                       setGlobalParams({
                         ...globalParams,
                         mercadoPagoConfig: {
                           alias: e.target.value,
                           cvu: globalParams.mercadoPagoConfig?.cvu || '',
-                          accountHolder: globalParams.mercadoPagoConfig?.accountHolder || 'Tequeños Costa SRL'
+                          accountHolder: globalParams.mercadoPagoConfig?.accountHolder || ''
                         }
                       })
                     }
@@ -511,14 +542,14 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
                   </label>
                   <input
                     type="text"
-                    value={globalParams.mercadoPagoConfig?.cvu || '0000003100084592019482'}
+                    value={globalParams.mercadoPagoConfig?.cvu || ''}
                     onChange={(e) =>
                       setGlobalParams({
                         ...globalParams,
                         mercadoPagoConfig: {
-                          alias: globalParams.mercadoPagoConfig?.alias || 'tequenos.costa.mp',
+                          alias: globalParams.mercadoPagoConfig?.alias || '',
                           cvu: e.target.value,
-                          accountHolder: globalParams.mercadoPagoConfig?.accountHolder || 'Tequeños Costa SRL'
+                          accountHolder: globalParams.mercadoPagoConfig?.accountHolder || ''
                         }
                       })
                     }
@@ -536,12 +567,12 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
                   </label>
                   <input
                     type="text"
-                    value={globalParams.mercadoPagoConfig?.accountHolder || 'Tequeños Costa SRL'}
+                    value={globalParams.mercadoPagoConfig?.accountHolder || ''}
                     onChange={(e) =>
                       setGlobalParams({
                         ...globalParams,
                         mercadoPagoConfig: {
-                          alias: globalParams.mercadoPagoConfig?.alias || 'tequenos.costa.mp',
+                          alias: globalParams.mercadoPagoConfig?.alias || '',
                           cvu: globalParams.mercadoPagoConfig?.cvu || '',
                           accountHolder: e.target.value
                         }
@@ -585,25 +616,25 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
       {activeTab === 'commissions' && (
         <CommissionTiersTab
           tiers={state.systemConfig?.commissionTiers || []}
-          housingCostDaily={state.systemConfig?.housingCostPerPersonDaily || 8000}
-          onAddTier={(tierData) => {
-            storageService.addCommissionTier(tierData);
+          housingCostDaily={state.systemConfig?.housingCostPerPersonDaily ?? 8000}
+          onAddTier={async (tierData) => {
+            await storageService.addCommissionTier(tierData);
             notifySuccess(`Nuevo tramo "${tierData.name}" agregado con éxito`);
           }}
-          onUpdateTier={(tierId, updates) => {
-            storageService.updateCommissionTier(tierId, updates);
+          onUpdateTier={async (tierId, updates) => {
+            await storageService.updateCommissionTier(tierId, updates);
             notifySuccess('Tramo de comisión actualizado');
           }}
-          onDeleteTier={(tierId) => {
-            storageService.deleteCommissionTier(tierId);
+          onDeleteTier={async (tierId) => {
+            await storageService.deleteCommissionTier(tierId);
             notifySuccess('Tramo eliminado');
           }}
-          onToggleTier={(tierId) => {
-            storageService.toggleCommissionTier(tierId);
+          onToggleTier={async (tierId) => {
+            await storageService.toggleCommissionTier(tierId);
             notifySuccess('Estado del tramo actualizado');
           }}
-          onResetDefaults={() => {
-            storageService.resetCommissionTiersToDefault();
+          onResetDefaults={async () => {
+            await storageService.resetCommissionTiersToDefault();
             notifySuccess('Se restablecieron los tramos iniciales sugeridos (10%, 20%, 30%)');
           }}
         />
@@ -699,9 +730,9 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
                       <span>Editar</span>
                     </button>
                     <button
-                      onClick={() => {
-                        storageService.toggleCartActive(cart.id);
-                        notifySuccess(`Estado del carrito ${cart.code} modificado`);
+                      onClick={async () => {
+                        try { await storageService.toggleCartActive(cart.id);
+                        notifySuccess(`Estado del carrito ${cart.code} confirmado`); } catch(error) { reportConfigError(error); }
                       }}
                       className={`flex items-center space-x-1 ${
                         cart.isActive !== false ? 'text-rose-400 hover:text-rose-300' : 'text-emerald-400 hover:text-emerald-300'
@@ -799,9 +830,9 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
                     <span>Editar Precios / Datos</span>
                   </button>
                   <button
-                    onClick={() => {
-                      storageService.toggleVarietyActive(v.id);
-                      notifySuccess(`Variedad ${v.name} actualizada`);
+                    onClick={async () => {
+                      try { await storageService.toggleVarietyActive(v.id);
+                      notifySuccess(`Variedad ${v.name} confirmada`); } catch(error) { reportConfigError(error); }
                     }}
                     className={`flex items-center space-x-1 ${
                       v.isActive !== false ? 'text-rose-400 hover:text-rose-300' : 'text-emerald-400 hover:text-emerald-300'
@@ -816,6 +847,28 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
           </div>
         </div>
       )}
+
+      {activeTab === 'houses' && <div className="bg-white text-slate-950 border-2 border-slate-300 rounded-xl p-5 space-y-4">
+        <h3 className="font-bold">Conteo físico / ingreso de mercadería en la casa</h3>
+        <p className="text-sm">Ingresá la cantidad total contada para esa variedad, no sólo el incremento. El motivo queda registrado. El despacho y las devoluciones actualizan este saldo automáticamente.</p>
+        <form className="grid sm:grid-cols-2 gap-3" onSubmit={async event => {
+          event.preventDefault(); if (stockSaving) return; setStockSaving(true); setConfigError(null);
+          try { await storageService.adjustHouseStock(stockHouseId, stockVarietyId, stockQuantity, stockReason); notifySuccess('Conteo físico confirmado'); setStockReason(''); }
+          catch (error) { reportConfigError(error); } finally { setStockSaving(false); }
+        }}>
+          <select aria-label="Casa del conteo" required value={stockHouseId} onChange={event=>setStockHouseId(event.target.value)} className="border-2 p-3 rounded-lg"><option value="">Elegir casa</option>{state.houses.filter(house=>house.isActive).map(house=><option key={house.id} value={house.id}>{house.name}</option>)}</select>
+          <select aria-label="Variedad del conteo" required value={stockVarietyId} onChange={event=>setStockVarietyId(event.target.value)} className="border-2 p-3 rounded-lg"><option value="">Elegir variedad</option>{state.varieties.filter(variety=>variety.isActive).map(variety=><option key={variety.id} value={variety.id}>{variety.name}</option>)}</select>
+          <label>Unidades totales contadas<input type="number" required min="0" step="1" value={stockQuantity} onChange={event=>setStockQuantity(Number(event.target.value))} className="border-2 p-3 rounded-lg w-full" /></label>
+          <label>Motivo<input required maxLength={2000} value={stockReason} onChange={event=>setStockReason(event.target.value)} placeholder="Ingreso de lote / inventario físico" className="border-2 p-3 rounded-lg w-full" /></label>
+          <button disabled={stockSaving} type="submit" className="bg-emerald-600 text-white font-bold min-h-12 rounded-lg">{stockSaving?'Confirmando...':'Guardar conteo real'}</button>
+        </form>
+        <h3 className="font-bold">Zonas de despacho</h3>
+        <p className="text-sm">Creá las zonas reales antes del primer despacho.</p>
+        <ul>{state.zones.map(zone=><li key={zone.id}>{zone.name}</li>)}</ul>
+        <form className="flex gap-2" onSubmit={async event=>{event.preventDefault();setConfigError(null);try {await storageService.saveZones([...state.zones,{id:`ZONE-${crypto.randomUUID()}`,name:newZoneName.trim(),description:'',touristAffluence:'media',avgDailySalesUnits:0,recommendedStartUnits:0}]);setNewZoneName('');notifySuccess('Zona confirmada');} catch(error){reportConfigError(error);} }}>
+          <input required maxLength={120} aria-label="Nombre de zona nueva" value={newZoneName} onChange={event=>setNewZoneName(event.target.value)} className="border-2 p-3 rounded-lg" placeholder="Localidad / calles" /><button type="submit" className="bg-amber-400 p-3 rounded-lg font-bold">Agregar zona</button>
+        </form>
+      </div>}
 
       {/* 4. TAB: BASES OPERATIVAS */}
       {activeTab === 'houses' && (
@@ -1119,6 +1172,11 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
       {/* 8. TAB: USUARIOS, ROLES Y EXENCIÓN DE VIVIENDA */}
       {activeTab === 'users' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+          <label className="flex items-center gap-3 min-h-12 text-sm text-slate-200">
+            <input type="checkbox" checked={showArchivedUsers} onChange={event => setShowArchivedUsers(event.target.checked)} />
+            Mostrar usuarios archivados
+          </label>
+          <p className="text-xs text-slate-300">Desactivar retira al usuario de las listas operativas y revoca su acceso. Su historial se conserva.</p>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
             <div>
               <h2 className="text-lg font-bold text-white flex items-center">
@@ -1126,7 +1184,7 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
                 Gestión de Personal, Roles y Exención de Vivienda
               </h2>
               <p className="text-xs text-slate-400 mt-1">
-                Administración de cuentas con control de permisos, clave PIN, % de comisión y base asignada.
+                Administración de cuentas, contraseñas personales, permisos, comisión y base asignada.
               </p>
             </div>
             <button
@@ -1142,7 +1200,7 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {state.users.map((u) => {
+            {state.users.filter(user => showArchivedUsers || user.isActive !== false).map((u) => {
               const house = state.houses.find((h) => h.id === u.assignedHouseId);
               return (
                 <div
@@ -1199,8 +1257,8 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
                       </strong>
                     </div>
                     <div className="flex justify-between text-slate-300">
-                      <span>PIN de Acceso:</span>
-                      <strong className="text-slate-200 font-mono">••••</strong>
+                      <span>Acceso:</span>
+                      <strong className="text-slate-200">{u.hasPassword ? 'Contraseña configurada' : 'Pendiente de contraseña'}</strong>
                     </div>
                   </div>
 
@@ -1212,6 +1270,7 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
                       <Edit2 className="w-3.5 h-3.5" />
                       <span>Editar Usuario</span>
                     </button>
+                    <button type="button" disabled={u.isActive === false} onClick={() => setActivationUser(u)} className="min-h-12 text-sky-300 underline font-bold disabled:opacity-50" aria-label={`Activar o restablecer contraseña de ${u.name}`}>Contraseña</button>
                     {u.id !== state.currentUser?.id && (
                       <button
                         onClick={async () => {
@@ -1238,6 +1297,9 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
         </div>
       )}
 
+      {activeTab === 'recovery' && <LegacyRecoveryPanel />}
+      {activationUser && <IssuePasswordActivationModal user={activationUser} onClose={() => setActivationUser(null)} />}
+
       {/* --- MODALES DE EDICIÓN / CREACIÓN --- */}
 
       {/* Modal Carrito */}
@@ -1249,12 +1311,12 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
             setIsCreatingCart(false);
             setEditingCart(null);
           }}
-          onSave={(cartData) => {
+          onSave={async (cartData) => {
             if (editingCart) {
-              storageService.updateCart(editingCart.id, cartData);
+              await storageService.updateCart(editingCart.id, cartData);
               notifySuccess(`Carrito ${editingCart.code} actualizado`);
             } else {
-              storageService.createCart(cartData as any);
+              await storageService.createCart(cartData as any);
               notifySuccess('Nuevo carrito agregado al parque móvil');
             }
             setIsCreatingCart(false);
@@ -1271,12 +1333,12 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
             setIsCreatingVariety(false);
             setEditingVariety(null);
           }}
-          onSave={(varData) => {
+          onSave={async (varData) => {
             if (editingVariety) {
-              storageService.updateVariety(editingVariety.id, varData);
+              await storageService.updateVariety(editingVariety.id, varData);
               notifySuccess(`Producto ${editingVariety.name} actualizado`);
             } else {
-              storageService.createVariety(varData as any);
+              await storageService.createVariety(varData as any);
               notifySuccess('Nueva variedad registrada en catálogo');
             }
             setIsCreatingVariety(false);
@@ -1294,12 +1356,12 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
             setIsCreatingHouse(false);
             setEditingHouse(null);
           }}
-          onSave={(houseData) => {
+          onSave={async (houseData) => {
             if (editingHouse) {
-              storageService.updateHouse(editingHouse.id, houseData);
+              await storageService.updateHouse(editingHouse.id, houseData);
               notifySuccess(`Base operativa ${editingHouse.name} actualizada`);
             } else {
-              storageService.createHouse(houseData as any);
+              await storageService.createHouse(houseData as any);
               notifySuccess('Nueva base operativa creada con éxito');
             }
             setIsCreatingHouse(false);
@@ -1337,6 +1399,7 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
         <UserModal
           user={editingUser}
           houses={state.houses}
+          defaultCommissionRate={state.systemConfig.defaultCommissionRate}
           onClose={() => {
             setIsCreatingUser(false);
             setEditingUser(null);
@@ -1419,10 +1482,12 @@ interface CartModalProps {
   cart: SellingCart | null;
   houses: OperationalHouse[];
   onClose: () => void;
-  onSave: (data: Partial<SellingCart>) => void;
+  onSave: (data: Partial<SellingCart>) => Promise<void>;
 }
 
 const CartModal: React.FC<CartModalProps> = ({ cart, houses, onClose, onSave }) => {
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
     code: cart?.code || '',
     model: cart?.model || 'Modelo Playa Pro 2026 - Ruedas Globo',
@@ -1444,10 +1509,13 @@ const CartModal: React.FC<CartModalProps> = ({ cart, houses, onClose, onSave }) 
           </button>
         </div>
 
+        {saveError && <p role="alert" className="text-rose-300">{saveError}</p>}
         <form
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
-            onSave(formData);
+            if (saving) return;
+            setSaving(true); setSaveError(null);
+            try { await onSave(formData); } catch (error) { setSaveError(error instanceof Error ? error.message : "No se guardó el cambio."); } finally { setSaving(false); }
           }}
           className="space-y-3 text-xs"
         >
@@ -1533,7 +1601,7 @@ const CartModal: React.FC<CartModalProps> = ({ cart, houses, onClose, onSave }) 
               Cancelar
             </button>
             <button
-              type="submit"
+              type="submit" disabled={saving}
               className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg"
             >
               Guardar Carrito
@@ -1548,10 +1616,12 @@ const CartModal: React.FC<CartModalProps> = ({ cart, houses, onClose, onSave }) 
 interface VarietyModalProps {
   variety: ProductVariety | null;
   onClose: () => void;
-  onSave: (data: Partial<ProductVariety>) => void;
+  onSave: (data: Partial<ProductVariety>) => Promise<void>;
 }
 
 const VarietyModal: React.FC<VarietyModalProps> = ({ variety, onClose, onSave }) => {
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
     name: variety?.name || '',
     category: variety?.category || 'tequeno',
@@ -1575,10 +1645,13 @@ const VarietyModal: React.FC<VarietyModalProps> = ({ variety, onClose, onSave })
           </button>
         </div>
 
+        {saveError && <p role="alert" className="text-rose-300">{saveError}</p>}
         <form
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
-            onSave({
+            if (saving) return;
+            setSaving(true); setSaveError(null);
+            try { await onSave({
               name: formData.name,
               category: formData.category as any,
               description: formData.description,
@@ -1589,7 +1662,7 @@ const VarietyModal: React.FC<VarietyModalProps> = ({ variety, onClose, onSave })
                 combo6: Number(formData.combo6),
                 combo12: Number(formData.combo12)
               }
-            });
+            }); } catch (error) { setSaveError(error instanceof Error ? error.message : "No se guardó el cambio."); } finally { setSaving(false); }
           }}
           className="space-y-3 text-xs"
         >
@@ -1685,7 +1758,7 @@ const VarietyModal: React.FC<VarietyModalProps> = ({ variety, onClose, onSave })
               Cancelar
             </button>
             <button
-              type="submit"
+              type="submit" disabled={saving}
               className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg"
             >
               Guardar Variedad
@@ -1701,15 +1774,17 @@ interface HouseModalProps {
   house: OperationalHouse | null;
   users: UserProfile[];
   onClose: () => void;
-  onSave: (data: Partial<OperationalHouse>) => void;
+  onSave: (data: Partial<OperationalHouse>) => Promise<void>;
 }
 
 const HouseModal: React.FC<HouseModalProps> = ({ house, users, onClose, onSave }) => {
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
     name: house?.name || '',
     address: house?.address || '',
-    freezerCapacityUnits: house?.freezerCapacityUnits || 3000,
-    fixedCostDaily: house?.fixedCostDaily || 15000,
+    freezerCapacityUnits: house?.freezerCapacityUnits ?? 0,
+    fixedCostDaily: house?.fixedCostDaily ?? 0,
     residentUserIds: Array.isArray(house?.residentUserIds) ? house.residentUserIds : [],
     coordinatorIds: Array.isArray(house?.coordinatorIds) ? house.coordinatorIds : []
   });
@@ -1741,10 +1816,13 @@ const HouseModal: React.FC<HouseModalProps> = ({ house, users, onClose, onSave }
           </button>
         </div>
 
+        {saveError && <p role="alert" className="text-rose-300">{saveError}</p>}
         <form
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
-            onSave(formData);
+            if (saving) return;
+            setSaving(true); setSaveError(null);
+            try { await onSave(formData); } catch (error) { setSaveError(error instanceof Error ? error.message : "No se guardó el cambio."); } finally { setSaving(false); }
           }}
           className="space-y-3 text-xs"
         >
@@ -1822,7 +1900,7 @@ const HouseModal: React.FC<HouseModalProps> = ({ house, users, onClose, onSave }
               Cancelar
             </button>
             <button
-              type="submit"
+              type="submit" disabled={saving}
               className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg"
             >
               Guardar Base
@@ -1993,32 +2071,31 @@ const MaterialModal: React.FC<MaterialModalProps> = ({ material, categories, sup
 interface UserModalProps {
   user: UserProfile | null;
   houses: OperationalHouse[];
+  defaultCommissionRate: number;
   onClose: () => void;
   onSave: (data: Partial<UserProfile> & { password?: string }) => Promise<void>;
 }
 
-const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) => {
+const UserModal: React.FC<UserModalProps> = ({ user, houses, defaultCommissionRate, onClose, onSave }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [showPin, setShowPin] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
+  const [passwordConfirmation, setPasswordConfirmation] = useState('');
   const [formData, setFormData] = useState({
     name: user?.name || '',
     userCode: user?.userCode || '',
     email: user?.email || '',
     phone: user?.phone || '',
     role: user?.role || ('seller' as UserRole),
-    pin: '',
     password: '',
-    assignedHouseId: user?.assignedHouseId || houses[0]?.id || '',
-    commissionRate: user?.commissionRate || 0.20,
+    assignedHouseId: user ? (user.assignedHouseId || '') : (houses[0]?.id || ''),
+    commissionRate: user?.commissionRate ?? defaultCommissionRate,
     housingCostExempt: !!user?.housingCostExempt,
     notes: user?.notes || ''
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full my-auto p-6 space-y-4 shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <h3 className="text-base font-bold text-white">
             {user ? `Editar a ${user.name}` : 'Nuevo Usuario / Personal'}
@@ -2037,25 +2114,23 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) 
               alert('El código de usuario es obligatorio (ej: VEND-05, COORD-03, ADM-02).');
               return;
             }
-            if (formData.role === 'admin') {
-              if (!user && (!formData.password || formData.password.length < 14)) {
-                alert('La contraseña de Administrador debe tener al menos 14 caracteres con mayúsculas, minúsculas y números o símbolos.');
-                return;
-              }
-            } else {
-              if (formData.pin && formData.pin.length !== 8) {
-                alert('El PIN personal del trabajador debe contener exactamente 8 dígitos numéricos.');
-                return;
-              }
+            const { password, ...profile } = formData;
+            if ((!user || formData.role !== user.role) && !password) {
+              setSaveError('Asigná una contraseña para habilitar el acceso de esta cuenta.'); return;
             }
-            const { pin, password, ...profile } = formData;
+            if (password) {
+              const policy = validateAccountPassword(password, [formData.userCode, formData.email]);
+              if (!policy.isValid) { setSaveError(policy.error || 'Contraseña inválida.'); return; }
+              if (password !== passwordConfirmation) { setSaveError('Las contraseñas no coinciden.'); return; }
+            } else if (passwordConfirmation) { setSaveError('Ingresá la nueva contraseña y su confirmación.'); return; }
             setIsSaving(true);
             setSaveError(null);
             try {
               await onSave({
                 ...profile,
-                ...(formData.role === 'admin' && password ? { password } : {}),
-                ...(formData.role !== 'admin' && pin ? { pin } : {}),
+                name: formData.name.trim(),
+                email: formData.email.trim().toLowerCase(),
+                ...(password ? { password } : {}),
                 userCode: formData.userCode.trim().toUpperCase(),
                 commissionRate: Number(formData.commissionRate)
               });
@@ -2077,6 +2152,7 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) 
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white"
                 placeholder="Ej: Marcos Benavídez"
+                maxLength={120}
                 required
               />
             </div>
@@ -2088,6 +2164,8 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) 
                 onChange={(e) => setFormData({ ...formData, userCode: e.target.value.toUpperCase() })}
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono"
                 placeholder="Ej: VEND-05"
+                maxLength={32}
+                pattern="[A-Za-z0-9_-]+"
                 required
               />
             </div>
@@ -2098,10 +2176,11 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) 
               <label className="block text-slate-300 font-semibold mb-1">Correo Electrónico</label>
               <input
                 type="email"
+                maxLength={160}
+                autoComplete="off"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white"
-                required
               />
             </div>
             <div>
@@ -2111,7 +2190,6 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) 
                 value={formData.phone}
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white"
-                required
               />
             </div>
           </div>
@@ -2132,53 +2210,21 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) 
             </div>
 
             <div>
-              {formData.role === 'admin' ? (
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1">Contraseña (≥14 chars)</label>
-                  <div className="relative">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={formData.password}
-                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono text-xs pr-8"
-                      placeholder={user ? '(Sin cambios)' : 'Mínimo 14 caracteres'}
-                      required={!user}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
-                    >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1">PIN Personal (8 dígitos)</label>
-                  <div className="relative">
-                    <input
-                      type={showPin ? 'text' : 'password'}
-                      maxLength={8}
-                      value={formData.pin}
-                      onChange={(e) => setFormData({ ...formData, pin: e.target.value.replace(/\D/g, '').slice(0, 8) })}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-center font-mono tracking-widest pr-8"
-                      placeholder="••••••••"
-                      required={!user}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPin(!showPin)}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
-                      title={showPin ? 'Ocultar PIN' : 'Ver PIN'}
-                    >
-                      {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-              )}
+              <p className="rounded-lg border border-slate-500 bg-slate-800 p-3 text-slate-100">El usuario ingresa con su código o correo y su contraseña. Después puede cambiarla desde «Mi contraseña».</p>
             </div>
           </div>
+
+          <fieldset className="space-y-3 rounded-xl border border-slate-600 p-3">
+            <legend className="px-1 font-bold text-slate-100">Contraseña de acceso</legend>
+            <p className="text-slate-200">{user ? 'Dejá ambos campos vacíos para conservar la contraseña actual. Una nueva contraseña cierra las sesiones anteriores.' : 'Asigná una contraseña inicial. La persona puede cambiarla después desde su cuenta.'}</p>
+            <label className="block font-semibold text-slate-100">{user ? 'Nueva contraseña' : 'Contraseña inicial'}
+              <input type="password" autoComplete="new-password" value={formData.password} disabled={isSaving} required={!user || formData.role !== user.role} minLength={MIN_PASSWORD_LENGTH} maxLength={MAX_NEW_PASSWORD_LENGTH} onChange={event => setFormData({ ...formData, password: event.target.value })} className="mt-1 w-full min-h-12 rounded-lg border border-slate-500 bg-white px-3 text-base text-slate-950" />
+            </label>
+            <label className="block font-semibold text-slate-100">Repetir contraseña
+              <input type="password" autoComplete="new-password" value={passwordConfirmation} disabled={isSaving} required={!!formData.password} minLength={MIN_PASSWORD_LENGTH} maxLength={MAX_NEW_PASSWORD_LENGTH} onChange={event => setPasswordConfirmation(event.target.value)} className="mt-1 w-full min-h-12 rounded-lg border border-slate-500 bg-white px-3 text-base text-slate-950" />
+            </label>
+            <p className="text-slate-200">Mínimo {MIN_PASSWORD_LENGTH} caracteres; podés usar una frase. La contraseña anterior no se puede consultar.</p>
+          </fieldset>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -2188,6 +2234,7 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) 
                 onChange={(e) => setFormData({ ...formData, assignedHouseId: e.target.value })}
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white"
               >
+                <option value="">Sin base asignada</option>
                 {houses.map((h) => (
                   <option key={h.id} value={h.id}>{h.name}</option>
                 ))}
@@ -2200,9 +2247,10 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, onClose, onSave }) 
                 type="number"
                 step="0.01"
                 min="0"
-                max="1"
-                value={formData.commissionRate}
-                onChange={(e) => setFormData({ ...formData, commissionRate: Number(e.target.value) })}
+                max="100"
+                aria-label="Comisión de ventas (%)"
+                value={Number((formData.commissionRate * 100).toFixed(2))}
+                onChange={(e) => setFormData({ ...formData, commissionRate: Number(e.target.value) / 100 })}
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white"
               />
             </div>
@@ -2436,6 +2484,8 @@ const SupplierModal: React.FC<SupplierModalProps> = ({ supplier, categories, onC
               <label className="block text-slate-300 font-semibold mb-1">Email</label>
               <input
                 type="email"
+                maxLength={160}
+                autoComplete="off"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white"

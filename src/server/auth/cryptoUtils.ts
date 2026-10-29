@@ -7,9 +7,13 @@
  */
 
 import crypto from 'crypto';
+import { validateAccountPassword, MIN_PASSWORD_LENGTH } from '../../shared/passwordPolicy.js';
 
 const SALT_ROUNDS_BYTES = 16;
 const KEY_LEN = 32;
+const MAX_PASSWORD_LENGTH = 1024;
+const HASH_HEX_PATTERN = /^[a-fA-F0-9]{64}$/;
+const SALT_HEX_PATTERN = /^[a-fA-F0-9]{32}$/;
 
 export interface HashResult {
   hash: string;
@@ -66,7 +70,7 @@ export function validateWorkerPin(pin: string): { isValid: boolean; error?: stri
     return { isValid: false, error: 'El PIN es obligatorio y debe ser numérico.' };
   }
 
-  const clean = pin.trim();
+  const clean = pin;
 
   if (!/^\d{8}$/.test(clean)) {
     return {
@@ -159,42 +163,22 @@ export function validateWorkerPin(pin: string): { isValid: boolean; error?: stri
   return { isValid: true };
 }
 
-/**
- * Valida la contraseña de un Administrador:
- * - Longitud mínima de 14 caracteres.
- * - Debe contener mayúsculas, minúsculas y al menos un número o símbolo.
- */
+/** Compatibilidad del validador anterior: la política ahora corresponde a todos los roles. */
 export function validateAdminPassword(password: string): { isValid: boolean; error?: string } {
-  if (!password || typeof password !== 'string') {
-    return { isValid: false, error: 'La contraseña es obligatoria.' };
-  }
-
-  if (password.length < 14) {
-    return {
-      isValid: false,
-      error: `La contraseña de administrador debe tener al menos 14 caracteres (actual: ${password.length}).`
-    };
-  }
-
-  const hasUpper = /[A-Z]/.test(password);
-  const hasLower = /[a-z]/.test(password);
-  const hasNumberOrSymbol = /[0-9\W_]/.test(password);
-
-  if (!hasUpper || !hasLower || !hasNumberOrSymbol) {
-    return {
-      isValid: false,
-      error: 'La contraseña debe incluir mayúsculas, minúsculas y al menos un número o símbolo especial.'
-    };
-  }
-
-  return { isValid: true };
+  return validateAccountPassword(password);
 }
 
 /**
  * Genera un hash seguro para un PIN de 8 dígitos utilizando scrypt con salt individual
  */
 export function hashPin(pin: string, providedSalt?: string): HashResult {
-  const salt = providedSalt || crypto.randomBytes(SALT_ROUNDS_BYTES).toString('hex');
+  if (typeof pin !== 'string' || !/^\d{8}$/.test(pin)) {
+    throw new Error('Formato de PIN inválido para aprovisionamiento.');
+  }
+  if (providedSalt !== undefined && (typeof providedSalt !== 'string' || !SALT_HEX_PATTERN.test(providedSalt))) {
+    throw new Error('Formato de salt inválido.');
+  }
+  const salt = providedSalt ?? crypto.randomBytes(SALT_ROUNDS_BYTES).toString('hex');
   const derivedKey = crypto.scryptSync(pin, salt, KEY_LEN);
   return {
     hash: derivedKey.toString('hex'),
@@ -203,10 +187,16 @@ export function hashPin(pin: string, providedSalt?: string): HashResult {
 }
 
 /**
- * Genera un hash seguro para una contraseña de Administrador utilizando scrypt con salt individual
+ * Genera un hash seguro para una contraseña personal utilizando scrypt con salt individual
  */
 export function hashPassword(password: string, providedSalt?: string): HashResult {
-  const salt = providedSalt || crypto.randomBytes(SALT_ROUNDS_BYTES).toString('hex');
+  if (typeof password !== 'string' || Array.from(password).length < MIN_PASSWORD_LENGTH || password.length > MAX_PASSWORD_LENGTH) {
+    throw new Error('Formato de contraseña inválido para aprovisionamiento.');
+  }
+  if (providedSalt !== undefined && (typeof providedSalt !== 'string' || !SALT_HEX_PATTERN.test(providedSalt))) {
+    throw new Error('Formato de salt inválido.');
+  }
+  const salt = providedSalt ?? crypto.randomBytes(SALT_ROUNDS_BYTES).toString('hex');
   const derivedKey = crypto.scryptSync(password, salt, KEY_LEN);
   return {
     hash: derivedKey.toString('hex'),
@@ -215,19 +205,19 @@ export function hashPassword(password: string, providedSalt?: string): HashResul
 }
 
 /**
- * Verifica una contraseña de Administrador contra hash y salt almacenados con comparación en tiempo constante
+ * Verifica una contraseña personal contra hash y salt almacenados con comparación en tiempo constante
  * REGLA ESTRICTA (Hito 1.2.1):
  * - Requiere obligatoriamente hash scrypt y salt individual.
  * - Rechaza terminantemente cualquier valor en texto plano o sin hash.
  */
 export function verifyPassword(password: string, storedHash?: string | null, storedSalt?: string | null): boolean {
-  if (!password || !storedHash || !storedSalt) return false;
+  if (typeof password !== 'string' || Array.from(password).length < MIN_PASSWORD_LENGTH || password.length > MAX_PASSWORD_LENGTH) return false;
 
   // El hash debe ser un hash scrypt hexadecimal válido de 32 bytes (64 caracteres)
-  if (typeof storedHash !== 'string' || storedHash.length !== KEY_LEN * 2) {
+  if (typeof storedHash !== 'string' || !HASH_HEX_PATTERN.test(storedHash)) {
     return false;
   }
-  if (typeof storedSalt !== 'string' || storedSalt.length < 16) {
+  if (typeof storedSalt !== 'string' || !SALT_HEX_PATTERN.test(storedSalt)) {
     return false;
   }
 
@@ -250,18 +240,18 @@ export function verifyPassword(password: string, storedHash?: string | null, sto
  * - Requiere formato de PIN de exactamente 8 dígitos.
  */
 export function verifyPin(pin: string, storedHash?: string | null, storedSalt?: string | null): boolean {
-  if (!pin || !storedHash || !storedSalt) return false;
+  if (typeof pin !== 'string') return false;
 
-  const cleanPin = pin.trim();
+  const cleanPin = pin;
   if (!/^\d{8}$/.test(cleanPin)) {
     return false;
   }
 
   // El hash debe ser un hash scrypt hexadecimal válido de 32 bytes (64 caracteres)
-  if (typeof storedHash !== 'string' || storedHash.length !== KEY_LEN * 2) {
+  if (typeof storedHash !== 'string' || !HASH_HEX_PATTERN.test(storedHash)) {
     return false;
   }
-  if (typeof storedSalt !== 'string' || storedSalt.length < 16) {
+  if (typeof storedSalt !== 'string' || !SALT_HEX_PATTERN.test(storedSalt)) {
     return false;
   }
 

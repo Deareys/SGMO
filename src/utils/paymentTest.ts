@@ -7,6 +7,8 @@
  * o respuesta de la API oficial de Mercado Pago.
  */
 
+import { authenticatedFetch } from '../services/apiClient';
+
 export interface PaymentDiagnosticResult {
   step: string;
   status: 'SUCCESS' | 'FAILED' | 'WARNING';
@@ -24,7 +26,7 @@ export async function testBackendMpStatus(): Promise<PaymentDiagnosticResult> {
   console.group('🔍 [TEST 1/3] Verificando Estado de Conexión del Backend con Mercado Pago');
   try {
     const startTime = performance.now();
-    const response = await fetch('/api/mercadopago/status', {
+    const response = await authenticatedFetch('/api/mercadopago/status', {
       method: 'GET',
       headers: { 'Accept': 'application/json' }
     });
@@ -119,7 +121,7 @@ export async function testBackendPaymentVerification(
     console.log('📤 Enviando payload a /api/mercadopago/verify-payment:', payload);
     const startTime = performance.now();
 
-    const response = await fetch('/api/mercadopago/verify-payment', {
+    const response = await authenticatedFetch('/api/mercadopago/verify-payment', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -202,7 +204,7 @@ export async function testBackendRecentPayments(): Promise<PaymentDiagnosticResu
   console.group('🔍 [TEST 3/3] Consultando Pagos Recientes en Cuenta de Mercado Pago');
   try {
     const startTime = performance.now();
-    const response = await fetch('/api/mercadopago/recent-payments', {
+    const response = await authenticatedFetch('/api/mercadopago/recent-payments', {
       method: 'GET',
       headers: { 'Accept': 'application/json' }
     });

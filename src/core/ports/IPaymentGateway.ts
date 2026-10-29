@@ -7,6 +7,7 @@
  */
 
 export interface CreatePaymentPreferenceInput {
+  saleId: string;
   title: string;
   quantity: number;
   unitPrice: number;
@@ -20,6 +21,7 @@ export interface CreatePaymentPreferenceResult {
 }
 
 export interface VerifyPaymentInput {
+  saleId: string;
   paymentId: string;
   expectedAmount: number;
   expectedReference?: string;
@@ -28,7 +30,9 @@ export interface VerifyPaymentInput {
 export interface VerifyPaymentResult {
   verified: boolean;
   status: 'approved' | 'pending' | 'rejected' | 'not_found' | 'error';
-  amount: number;
+  amount?: number;
+  amountMatches?: boolean;
+  isLiveApi?: boolean;
   operationId: string;
   dateCreated?: string;
   payerEmail?: string;
@@ -41,7 +45,7 @@ export interface PaymentGatewayStatus {
   isConfigured: boolean;
   hasAccessToken: boolean;
   tokenPrefix?: string;
-  mode: 'sandbox' | 'production' | 'mock';
+  mode: 'sandbox' | 'production' | 'demo' | 'unconfigured' | 'unavailable';
   publicKey?: string;
 }
 

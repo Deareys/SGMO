@@ -12,7 +12,7 @@
    - Inspeccionar los archivos reales involucrados (`view_file` / `list_dir`).
    - Revisar la documentación en `/docs`.
    - Verificar el estado actual de Git (`git status`).
-   - Consultar las decisiones arquitectónicas en `/docs/DECISIONS.md`.
+   - Consultar las decisiones arquitectónicas en `/docs/tecnica/DECISIONS.md`.
 
 ---
 
@@ -39,7 +39,7 @@
    - Limpieza o reordenamiento masivo de código.
 3. Si detectas un error o una oportunidad de mejora ajena a la tarea en curso:
    - **NO la toques**.
-   - Regístrala formalmente en `/docs/TODO.md` bajo la categoría correspondiente.
+   - Regístrala formalmente en `/docs/gestion/TODO.md` bajo la categoría correspondiente.
 
 ---
 
@@ -130,7 +130,7 @@
 
 ## 12. ARQUITECTURA
 1. No cambiar el framework (React + Vite + Tailwind CSS), ni el servidor Express, ni la arquitectura modular sin autorización explícita.
-2. Toda propuesta de cambio arquitectónico (por ejemplo, migrar a Vercel Serverless Functions o conectar Cloud SQL/PostgreSQL) debe documentarse previamente en `/docs/DECISIONS.md`.
+2. Toda propuesta de cambio arquitectónico (por ejemplo, migrar a Vercel Serverless Functions o conectar Cloud SQL/PostgreSQL) debe documentarse previamente en `/docs/tecnica/DECISIONS.md`.
 
 ---
 
@@ -157,6 +157,8 @@
 ---
 
 ## 15. GESTIÓN DE GIT (PROHIBICIÓN ESTRICTA DE COMMIT/PUSH AUTOMÁTICO)
+
+> **Ampliación expresa de Sebas — 29 de octubre de 2026:** el principal puede preparar la base `production` del proyecto Neon `still-mud-30172607`, aplicar migraciones aditivas verificadas con respaldo, publicar en `main` y desplegar SGMO en el proyecto Vercel existente `sgmo` (`prj_Rgf45jsEOVpwllWa1Sw3Swby11C6`) y su dominio habitual. Incluye consolidar documentación existente en `docs/`, corregir persistencia de configuración y preparar recuperación/importación de datos locales. No autoriza borrar datos, fusionar otros negocios/proyectos ni convertir registros de ensayo en operaciones reales. Se conserva trazabilidad de fuentes y pruebas. Esta ampliación reemplaza para esta entrega la restricción anterior de no integrar automáticamente en main; no amplía permisos de agentes auxiliares.
 
 > **Excepción expresa autorizada por Sebas — 12 de octubre de 2026:** el modelo principal de Codex puede ejecutar `git add`, crear commits y hacer push de ramas de trabajo cuando sea necesario, sin pedir confirmación adicional ni entregar ZIP. Esta autorización prevalece sobre los puntos 1–3 de esta sección exclusivamente para esas operaciones del principal. Los auxiliares siguen sujetos a la prohibición. No amplía permisos para `reset --hard`, rebase destructivo, migraciones remotas ni despliegues. En esta entrega se usa una rama separada y PR de revisión; no se integra automáticamente en main.
 1. **REGLA ABSOLUTA**: Queda terminantemente prohibido ejecutar:
@@ -188,7 +190,7 @@
 ## 18. GESTIÓN DE CAMBIOS NO SOLICITADOS
 1. Si durante la inspección encuentras bugs, deuda técnica o código mejorable que no forman parte del requerimiento actual:
    - **NO los modifiques por tu cuenta**.
-   - Agrégalos con descripción clara y archivo de referencia en `/docs/TODO.md`.
+   - Agrégalos con descripción clara y archivo de referencia en `/docs/gestion/TODO.md`.
 
 ---
 

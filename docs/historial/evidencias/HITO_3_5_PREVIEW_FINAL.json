@@ -1,0 +1,52 @@
+{
+  "origin": "https://sgmo-hxrkrkfqs-deareys.vercel.app",
+  "expectedRevision": "90a898994de7bfc6ddbdd9f82da3ab7432b6dc6e",
+  "passed": true,
+  "checks": [
+    {
+      "name": "Acceso autorizado al preview",
+      "passed": true
+    },
+    {
+      "name": "Frontend /",
+      "passed": true
+    },
+    {
+      "name": "Frontend /setup",
+      "passed": true
+    },
+    {
+      "name": "Backend: revisión exacta y transporte de sesión",
+      "passed": true
+    },
+    {
+      "name": "Conexión con la base central",
+      "passed": true
+    },
+    {
+      "name": "Acceso anónimo denegado /api/auth/me",
+      "passed": true
+    },
+    {
+      "name": "Acceso anónimo denegado /api/bootstrap",
+      "passed": true
+    },
+    {
+      "name": "Acceso anónimo denegado /api/users",
+      "passed": true
+    },
+    {
+      "name": "Acceso anónimo denegado /api/sales",
+      "passed": true
+    },
+    {
+      "name": "Preparación CSRF",
+      "passed": true
+    },
+    {
+      "name": "API inexistente mantiene JSON404",
+      "passed": true
+    }
+  ],
+  "scope": "Sólo lectura: frontend, API, revisión, conexión DB y barreras anónimas. No prueba migraciones completas, login real, ventas, pagos, OCR ni teléfonos."
+}

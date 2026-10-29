@@ -319,9 +319,9 @@ export function downloadLiquidationPdf(shift: DailyShift): boolean {
     doc.text(formatCurrency(shift.cashExpected), margin + payBoxWidth - 4, y + 11.5, { align: 'right' });
 
     doc.text(`• Efectivo Físico Declarado:`, margin + 4, y + 16.5);
-    doc.text(formatCurrency(shift.cashDeclared || shift.cashExpected), margin + payBoxWidth - 4, y + 16.5, { align: 'right' });
+    doc.text(formatCurrency(shift.cashDeclared ?? shift.cashExpected), margin + payBoxWidth - 4, y + 16.5, { align: 'right' });
 
-    const cashDiff = (shift.cashDeclared || shift.cashExpected) - shift.cashExpected;
+    const cashDiff = (shift.cashDeclared ?? shift.cashExpected) - shift.cashExpected;
     doc.setFont('helvetica', 'bold');
     if (cashDiff < 0) {
       doc.setTextColor(roseDark[0], roseDark[1], roseDark[2]);
@@ -383,7 +383,7 @@ export function downloadLiquidationPdf(shift: DailyShift): boolean {
     doc.roundedRect(margin, y, contentWidth, liqBoxHeight, 2, 2, 'FD');
 
     // Fila 1: Total Ventas y Tramo Aplicado
-    const ratePercent = Math.round((shift.commissionRate || 0.20) * 100);
+    const ratePercent = Math.round((shift.commissionRate ?? 0.20) * 100);
     const tierName = shift.appliedCommissionTierName || `Tramo ${ratePercent}% (${ratePercent}% sobre ventas totales)`;
 
     doc.setFontSize(7.5);
@@ -419,7 +419,7 @@ export function downloadLiquidationPdf(shift: DailyShift): boolean {
       doc.text('$ 0 (Exento autorizado)', margin + contentWidth - 5, y + 22.5, { align: 'right' });
     } else {
       doc.setTextColor(roseDark[0], roseDark[1], roseDark[2]);
-      doc.text(`- ${formatCurrency(shift.housingCostDeduction || 8000)}`, margin + contentWidth - 5, y + 22.5, { align: 'right' });
+      doc.text(`- ${formatCurrency(shift.housingCostDeduction ?? 0)}`, margin + contentWidth - 5, y + 22.5, { align: 'right' });
     }
 
     // Fila 4: Descuento por Faltantes de Unidades

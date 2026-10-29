@@ -3,7 +3,7 @@
  * Tequeños Costa — Venta Ambulante en Zonas Costeras
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { storageService, AppState } from './services/storageService';
 import { UserProfile } from './types';
 import { PinLoginScreen } from './components/PinLoginScreen';
@@ -20,19 +20,48 @@ import { AdminConfigView } from './components/AdminConfigView';
 import { FactoryProductionView } from './components/FactoryProductionView';
 import { GeneralVouchersRepositoryView } from './components/GeneralVouchersRepositoryView';
 import { AuditAlertsModal } from './components/AuditAlertsModal';
+import { ChangePasswordModal } from './components/PasswordManagement';
+import { getLegacyBackup, downloadLegacyBackup } from './services/legacyRecovery';
+
+const InitialOwnerSetup = lazy(() => import('./components/InitialOwnerSetup'));
+const PasswordActivationScreen = lazy(() => import('./components/PasswordActivationScreen'));
 
 export const App: React.FC = () => {
   const [state, setState] = useState<AppState>(storageService.getState());
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [isAlertsOpen, setIsAlertsOpen] = useState(false);
   const [isAuditOpen, setIsAuditOpen] = useState(false);
+  const [isPasswordOpen, setIsPasswordOpen] = useState(false);
 
   useEffect(() => {
     const unsubscribe = storageService.subscribe((newState) => {
       setState({ ...newState });
     });
+    void storageService.restoreSession();
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!state.currentUser?.id) return;
+    let stopped = false;
+    const refresh = async () => {
+      if (stopped || !storageService.getState().isOnline) return;
+      const loaded = await storageService.refreshCentralState();
+      if (!loaded || stopped) return;
+      const synchronization = await storageService.flushOfflineQueue();
+      if (synchronization.acknowledgedIds.length && !stopped) await storageService.refreshCentralState();
+    };
+    void refresh();
+    const refreshTimer = window.setInterval(() => { void refresh(); }, 30_000);
+    window.addEventListener('online', refresh);
+    window.addEventListener('focus', refresh);
+    return () => {
+      stopped = true;
+      window.clearInterval(refreshTimer);
+      window.removeEventListener('online', refresh);
+      window.removeEventListener('focus', refresh);
+    };
+  }, [state.currentUser?.id]);
 
   // Adaptar ruta inicial automáticamente según el rol del usuario autenticado por PIN
   const handleLoginSuccess = (user: UserProfile) => {
@@ -45,8 +74,9 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleLogout = () => {
-    storageService.logout();
+  const handleLogout = async () => {
+    const result = await storageService.logout();
+    if (!result.success) window.alert(result.error || 'El cierre de sesión requiere conexión para confirmar la revocación.');
   };
 
   const handleSelectHouse = (houseId: string) => {
@@ -55,14 +85,50 @@ export const App: React.FC = () => {
 
   const handleResetSeed = () => {
     if (window.confirm('¿Deseás reiniciar todos los datos a la configuración inicial de fábrica? Se cerrará la sesión actual.')) {
-      storageService.resetToFactorySeed();
-      setActiveTab('dashboard');
+      try {
+        storageService.resetToFactorySeed();
+        setActiveTab('dashboard');
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : 'El reinicio no se pudo confirmar.');
+      }
     }
   };
 
-  // Si no hay usuario autenticado, renderizar exclusivamente la pantalla de ingreso con PIN
+  if (window.location.pathname === '/activate') {
+    return <Suspense fallback={<p role="status" className="p-6">Preparando activación…</p>}><PasswordActivationScreen /></Suspense>;
+  }
+
+  // Exportación local de emergencia: no consulta ni expone registros del servidor.
+  if (window.location.pathname === '/respaldo') {
+    return <main className="min-h-screen bg-slate-50 p-6 text-slate-950 space-y-4">
+      <h1 className="text-xl font-bold">Respaldo del navegador anterior</h1>
+      <p>Este archivo contiene tus registros anteriores sin contraseñas. Guardalo en un lugar privado e importalo desde Configuración → Recuperar datos anteriores.</p>
+      {getLegacyBackup() ? <button className="min-h-12 p-3 border-2 bg-amber-300 rounded-xl font-bold" onClick={()=>downloadLegacyBackup()}>Descargar respaldo anterior</button>
+        : <p>No se detectaron datos anteriores en este navegador. Probá desde el dispositivo y dominio donde los cargaste.</p>}
+      <a href="/" className="block underline">Volver al ingreso</a>
+    </main>;
+  }
+
+  // Si no hay usuario autenticado, mostrar sólo ingreso/activación inicial.
   if (!state.currentUser) {
+    if (window.location.pathname === '/setup') {
+      return <Suspense fallback={<p role="status" className="p-6">Preparando activación…</p>}><InitialOwnerSetup /></Suspense>;
+    }
     return <PinLoginScreen onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  // No mostrar los datos de otra cuenta ni semillas antiguas durante el arranque.
+  if (state.centralOwnerUserId !== state.currentUser.id || !state.centralHydrated) {
+    return (
+      <div className="min-h-screen bg-slate-50 p-6 flex items-center justify-center">
+        <div className="max-w-md bg-white border-2 border-slate-300 rounded-2xl p-6 space-y-4">
+          <h1 className="font-black text-lg">Preparando la operación central</h1>
+          <p role="status" className="text-slate-800">{state.centralError || 'Cargando jornadas, catálogo y configuración de tu sesión…'}</p>
+          <button type="button" disabled={state.centralStatus === 'loading'} onClick={() => { void storageService.refreshCentralState(); }} className="min-h-12 w-full bg-amber-400 border-2 border-amber-600 rounded-xl font-bold disabled:opacity-50">Reintentar carga</button>
+          <button type="button" onClick={handleLogout} className="min-h-12 w-full border-2 border-slate-400 rounded-xl">Cerrar sesión</button>
+        </div>
+      </div>
+    );
   }
 
   const unreadAlertsCount = state.alerts.filter((a) => !a.isRead).length;
@@ -114,7 +180,20 @@ export const App: React.FC = () => {
         onOpenAudit={() => setIsAuditOpen(true)}
         onResetSeed={handleResetSeed}
         onLogout={handleLogout}
+        onChangePassword={() => setIsPasswordOpen(true)}
       />
+      {isPasswordOpen && <ChangePasswordModal onClose={() => setIsPasswordOpen(false)} />}
+
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-3 space-y-2">
+        {['factory','production','fleet','costs'].includes(currentTabSafe) && <p role="status" className="rounded-xl border-2 border-amber-600 bg-amber-50 p-3 text-sm text-slate-950">Esta vista contiene registros que todavía se guardan sólo en este dispositivo. Para la operación compartida usá Configuración, Despacho, Ventas y Liquidaciones; no tomes estos registros locales como un cierre confirmado.</p>}
+        {state.demoMode && <p className="rounded-xl border-2 border-amber-500 bg-amber-50 p-3 text-sm font-bold">Demostración aislada: estos datos no pertenecen a producción.</p>}
+        {(state.centralError || state.saleSyncError || state.operationSyncError || offlineQueueCount > 0) && (
+          <div role="status" className="rounded-xl border-2 border-amber-500 bg-amber-50 p-3 text-sm text-slate-950">
+            <p>{state.centralError || state.saleSyncError || state.operationSyncError || `${offlineQueueCount} ventas pendientes de confirmación central.`}</p>
+            <button type="button" disabled={state.saleSyncStatus === 'syncing' || !state.isOnline} onClick={() => { void storageService.flushOfflineQueue(); }} className="mt-2 min-h-12 px-4 border-2 border-slate-600 bg-white rounded-xl font-bold disabled:opacity-50">Reintentar sincronización</button>
+          </div>
+        )}
+      </div>
 
       {/* Contenedor Principal de la Aplicación */}
       <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-6">

@@ -1,0 +1,46 @@
+{
+  "origin": "https://sgmo-g3io1rgrd-deareys.vercel.app",
+  "revision": "6e475e591292a2153bb0051a14d7d29cbb86a4ab",
+  "databaseBranchId": "br-autumn-scene-b6dn6018",
+  "runId": "d744b429c522",
+  "checks": [
+    {
+      "name": "Revisión exacta y conexión real con PostgreSQL bajo HTTPS",
+      "passed": true
+    },
+    {
+      "name": "Administrador sintético activado sin credenciales predeterminadas",
+      "passed": true
+    },
+    {
+      "name": "Alta confirmada y recuperada desde la lista central, sin contraseña pública",
+      "passed": true
+    },
+    {
+      "name": "Salir del administrador e ingresar al usuario por código/correo funciona",
+      "passed": true
+    },
+    {
+      "name": "Edición sin contraseña conserva acceso y guarda nombre/correo",
+      "passed": true
+    },
+    {
+      "name": "Contraseña nueva persiste, invalida la anterior y revoca sesión previa",
+      "passed": true
+    },
+    {
+      "name": "Correo duplicado rechazado sin reemplazar la cuenta previa",
+      "passed": true
+    },
+    {
+      "name": "Retiro de cuentas QA revoca todas sus sesiones sin borrar perfiles",
+      "passed": true
+    }
+  ],
+  "passed": true,
+  "failed": null,
+  "qaCredentialsRetired": true,
+  "providerCalls": 0,
+  "scope": "HTTP HTTPS real de Vercel a Neon aislado, cuentas sintéticas. No prueba UI remota ni pagos/OCR.",
+  "resumed": true
+}
