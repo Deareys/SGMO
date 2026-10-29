@@ -1,10 +1,12 @@
 # Hito 3.5 — Acceso simple y usuarios persistentes
 
-29/10/2026, Argentina. En implementación. Alcance solicitado: crear/editar cuentas y contraseña en PostgreSQL, cerrar sesión e ingresar con esos datos; pantalla normal de identificador y contraseña. Sin proveedor externo nuevo ni costo de autenticación adicional.
+29/10/2026, Argentina. Implementado y probado en ensayo; el dominio principal conserva la revisión antigua. Alcance solicitado: crear/editar cuentas y contraseña en PostgreSQL, cerrar sesión e ingresar con esos datos; pantalla normal de identificador y contraseña. Sin proveedor externo nuevo ni costo de autenticación adicional.
 
 ## Diagnóstico confirmado
 
 GitHub main `d291d5ae52f1a86d4445824beec553ea1cbcf877`; PR 2 abierto, sin integrar, head `f8d9b4ff868937ccaca80952d036ceab20909ccc`. Vercel `sgmo-rose.vercel.app` sirve ese main antiguo (`dpl_86jnrjcuhse1TDNUuuH9NHQasdUw`). Su componente de acceso enumera trabajadores de una lista local y tiene modos admin/trabajador. La rama reparada aún no llegó a ese dominio. La base Neon productiva no tiene tablas; ensayo tiene nueve migraciones, ocho perfiles y ninguna cuenta aprovisionada. Los datos que sólo existan en navegadores antiguos no se consideran migrados; no borrar su caché.
+
+En esa revisión, `createUser` y `updateUser` modifican caché y muestran el resultado antes de terminar `fetch`. No comprueban HTTP no exitoso; un 404 no activa `.catch`. La prueba pública del 29/10 confirmó **404** en `/api/health` y `/api/db/status`. Esto explica el falso guardado: los perfiles mostrados en el cliente no equivalen a cuentas persistidas para autenticar. El nuevo recorrido espera la confirmación PostgreSQL y sólo entonces actualiza la lista.
 
 ## Hitos y prompt utilizado por el principal
 
@@ -18,3 +20,25 @@ Reparar exclusivamente inicio de sesión y persistencia de usuarios sobre la rev
 ```
 
 No se delegan tareas a agentes auxiliares. Pruebas con cuentas sintéticas; no se cambia la contraseña de una persona real.
+
+## Resultado y pruebas
+
+Revisión funcional: `6e475e591292a2153bb0051a14d7d29cbb86a4ab`. [Actions 40875901254](https://github.com/Deareys/SGMO/actions/runs/40875901254) y [40875893017](https://github.com/Deareys/SGMO/actions/runs/40875893017) aprobados. Tipos/build, **195 pruebas**, **35 históricas**, **11 grupos SQL de autenticación/migración**, **11 grupos HTTP en dos procesos PostgreSQL 16**, **10 grupos SQL de contraseñas**, **25 casos de operación** y seis grupos WASM de configuración. Chromium: **8 de acceso + 9 centrales + 9 de cuentas/contraseñas**. La nueva cobertura reproduce alta, recarga, logout del administrador, ingreso desde otro navegador, edición con/sin clave, revocación y duplicados; también reinicia un backend conservando las cuentas.
+
+Preview de trabajo: [sgmo-6mm1ezls5-deareys.vercel.app](https://sgmo-6mm1ezls5-deareys.vercel.app), deployment `dpl_xGy9hDmTq3PRMd4d4HMMHGyu7SQU`, revisión `6e475e59…`. **11/11** comprobaciones de infraestructura HTTPS, revisión exacta, conexión Neon, CSRF y barreras anónimas. Mantiene protección de Vercel: abrir con una cuenta autorizada. El administrador real aún debe activar su cuenta privadamente en `/setup`; no existe contraseña predeterminada.
+
+Prueba de nube independiente: rama Git `qa/login-20261029`, deployment `dpl_5bvWHPpgR4Ay8qJ2YdMKAnTar7hK`, misma revisión, conectada exclusivamente a copia Neon `br-autumn-scene-b6dn6018`. El script `scripts/tests/deployed-users.smoke.mjs` completó **8/8** escenarios HTTPS reales: activación sintética, alta, lectura central, salir de administrador e ingresar al trabajador por código/correo, edición sin cambiar clave, cambio de clave y revocación, segunda sesión y correo duplicado. No llamó a pagos ni OCR. [Resultado sin secretos](evidence/HITO_3_5_VERCEL_NEON.json).
+
+La primera ejecución remota se detuvo al recibir un 401 inesperado; la autorización temporal del preview impedía continuar. Se renovó el acceso y se comprobó la misma revisión sin cambiar las reglas de autenticación. Se reanudó con las credenciales privadas de sus propias cuentas, sin reabrir bootstrap ni repetir el alta. La prueba mantuvo sus expectativas 401/403 y la comprobación de que la contraseña anterior dejara de funcionar. Al terminar, ambas cuentas sintéticas quedaron inactivas y **cero sesiones QA activas**, confirmado por SQL; los perfiles/auditoría se conservaron y la venta histórica no se modificó. No usar ese deployment QA como app operativa.
+
+## Base y conservación de datos
+
+Respaldo sin compute: `sgmo-pruebas-pre-010-20261029`, `br-patient-dew-b6nc146n`. Se ensayó la migración 010 en la copia y después en `sgmo-pruebas`; los conteos y huellas de usuarios, ventas y sesiones permanecieron iguales. Sólo se agregó el índice único del correo y su versión. Ensayo: **22 tablas, diez migraciones, ocho perfiles, cero cuentas reales aprovisionadas**. La migración rechaza correos previos duplicados y revierte sin borrar ni reasignar filas; probado tanto en WASM como en PostgreSQL de CI.
+
+La copia de QA recibió exclusivamente credenciales aleatorias de esa prueba y quedó retirada al terminar. Las variables nuevas de QA se limitaron a su rama de preview. Los archivos locales con códigos, cookies o conexiones no se publican; el informe JSON sólo contiene resultados y metadatos de la prueba.
+
+## Uso y publicación
+
+La [guía manual](PRUEBA_LOGIN_2026_10_29.md) explica alta, edición, confirmación y primer administrador. La contraseña anterior no se consulta ni se muestra: sólo se reemplaza. Se conserva el cambio propio y la recuperación por enlace además de la contraseña inicial solicitada. Los correos se normalizan; un código numérico conserva sus ceros. El login no muestra usuarios, modos de rol, teclado PIN ni enlaces de configuración. Los mensajes públicos se refieren a contraseña/acceso, manteniendo compatibilidad histórica únicamente dentro del servicio.
+
+**El dominio `sgmo-rose.vercel.app` continúa en main antiguo.** Publicar una rama no cambia esa app. Integrar/publicar requiere respetar la regla 15 de AGENTS.md, configurar Production con su base y preparar su primera cuenta; antes de sustituir el cliente viejo deben resguardarse los datos que sólo estén en esos navegadores. No se declara reparado el dominio principal por haber aprobado el preview. No se certifican otros módulos ni proveedores en este hito.

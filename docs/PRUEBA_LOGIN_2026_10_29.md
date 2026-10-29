@@ -2,6 +2,8 @@
 
 29/10/2026. Usar la URL exacta y revisión indicadas en el [informe del Hito 3.5](HITO_3_5_LOGIN_Y_USUARIOS.md). GitHub guarda el código; Vercel ejecuta una revisión concreta y Neon guarda las cuentas. Una rama publicada no cambia automáticamente el dominio principal.
 
+Versión funcional verificada: [abrir la app de ensayo](https://sgmo-6mm1ezls5-deareys.vercel.app), revisión `6e475e59…`. Requiere acceso autorizado de Vercel. **No confundir con `sgmo-rose.vercel.app`, que sigue en el main antiguo.** El dueño debe completar la primera activación antes de crear cuentas; los perfiles sin contraseña en la base no tienen un acceso predeterminado.
+
 ## Primera cuenta del negocio
 
 La cuenta administradora pertenece al dueño. Si esa base aún no tiene ningún administrador activado, el dueño abre directamente `/setup` en la URL verificada, escribe su nombre/correo, elige contraseña y utiliza el código privado `BOOTSTRAP_SECRET` que configuró el responsable de la instalación en ese entorno. No hay contraseña predeterminada ni acceso por elegir un perfil. No compartir el código o contraseñas en GitHub, capturas o soporte. El enlace `/setup` no figura en el login público.

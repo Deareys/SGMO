@@ -47,7 +47,7 @@ export function pinRateLimiter(req: Request, res: Response, next: NextFunction):
       res.status(429).json({
         success: false,
         code: 'TOO_MANY_ATTEMPTS',
-        message: `Demasiados intentos fallidos de PIN. Acceso bloqueado temporalmente por seguridad. Reintentá en ${remainingSeconds} segundos.`,
+        message: `Demasiados intentos de acceso. Acceso bloqueado temporalmente por seguridad. Reintentá en ${remainingSeconds} segundos.`,
         retryAfter: remainingSeconds
       });
       return;

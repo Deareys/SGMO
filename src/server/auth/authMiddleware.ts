@@ -61,7 +61,7 @@ export async function authenticateToken(req: Request, res: Response, next: NextF
     res.status(401).json({
       success: false,
       code: 'INVALID_OR_EXPIRED_TOKEN',
-      message: 'Sesión inválida o expirada. Por favor, reingresá tu PIN para iniciar sesión.'
+      message: 'Sesión inválida o expirada. Volvé a iniciar sesión con tu contraseña.'
     });
     return;
   }

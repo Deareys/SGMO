@@ -430,7 +430,7 @@ export class StorageService {
     if (!identifier.trim()) return { success:false,error:'Ingresá tu código de usuario o correo.' };
     if (/^\d{8}$/.test(credential)) return this.loginWithPinAsync(credential,identifier.trim());
     if (Array.from(credential).length >= 12 && credential.length <= 1024) return this.loginAsAdminAsync(identifier.trim(),credential);
-    return { success:false,error:'Ingresá un PIN de 8 dígitos o una contraseña de al menos 12 caracteres.' };
+    return { success:false,error:'Ingresá tu contraseña completa y revisá el código o correo.' };
   }
 
   public async loginWithPinAsync(pin: string, userCode?: string): Promise<{ success: boolean; user?: UserProfile; error?: string }> {

@@ -2,6 +2,12 @@
 
 Fecha: 13 de octubre de 2026. Hitos 1.2.2 y 1.3.
 
+## Ampliación Hito 3.5 — 29/10/2026
+
+El acceso móvil exige sólo dos campos, sin selector ni modos. El smoke de contraseñas incluye alta con clave inicial, recarga/logout del administrador, login desde otro navegador, edición con/sin contraseña y correo duplicado (nueve recorridos). Se añaden validaciones de identidad, migración 010 no destructiva ante duplicados y persistencia después de reiniciar el backend. **Aprobado:** [40875901254](https://github.com/Deareys/SGMO/actions/runs/40875901254), `6e475e591292a2153bb0051a14d7d29cbb86a4ab`: 195 pruebas, 35 históricas, once grupos auth SQL, once HTTP multiproceso, diez de contraseñas SQL, 25 operativos PostgreSQL, seis de configuración WASM y Chromium 8+9+9.
+
+El ensayo `deployed-users.smoke.mjs` es separado, mutativo y opt-in: requiere `--apply`, `SGMO_REMOTE_AUTH_QA_ENABLE=true` y `SGMO_REMOTE_AUTH_QA_CONFIG` apuntando a un archivo privado 0600 fuera del repositorio. El operador confirma primero el deployment y las variables limitadas a la rama QA, la copia Neon y la revisión exacta. No se ejecuta en la CI normal ni recibe secretos reales del negocio. Puede reanudar exclusivamente una ejecución propia interrumpida antes de la edición con `SGMO_REMOTE_AUTH_QA_RESUME=true`; no reabre bootstrap ni sobreescribe una cuenta previa para forzar el resultado. Las credenciales QA se retiran al terminar y sólo se guarda un resumen sin secretos. Ver [informe Hito 3.5](HITO_3_5_LOGIN_Y_USUARIOS.md).
+
 ## Ampliación Hito 3.4 — 20/10/2026
 
 La política nueva admite 12–128 caracteres sin composición obligatoria. La suite histórica ahora prueba una entrada de 11 caracteres; un ejemplo de 12 ya no debe rechazarse por longitud. Se agregan cuatro pruebas de política y una de repositorio (193 en total), ocho grupos `passwords-sql.integration.ts --postgres`, tres escenarios de contraseñas en el runner HTTP multiproceso (nueve grupos en total) y seis recorridos `browser-passwords.smoke.cjs`. La CI verifica consumo competitivo de un código, cambio/login simultáneos, fallo cerrado de los tres endpoints, rollback integral y conservación de ventas pendientes al cambiar la clave. El navegador usa la API y SQL WASM efímero; sólo el job PostgreSQL prueba concurrencia por sockets. No usa Neon ni proveedores reales. El informe del [Hito 3.4](HITO_3_4_CONTRASENAS_Y_PRODUCCION.md) distingue los resultados locales de los de Actions.
