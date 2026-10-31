@@ -1,3 +1,17 @@
+# Comprobar stock y carritos — actualización del 31/10/2026
+
+Una vez publicada la corrección, abrir el enlace habitual y recargar la página para cargar la versión nueva. No borrar los datos del navegador: puede contener ventas o existencias anteriores.
+
+1. En **Stock & Producción**, registrar un lote con un producto real del catálogo y una cantidad pequeña real. Al guardar, tiene que aparecer en «En Cámara Central». Recargar y abrir la misma cuenta en otro teléfono: debe seguir allí. Otro dispositivo se actualiza al recuperar foco o en el refresco automático (hasta 30 segundos); también puede recargarse manualmente.
+2. En **Trasladar a Casas**, elegir origen «Cámara central», una casa y la cantidad del producto. Después del guardado, se resta de cámara y se suma a la casa. Para mover entre casas, elegir una casa como origen y otra como destino. Si falta stock o capacidad, el formulario conserva las cantidades y muestra el motivo, sin confirmar el traslado.
+3. En **Configuración → Carritos**, crear «anteojos», «la Tota» u otro nombre. La ubicación actual puede quedar vacía: no es una base fija. Desde **Despacho**, elegir el carrito, la casa de salida y los productos reales a entregar.
+4. En **Cierres & Arqueo**, elegir «Casa de regreso», contar sobrantes y declarar efectivo. El stock devuelto va a esa casa y el carrito queda allí; la liquidación conserva la casa de salida y las reglas económicas existentes.
+5. Si aparece **Guardar existencias anteriores**, revisar que esos lotes del dispositivo no estén ya incluidos en los saldos centrales y que sigan físicamente en cámara antes de confirmar. No sirve para corregir o duplicar inventario ya registrado. Los traslados antiguos se archivan, no acreditan casas otra vez.
+
+Las pruebas manuales en el enlace productivo crean operaciones reales: usar cantidades y personas reales, no ventas ficticias. Las pruebas automáticas de ensayo se ejecutan en GitHub Actions con bases aisladas. Para recuperar respaldos históricos, el dueño puede usar **/soporte/recuperacion**; ya no ocupa una pestaña de configuración habitual.
+
+---
+
 # Guía vigente de SGMO — entrega del 29/10/2026
 
 Aplicación habitual: [sgmo-rose.vercel.app](https://sgmo-rose.vercel.app). GitHub guarda las versiones; Vercel ejecuta la app; Neon conserva la operación central. La operación central ya está publicada y el dominio verificado; los datos y cuenta del dueño se completan con los pasos siguientes. Los enlaces de preview son otras versiones dentro del mismo proyecto `sgmo`. `deareys-studio` es otro proyecto, no una segunda mitad de SGMO.

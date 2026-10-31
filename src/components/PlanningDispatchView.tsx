@@ -41,7 +41,7 @@ export const PlanningDispatchView: React.FC<PlanningDispatchViewProps> = ({ stat
     residentUserIds: []
   };
   const sellers = (users || []).filter((u) => (u.role === 'seller' || u.role === 'coordinator') && u.isActive);
-  const houseCarts = (carts || []).filter((c) => c.houseId === currentHouse?.id);
+  const houseCarts = (carts || []).filter((c) => c.isActive !== false && !c.currentSellerId);
 
   // Tab de navegación del módulo
   const [activeTab, setActiveTab] = useState<'dispatch' | 'restock' | 'history'>('dispatch');
@@ -54,9 +54,7 @@ export const PlanningDispatchView: React.FC<PlanningDispatchViewProps> = ({ stat
   const [selectedCartId, setSelectedCartId] = useState(houseCarts.find((c) => c.status === 'operativo')?.id || '');
   const [selectedZoneId, setSelectedZoneId] = useState(zones[0]?.id || '');
   
-  const [clasicoUnits, setClasicoUnits] = useState(200);
-  const [ahumadoUnits, setAhumadoUnits] = useState(80);
-  const [dulceUnits, setDulceUnits] = useState(30);
+  const [dispatchQuantities,setDispatchQuantities]=useState<Record<string,number>>({});
 
   const [gasStartPercent, setGasStartPercent] = useState(90);
   const [napkinsDelivered, setNapkinsDelivered] = useState(5);
@@ -121,13 +119,7 @@ export const PlanningDispatchView: React.FC<PlanningDispatchViewProps> = ({ stat
   // Aplicar cantidades recomendadas por IA al formulario
   const handleApplyAiStock = () => {
     if (!aiRecommendation) return;
-    const cItem = aiRecommendation.breakdown.find((b) => b.varietyId === 'VAR-CLASICO');
-    const aItem = aiRecommendation.breakdown.find((b) => b.varietyId === 'VAR-AHUMADO');
-    const dItem = aiRecommendation.breakdown.find((b) => b.varietyId === 'VAR-DULCE');
-
-    if (cItem) setClasicoUnits(cItem.quantity);
-    if (aItem) setAhumadoUnits(aItem.quantity);
-    if (dItem) setDulceUnits(dItem.quantity);
+    setDispatchQuantities(Object.fromEntries(aiRecommendation.breakdown.map(entry=>[entry.varietyId,entry.quantity])));
   };
 
   // Confirmar Despacho Matutino
@@ -138,11 +130,7 @@ export const PlanningDispatchView: React.FC<PlanningDispatchViewProps> = ({ stat
     setPendingOperation('dispatch');
     setOperationError(null);
 
-    const stockToDeliver = [
-      { varietyId: 'VAR-CLASICO', quantity: clasicoUnits },
-      { varietyId: 'VAR-AHUMADO', quantity: ahumadoUnits },
-      { varietyId: 'VAR-DULCE', quantity: dulceUnits }
-    ].filter((s) => s.quantity > 0);
+    const stockToDeliver=Object.entries(dispatchQuantities).map(([varietyId,quantity])=>({varietyId,quantity:Number(quantity)})).filter(entry=>entry.quantity>0);
 
     try {
       await storageService.dispatchSellerShift({
@@ -487,46 +475,14 @@ export const PlanningDispatchView: React.FC<PlanningDispatchViewProps> = ({ stat
                   Tequeños a Entregar (Carga Inicial)
                 </span>
                 <span className="text-xs font-bold text-white bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/30">
-                  Total: {clasicoUnits + ahumadoUnits + dulceUnits} u
+                  Total: {Object.values(dispatchQuantities).reduce<number>((sum,quantity)=>sum+Number(quantity),0)} u
                 </span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-                <div>
-                  <label className="block text-[11px] text-slate-400 mb-1">Clásico Vegano (u)</label>
-                  <input
-                    type="number"
-                    value={clasicoUnits}
-                    onChange={(e) => setClasicoUnits(Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2 text-xs font-bold text-white focus:outline-none focus:border-amber-400"
-                    step="10"
-                    min="0"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] text-slate-400 mb-1">Ahumado Hierbas (u)</label>
-                  <input
-                    type="number"
-                    value={ahumadoUnits}
-                    onChange={(e) => setAhumadoUnits(Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2 text-xs font-bold text-white focus:outline-none focus:border-amber-400"
-                    step="10"
-                    min="0"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] text-slate-400 mb-1">Dulce Guayaba (u)</label>
-                  <input
-                    type="number"
-                    value={dulceUnits}
-                    onChange={(e) => setDulceUnits(Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2 text-xs font-bold text-white focus:outline-none focus:border-amber-400"
-                    step="5"
-                    min="0"
-                  />
-                </div>
+              {varieties.filter(variety=>variety.isActive!==false&&variety.isAvailable!==false).map(variety=><label key={variety.id} className="block text-sm font-bold">{variety.name} (u)
+                <input aria-label={`Despachar ${variety.name}`} type="number" min="0" step="1" value={dispatchQuantities[variety.id]||0} onChange={event=>setDispatchQuantities({...dispatchQuantities,[variety.id]:Number(event.target.value)})} className="block w-full border rounded-xl p-3 mt-1"/>
+              </label>)}
               </div>
             </div>
 

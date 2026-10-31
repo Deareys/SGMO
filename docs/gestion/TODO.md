@@ -1,3 +1,14 @@
+# Corrección de stock — 31/10/2026
+
+- [x] Diagnóstico: fábrica/traslados locales, catálogo fijo y casa obligatoria en carritos.
+- [x] Implementación central, productos dinámicos, carritos móviles y paleta clara; pruebas aisladas locales.
+- [ ] Consolidar CI PostgreSQL con sockets, migración productiva aditiva y despliegue exacto.
+- [ ] Dueño revisa existencias locales de cada dispositivo antes de incorporarlas; confirmar stock físico.
+- [ ] Pagos/OCR con proveedores reales y aceptación completa del vendedor siguen pendientes; no certificarlos por estas pruebas de inventario.
+- [ ] Gastos/mantenimiento/radar siguen con límites de persistencia heredada; no presentarlos como compartidos.
+
+---
+
 # Prioridad de entrega — 29/10/2026
 
 - [x] Base production respaldada, inicializada sin personas/ventas demo, once migraciones y rol de app sin DDL.
@@ -7,7 +18,7 @@
 - [x] Código funcional f5395f1 publicado en main y dominio habitual verificado contra Production; evidencia, CI y alcance en CONTINUIDAD_HITOS.md.
 - [ ] Dueño activa cuenta privada; recibir datos que sigan sólo en navegadores o archivos mayores de 3,5 MB; revisar historial previo antes de incorporarlo a operaciones.
 - [ ] Confirmar datos reales (catálogo, stock físico, montos, cuentas), aceptación del dueño en teléfonos y proveedores reales.
-- [ ] Centralizar los módulos heredados de fábrica/gastos/mantenimiento/radar y PWA completa. Aviso visible en vistas locales; no certificarlas como compartidas.
+- [ ] Centralizar los módulos heredados de gastos/mantenimiento/radar y PWA completa. Aviso visible en vistas locales; no certificarlas como compartidas.
 - [ ] Evitar actualizaciones concurrentes de configuración con control de versión/ETag. Hoy se confirma cada escritura SQL y se refresca, pero dos administradores guardando formularios antiguos pueden sustituir cambios del otro.
 
 - [ ] Investigar TypeError intermitente en el ensayo de corte TCP: mismo código aprobó al reejecutar, manteniendo expectativas HTTP 503. No se atribuye causa ni se elimina cobertura.

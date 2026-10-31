@@ -24,7 +24,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { AppState, storageService } from '../services/storageService';
-import { LocalOperationNotice } from './LocalOperationNotice';
+
 import { ProductionOrder, ProductionRecipe, FactoryIncident } from '../types';
 
 interface FactoryProductionViewProps {
@@ -42,16 +42,19 @@ export const FactoryProductionView: React.FC<FactoryProductionViewProps> = ({ st
   const [selectedRecipeForBatch, setSelectedRecipeForBatch] = useState<ProductionRecipe | null>(null);
 
   const notifySuccess = (msg: string) => {
-    setSuccessMsg(`${msg} (guardado solo en este dispositivo).`);
+    setSuccessMsg(msg);
     setTimeout(() => setSuccessMsg(null), 3000);
   };
 
   const pendingOrders = state.productionOrders.filter((o) => o.status === 'pendiente' || o.status === 'en_proceso');
+  const [operationError,setOperationError]=useState('');
+  const [saving,setSaving]=useState(false);
+  const run=async(operation:()=>Promise<void>)=>{if(saving)return;setSaving(true);setOperationError('');try{await operation();}catch(error){setOperationError(error instanceof Error?error.message:'No se pudo guardar.');}finally{setSaving(false);}};
   const completedOrders = state.productionOrders.filter((o) => o.status === 'completada');
 
   return (
     <div className="space-y-6 pb-16">
-      <LocalOperationNotice>Las órdenes, recetas, lotes e incidencias de fábrica todavía no tienen persistencia central compartida. Registrarlos aquí no confirma stock para despacho en PostgreSQL.</LocalOperationNotice>
+<div className="sticky top-2 z-[100]">{operationError&&<p role="alert" className="rounded-xl border-2 border-rose-300 bg-rose-50 p-3 text-rose-900">{operationError}</p>}{saving&&<p role="status">Guardando…</p>}</div>
       
       {/* Encabezado Principal */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -223,9 +226,10 @@ export const FactoryProductionView: React.FC<FactoryProductionViewProps> = ({ st
                       <div className="pt-2 flex items-center justify-between gap-2">
                         {order.status === 'pendiente' ? (
                           <button
-                            onClick={() => {
-                              storageService.startProductionOrder(order.id);
+                            onClick={() => { void run(async()=>{
+                              await storageService.startProductionOrder(order.id);
                               notifySuccess(`Orden ${order.id} iniciada`);
+                            });
                             }}
                             className="w-full py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg text-xs flex items-center justify-center space-x-1.5 transition-colors"
                           >
@@ -346,8 +350,8 @@ export const FactoryProductionView: React.FC<FactoryProductionViewProps> = ({ st
                 )}
 
                 <button
-                  onClick={() => {
-                    storageService.createProductionOrder({
+                  onClick={() => { void run(async()=>{
+                    await storageService.createProductionOrder({
                       recipeId: rec.id,
                       productName: rec.name,
                       targetDate: new Date().toISOString().slice(0, 10),
@@ -358,6 +362,7 @@ export const FactoryProductionView: React.FC<FactoryProductionViewProps> = ({ st
                     });
                     notifySuccess(`Orden de producción creada para "${rec.name}"`);
                     setActiveTab('orders');
+                  });
                   }}
                   className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg text-xs flex items-center justify-center space-x-1.5 transition-colors shadow-md shadow-amber-500/20"
                 >
@@ -515,9 +520,10 @@ export const FactoryProductionView: React.FC<FactoryProductionViewProps> = ({ st
 
                   {!inc.resolved && (
                     <button
-                      onClick={() => {
-                        storageService.resolveFactoryIncident(inc.id);
+                      onClick={() => { void run(async()=>{
+                        await storageService.resolveFactoryIncident(inc.id);
                         notifySuccess('Incidencia marcada como resuelta');
+                      });
                       }}
                       className="mt-2 text-emerald-400 hover:text-emerald-300 font-bold text-xs"
                     >
@@ -540,16 +546,17 @@ export const FactoryProductionView: React.FC<FactoryProductionViewProps> = ({ st
         <CompleteOrderModal
           order={completingOrder}
           onClose={() => setCompletingOrder(null)}
-          onComplete={(realQty, wasteQty, wasteReason, notes) => {
-            storageService.completeProductionOrder(
+          onComplete={(realQty, wasteQty, wasteReason, notes) => { void run(async()=>{
+            await storageService.completeProductionOrder(
               completingOrder.id,
               realQty,
               wasteQty,
               wasteReason,
               notes
             );
-            notifySuccess(`Orden ${completingOrder.id} finalizada y lote registrado localmente`);
+            notifySuccess(`Orden ${completingOrder.id} finalizada y lote guardado`);
             setCompletingOrder(null);
+          });
           }}
         />
       )}
@@ -559,13 +566,14 @@ export const FactoryProductionView: React.FC<FactoryProductionViewProps> = ({ st
         <CreateOrderModal
           recipes={state.recipes}
           onClose={() => setIsCreatingOrder(false)}
-          onCreate={(orderData) => {
-            storageService.createProductionOrder({
+          onCreate={(orderData) => { void run(async()=>{
+            await storageService.createProductionOrder({
               ...orderData,
               assignedWorkerName: state.currentUser.name
             });
             notifySuccess('Nueva orden de cocina programada');
             setIsCreatingOrder(false);
+          });
           }}
         />
       )}
@@ -574,10 +582,11 @@ export const FactoryProductionView: React.FC<FactoryProductionViewProps> = ({ st
       {isReportingIncident && (
         <ReportIncidentModal
           onClose={() => setIsReportingIncident(false)}
-          onReport={(data) => {
-            storageService.reportFactoryIncident(data);
-            notifySuccess('Incidencia registrada; avisá a coordinación por el canal habitual');
+          onReport={(data) => { void run(async()=>{
+            await storageService.reportFactoryIncident(data);
+            notifySuccess('Incidencia guardada');
             setIsReportingIncident(false);
+          });
           }}
         />
       )}

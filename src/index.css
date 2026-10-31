@@ -1,1 +1,117 @@
 @import "tailwindcss";
+
+
+/* Paleta operativa común. Se conserva la oscuridad únicamente en el velo de los diálogos. */
+.sgmo-light { color-scheme: light; background: #f8fafc; color: #0f172a; }
+.sgmo-light [class~="bg-slate-700"]:not(.fixed.inset-0),
+.sgmo-light [class~="bg-slate-800"]:not(.fixed.inset-0),
+.sgmo-light [class~="bg-slate-800/40"]:not(.fixed.inset-0),
+.sgmo-light [class~="bg-slate-800/60"]:not(.fixed.inset-0),
+.sgmo-light [class~="bg-slate-800/80"]:not(.fixed.inset-0),
+.sgmo-light [class~="bg-slate-900"]:not(.fixed.inset-0),
+.sgmo-light [class~="bg-slate-900/60"]:not(.fixed.inset-0),
+.sgmo-light [class~="bg-slate-900/80"]:not(.fixed.inset-0),
+.sgmo-light [class~="bg-slate-900/90"]:not(.fixed.inset-0),
+.sgmo-light [class~="bg-slate-950"]:not(.fixed.inset-0),
+.sgmo-light [class~="bg-slate-950/30"]:not(.fixed.inset-0),
+.sgmo-light [class~="bg-slate-950/40"]:not(.fixed.inset-0),
+.sgmo-light [class~="bg-slate-950/50"]:not(.fixed.inset-0),
+.sgmo-light [class~="bg-slate-950/60"]:not(.fixed.inset-0),
+.sgmo-light [class~="bg-slate-950/70"]:not(.fixed.inset-0),
+.sgmo-light [class~="bg-slate-950/80"]:not(.fixed.inset-0),
+.sgmo-light [class~="bg-slate-950/85"]:not(.fixed.inset-0) { background-color: #fff !important; }
+.sgmo-light [class~="text-slate-100"],
+.sgmo-light [class~="text-slate-200"],
+.sgmo-light [class~="text-slate-300"],
+.sgmo-light [class~="text-slate-400"],
+.sgmo-light [class~="text-slate-500"],
+.sgmo-light [class~="text-white"] { color: #334155 !important; }
+.sgmo-light [class~="border-slate-600"],
+.sgmo-light [class~="border-slate-700"],
+.sgmo-light [class~="border-slate-700/50"],
+.sgmo-light [class~="border-slate-700/60"],
+.sgmo-light [class~="border-slate-700/70"],
+.sgmo-light [class~="border-slate-800"],
+.sgmo-light [class~="border-slate-800/50"],
+.sgmo-light [class~="border-slate-800/60"],
+.sgmo-light [class~="border-slate-800/70"],
+.sgmo-light [class~="border-slate-800/80"],
+.sgmo-light [class~="border-slate-800/90"],
+.sgmo-light [class~="border-slate-900"] { border-color: #cbd5e1 !important; }
+.sgmo-light [class~="text-sky-200"],
+.sgmo-light [class~="text-sky-300"],
+.sgmo-light [class~="text-sky-400"] { color: var(--color-sky-700) !important; }
+.sgmo-light [class~="bg-sky-900"],
+.sgmo-light [class~="bg-sky-900/60"],
+.sgmo-light [class~="bg-sky-950"],
+.sgmo-light [class~="bg-sky-950/10"],
+.sgmo-light [class~="bg-sky-950/20"],
+.sgmo-light [class~="bg-sky-950/30"],
+.sgmo-light [class~="bg-sky-950/40"],
+.sgmo-light [class~="bg-sky-950/60"],
+.sgmo-light [class~="bg-sky-950/80"] { background-color: var(--color-sky-50) !important; }
+.sgmo-light :is(button,a)[class~="bg-sky-600"], .sgmo-light :is(button,a)[class~="bg-sky-700"], .sgmo-light :is(button,a)[class~="bg-sky-600"] *, .sgmo-light :is(button,a)[class~="bg-sky-700"] * { color: white !important; }
+.sgmo-light [class~="text-blue-300"] { color: var(--color-blue-700) !important; }
+.sgmo-light [class~="bg-blue-950"] { background-color: var(--color-blue-50) !important; }
+.sgmo-light :is(button,a)[class~="bg-blue-600"], .sgmo-light :is(button,a)[class~="bg-blue-700"], .sgmo-light :is(button,a)[class~="bg-blue-600"] *, .sgmo-light :is(button,a)[class~="bg-blue-700"] * { color: white !important; }
+.sgmo-light [class~="text-emerald-200"],
+.sgmo-light [class~="text-emerald-300"],
+.sgmo-light [class~="text-emerald-400"] { color: var(--color-emerald-700) !important; }
+.sgmo-light [class~="bg-emerald-900/60"],
+.sgmo-light [class~="bg-emerald-950"],
+.sgmo-light [class~="bg-emerald-950/10"],
+.sgmo-light [class~="bg-emerald-950/20"],
+.sgmo-light [class~="bg-emerald-950/30"],
+.sgmo-light [class~="bg-emerald-950/40"],
+.sgmo-light [class~="bg-emerald-950/60"],
+.sgmo-light [class~="bg-emerald-950/80"],
+.sgmo-light [class~="bg-emerald-950/90"] { background-color: var(--color-emerald-50) !important; }
+.sgmo-light :is(button,a)[class~="bg-emerald-600"], .sgmo-light :is(button,a)[class~="bg-emerald-700"], .sgmo-light :is(button,a)[class~="bg-emerald-600"] *, .sgmo-light :is(button,a)[class~="bg-emerald-700"] * { color: white !important; }
+.sgmo-light :is(button,a)[class~="bg-green-600"], .sgmo-light :is(button,a)[class~="bg-green-700"], .sgmo-light :is(button,a)[class~="bg-green-600"] *, .sgmo-light :is(button,a)[class~="bg-green-700"] * { color: white !important; }
+.sgmo-light [class~="text-amber-200/90"],
+.sgmo-light [class~="text-amber-300"],
+.sgmo-light [class~="text-amber-300/90"],
+.sgmo-light [class~="text-amber-400"],
+.sgmo-light [class~="text-amber-400/80"],
+.sgmo-light [class~="text-amber-400/90"] { color: var(--color-amber-700) !important; }
+.sgmo-light [class~="bg-amber-950"],
+.sgmo-light [class~="bg-amber-950/10"],
+.sgmo-light [class~="bg-amber-950/20"],
+.sgmo-light [class~="bg-amber-950/30"],
+.sgmo-light [class~="bg-amber-950/60"],
+.sgmo-light [class~="bg-amber-950/80"] { background-color: var(--color-amber-50) !important; }
+.sgmo-light :is(button,a)[class~="bg-amber-600"], .sgmo-light :is(button,a)[class~="bg-amber-700"], .sgmo-light :is(button,a)[class~="bg-amber-600"] *, .sgmo-light :is(button,a)[class~="bg-amber-700"] * { color: white !important; }
+.sgmo-light [class~="text-orange-400"] { color: var(--color-orange-700) !important; }
+.sgmo-light :is(button,a)[class~="bg-orange-600"], .sgmo-light :is(button,a)[class~="bg-orange-700"], .sgmo-light :is(button,a)[class~="bg-orange-600"] *, .sgmo-light :is(button,a)[class~="bg-orange-700"] * { color: white !important; }
+.sgmo-light [class~="text-rose-300"],
+.sgmo-light [class~="text-rose-300/80"],
+.sgmo-light [class~="text-rose-400"] { color: var(--color-rose-700) !important; }
+.sgmo-light [class~="bg-rose-900"],
+.sgmo-light [class~="bg-rose-950"],
+.sgmo-light [class~="bg-rose-950/10"],
+.sgmo-light [class~="bg-rose-950/20"],
+.sgmo-light [class~="bg-rose-950/30"],
+.sgmo-light [class~="bg-rose-950/60"],
+.sgmo-light [class~="bg-rose-950/80"] { background-color: var(--color-rose-50) !important; }
+.sgmo-light :is(button,a)[class~="bg-rose-600"], .sgmo-light :is(button,a)[class~="bg-rose-700"], .sgmo-light :is(button,a)[class~="bg-rose-600"] *, .sgmo-light :is(button,a)[class~="bg-rose-700"] * { color: white !important; }
+.sgmo-light [class~="text-red-300"] { color: var(--color-red-700) !important; }
+.sgmo-light :is(button,a)[class~="bg-red-600"], .sgmo-light :is(button,a)[class~="bg-red-700"], .sgmo-light :is(button,a)[class~="bg-red-600"] *, .sgmo-light :is(button,a)[class~="bg-red-700"] * { color: white !important; }
+.sgmo-light [class~="text-purple-300"],
+.sgmo-light [class~="text-purple-400"] { color: var(--color-purple-700) !important; }
+.sgmo-light [class~="bg-purple-950"],
+.sgmo-light [class~="bg-purple-950/80"] { background-color: var(--color-purple-50) !important; }
+.sgmo-light :is(button,a)[class~="bg-purple-600"], .sgmo-light :is(button,a)[class~="bg-purple-700"], .sgmo-light :is(button,a)[class~="bg-purple-600"] *, .sgmo-light :is(button,a)[class~="bg-purple-700"] * { color: white !important; }
+.sgmo-light :is(button,a)[class~="bg-violet-600"], .sgmo-light :is(button,a)[class~="bg-violet-700"], .sgmo-light :is(button,a)[class~="bg-violet-600"] *, .sgmo-light :is(button,a)[class~="bg-violet-700"] * { color: white !important; }
+.sgmo-light [class~="text-indigo-400"] { color: var(--color-indigo-700) !important; }
+.sgmo-light :is(button,a)[class~="bg-indigo-600"], .sgmo-light :is(button,a)[class~="bg-indigo-700"], .sgmo-light :is(button,a)[class~="bg-indigo-600"] *, .sgmo-light :is(button,a)[class~="bg-indigo-700"] * { color: white !important; }
+.sgmo-light :is(button,a)[class~="bg-cyan-600"], .sgmo-light :is(button,a)[class~="bg-cyan-700"], .sgmo-light :is(button,a)[class~="bg-cyan-600"] *, .sgmo-light :is(button,a)[class~="bg-cyan-700"] * { color: white !important; }
+.sgmo-light :is(button,a)[class~="bg-yellow-600"], .sgmo-light :is(button,a)[class~="bg-yellow-700"], .sgmo-light :is(button,a)[class~="bg-yellow-600"] *, .sgmo-light :is(button,a)[class~="bg-yellow-700"] * { color: white !important; }
+.sgmo-light :is(button,a)[class~="bg-teal-600"], .sgmo-light :is(button,a)[class~="bg-teal-700"], .sgmo-light :is(button,a)[class~="bg-teal-600"] *, .sgmo-light :is(button,a)[class~="bg-teal-700"] * { color: white !important; }
+.sgmo-light :is(button,a)[class~="bg-lime-600"], .sgmo-light :is(button,a)[class~="bg-lime-700"], .sgmo-light :is(button,a)[class~="bg-lime-600"] *, .sgmo-light :is(button,a)[class~="bg-lime-700"] * { color: white !important; }
+.sgmo-light :is(button,a)[class~="bg-pink-600"], .sgmo-light :is(button,a)[class~="bg-pink-700"], .sgmo-light :is(button,a)[class~="bg-pink-600"] *, .sgmo-light :is(button,a)[class~="bg-pink-700"] * { color: white !important; }
+.sgmo-light :is(button,a)[class~="bg-fuchsia-600"], .sgmo-light :is(button,a)[class~="bg-fuchsia-700"], .sgmo-light :is(button,a)[class~="bg-fuchsia-600"] *, .sgmo-light :is(button,a)[class~="bg-fuchsia-700"] * { color: white !important; }
+.sgmo-light input, .sgmo-light select, .sgmo-light textarea { color: #0f172a; }
+.sgmo-light input::placeholder,.sgmo-light textarea::placeholder { color:#64748b; }
+.sgmo-light :focus-visible { outline: 3px solid #0284c7; outline-offset: 2px; }
+
+.sgmo-light [class*="from-slate-9"], .sgmo-light [class*="to-slate-9"] { background-image:none; background-color:#fff; }

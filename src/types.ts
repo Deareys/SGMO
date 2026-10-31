@@ -399,6 +399,8 @@ export interface SaleTransaction {
 }
 
 export interface DailyShift {
+  returnHouseId?: string;
+  returnHouseName?: string;
   id: string;
   date: string;
   houseId: string;

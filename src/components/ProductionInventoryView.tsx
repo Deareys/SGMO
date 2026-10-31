@@ -19,7 +19,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { AppState, storageService } from '../services/storageService';
-import { LocalOperationNotice } from './LocalOperationNotice';
+
 
 interface ProductionInventoryViewProps {
   state: AppState;
@@ -28,6 +28,9 @@ interface ProductionInventoryViewProps {
 export const ProductionInventoryView: React.FC<ProductionInventoryViewProps> = ({ state }) => {
   const { rawMaterials, productionBatches, houses, varieties, transfers, materialPurchases } = state;
 
+  const [operationError,setOperationError]=useState('');
+  const [saving,setSaving]=useState(false);
+  const run=async(operation:()=>Promise<void>)=>{if(saving)return;setSaving(true);setOperationError('');try{await operation();}catch(error){setOperationError(error instanceof Error?error.message:'No se pudo guardar.');}finally{setSaving(false);}};
   // Estados de Modales
   const [showNewBatchModal, setShowNewBatchModal] = useState(false);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
@@ -36,58 +39,49 @@ export const ProductionInventoryView: React.FC<ProductionInventoryViewProps> = (
   // Formulario Nuevo Lote
   const [batchVarietyId, setBatchVarietyId] = useState(varieties[0]?.id || '');
   const [batchUnits, setBatchUnits] = useState(2500);
-  const [batchLaborCost, setBatchLaborCost] = useState(120000);
-  const [batchEnergyCost, setBatchEnergyCost] = useState(45000);
+  const [batchLaborCost, setBatchLaborCost] = useState(0);
+  const [batchEnergyCost, setBatchEnergyCost] = useState(0);
   const [batchNotes, setBatchNotes] = useState('');
 
   // Formulario Nueva Compra
   const [purchaseMaterialId, setPurchaseMaterialId] = useState(rawMaterials[0]?.id || '');
   const [purchaseQty, setPurchaseQty] = useState(50);
   const [purchaseUnitCost, setPurchaseUnitCost] = useState(1200);
-  const [purchaseSupplier, setPurchaseSupplier] = useState('Distribuidora Costa');
+  const [purchaseSupplier, setPurchaseSupplier] = useState('');
 
   // Formulario Traslado a Casas
   const [transferTargetHouseId, setTransferTargetHouseId] = useState(houses[0]?.id || '');
-  const [transferClasicoQty, setTransferClasicoQty] = useState(500);
-  const [transferAhumadoQty, setTransferAhumadoQty] = useState(200);
+  const [transferQuantities,setTransferQuantities]=useState<Record<string,number>>({});
+  const [transferFromHouseId,setTransferFromHouseId]=useState('');
   const [transferNotes, setTransferNotes] = useState('');
 
+  const selectedBatchRecipe=state.recipes.find(recipe=>recipe.isActive!==false&&recipe.varietyId===(batchVarietyId||varieties[0]?.id));
+  const ingredientEstimate=selectedBatchRecipe?selectedBatchRecipe.ingredients.reduce((sum,entry)=>sum+entry.quantityRequired*batchUnits/selectedBatchRecipe.expectedYield*(rawMaterials.find(material=>material.id===entry.materialId)?.costPerUnit||0),0):0;
   // Manejar creación de Lote
   const handleCreateBatch = (e: React.FormEvent) => {
     e.preventDefault();
     if (batchUnits <= 0) return;
 
-    // Calcular ingredientes estándar requeridos
-    const flourQty = Math.round((batchUnits / 50) * 1.0); // 1kg por 50 tequeños
-    const cheeseQty = Math.round((batchUnits / 40) * 1.0); // 1kg queso por 40 tequeños
-    const oilQty = Math.round((batchUnits / 150) * 1.0); // 1L por 150 tequeños
-
-    storageService.registerProductionBatch({
-      varietyId: batchVarietyId,
-      unitsProduced: batchUnits,
-      laborCost: batchLaborCost,
-      energyAndPackagingCost: batchEnergyCost,
-      ingredientsUsed: [
-        { materialId: 'MAT-HARINA', quantity: flourQty },
-        { materialId: 'MAT-QUESO-VEG', quantity: cheeseQty },
-        { materialId: 'MAT-ACEITE', quantity: oilQty }
-      ],
-      notes: batchNotes
+    void run(async()=>{
+    const recipe=state.recipes.find(recipe=>recipe.isActive!==false&&recipe.varietyId===(batchVarietyId||varieties[0]?.id));
+    await storageService.registerProductionBatch({
+      varietyId:batchVarietyId||varieties[0]?.id,unitsProduced:batchUnits,laborCost:batchLaborCost,energyAndPackagingCost:batchEnergyCost,
+      ingredientsUsed:recipe?recipe.ingredients.map(ingredient=>({materialId:ingredient.materialId,quantity:Number((ingredient.quantityRequired*batchUnits/recipe.expectedYield).toFixed(6))})):[],notes:batchNotes
     });
-
     setShowNewBatchModal(false);
     setBatchNotes('');
+    });
   };
 
   // Manejar Compra de Insumos
   const handleCreatePurchase = (e: React.FormEvent) => {
     e.preventDefault();
-    const material = rawMaterials.find((m) => m.id === purchaseMaterialId);
+    const material = rawMaterials.find((m) => m.id === (purchaseMaterialId||rawMaterials[0]?.id));
     if (!material || purchaseQty <= 0) return;
 
-    storageService.addMaterialPurchase({
+    void run(async()=>{await storageService.addMaterialPurchase({
       date: new Date().toISOString().slice(0, 10),
-      materialId: purchaseMaterialId,
+      materialId: material.id,
       materialName: material.name,
       quantity: purchaseQty,
       unitCost: purchaseUnitCost,
@@ -95,29 +89,21 @@ export const ProductionInventoryView: React.FC<ProductionInventoryViewProps> = (
       supplier: purchaseSupplier
     });
 
-    setShowPurchaseModal(false);
+    setShowPurchaseModal(false);});
   };
 
   // Manejar Traslado
   const handleCreateTransfer = (e: React.FormEvent) => {
     e.preventDefault();
-    const items: { varietyId: string; quantity: number }[] = [];
-    if (transferClasicoQty > 0) {
-      items.push({ varietyId: 'VAR-CLASICO', quantity: transferClasicoQty });
-    }
-    if (transferAhumadoQty > 0) {
-      items.push({ varietyId: 'VAR-AHUMADO', quantity: transferAhumadoQty });
-    }
-
-    if (items.length === 0) return;
-
-    storageService.transferToHouse(transferTargetHouseId, items, transferNotes);
-    setShowTransferModal(false);
+    const items=Object.entries(transferQuantities).map(([varietyId,quantity])=>({varietyId,quantity:Number(quantity)})).filter(entry=>entry.quantity>0);
+    if(!items.length){setOperationError('Ingresá una cantidad para trasladar.');return;}
+    void run(async()=>{await storageService.transferToHouse(transferTargetHouseId||houses[0]?.id,items,transferNotes,transferFromHouseId||undefined);setShowTransferModal(false);setTransferQuantities({});});
   };
 
   return (
     <div className="space-y-6 pb-12">
-      <LocalOperationNotice>Las compras de materias primas, lotes y traslados se registran en este navegador. Un traslado local no acredita stock central para despachar carritos.</LocalOperationNotice>
+      {operationError&&<p role="alert" className="sticky top-2 z-[100] rounded-xl border-2 border-rose-300 bg-rose-50 p-3 text-rose-900">{operationError}</p>}
+      {state.currentUser?.role==='admin'&&storageService.hasLegacyFactoryData()&&<div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-slate-950">Hay existencias de fábrica anteriores en este dispositivo. Revisalas antes de sumarlas al inventario compartido. <button disabled={saving} className="underline font-bold" onClick={()=>{if(window.confirm('¿Confirmás que las existencias anteriores de este dispositivo son reales y todavía están en cámara? Los traslados anteriores no volverán a sumar stock en casas.'))void run(()=>storageService.importLegacyFactoryData());}}>Guardar existencias anteriores</button></div>}
       
       {/* Cabecera */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
@@ -357,8 +343,8 @@ export const ProductionInventoryView: React.FC<ProductionInventoryViewProps> = (
                     value={batchUnits}
                     onChange={(e) => setBatchUnits(Number(e.target.value))}
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-amber-400 font-bold"
-                    min="100"
-                    step="50"
+                    min="1"
+                    step="1"
                   />
                 </div>
 
@@ -386,11 +372,11 @@ export const ProductionInventoryView: React.FC<ProductionInventoryViewProps> = (
               <div className="bg-slate-950/70 p-3 rounded-xl border border-slate-800 text-xs space-y-1">
                 <div className="flex justify-between text-slate-400">
                   <span>Insumos a descontar de stock:</span>
-                  <span className="text-white font-medium">Harina ~{Math.round(batchUnits/50)}kg, Queso ~{Math.round(batchUnits/40)}kg</span>
+                  <span className="text-white font-medium">{selectedBatchRecipe?selectedBatchRecipe.name:'Sin receta: no se descuentan insumos'}</span>
                 </div>
                 <div className="flex justify-between text-emerald-400 font-bold pt-1 border-t border-slate-800">
                   <span>Costo Unitario Estimado:</span>
-                  <span>~${((batchLaborCost + batchEnergyCost + (batchUnits * 140)) / (batchUnits || 1)).toFixed(2)} por tequeño</span>
+                  <span>~${((batchLaborCost + batchEnergyCost + ingredientEstimate) / (batchUnits || 1)).toFixed(2)} por tequeño</span>
                 </div>
               </div>
 
@@ -414,7 +400,7 @@ export const ProductionInventoryView: React.FC<ProductionInventoryViewProps> = (
                   Cancelar
                 </button>
                 <button
-                  type="submit"
+                  type="submit" disabled={saving}
                   className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold rounded-xl shadow-lg shadow-amber-500/20"
                 >
                   Crear y Almacenar Lote
@@ -501,7 +487,7 @@ export const ProductionInventoryView: React.FC<ProductionInventoryViewProps> = (
                   Cancelar
                 </button>
                 <button
-                  type="submit"
+                  type="submit" disabled={saving}
                   className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold rounded-xl"
                 >
                   Ingresar a Stock
@@ -532,35 +518,22 @@ export const ProductionInventoryView: React.FC<ProductionInventoryViewProps> = (
                   onChange={(e) => setTransferTargetHouseId(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white"
                 >
-                  {houses.map((h) => (
+                  {houses.filter(h=>h.isActive).map((h) => (
                     <option key={h.id} value={h.id}>{h.name}</option>
                   ))}
                 </select>
               </div>
 
+              <label className="block text-sm font-semibold">Origen
+                <select aria-label="Origen del traslado" value={transferFromHouseId} onChange={event=>setTransferFromHouseId(event.target.value)} className="w-full border rounded-xl p-3">
+                  <option value="">Cámara central</option>{houses.filter(house=>house.isActive).map(house=><option key={house.id} value={house.id}>{house.name}</option>)}
+                </select>
+              </label>
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Tequeño Clásico (u)</label>
-                  <input
-                    type="number"
-                    value={transferClasicoQty}
-                    onChange={(e) => setTransferClasicoQty(Number(e.target.value))}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white font-bold"
-                    step="50"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Tequeño Ahumado (u)</label>
-                  <input
-                    type="number"
-                    value={transferAhumadoQty}
-                    onChange={(e) => setTransferAhumadoQty(Number(e.target.value))}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white font-bold"
-                    step="50"
-                  />
-                </div>
+                {varieties.filter(variety=>variety.isActive!==false).map(variety=><label key={variety.id} className="block text-sm font-semibold">{variety.name} (u)
+                  <input aria-label={`Trasladar ${variety.name}`} type="number" min="0" step="1" value={transferQuantities[variety.id]||0} onChange={event=>setTransferQuantities({...transferQuantities,[variety.id]:Number(event.target.value)})} className="w-full border rounded-xl p-3"/>
+                </label>)}
               </div>
-
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">Notas de Flete / Precinto</label>
                 <input
@@ -581,7 +554,7 @@ export const ProductionInventoryView: React.FC<ProductionInventoryViewProps> = (
                   Cancelar
                 </button>
                 <button
-                  type="submit"
+                  type="submit" disabled={saving}
                   className="px-4 py-2 bg-sky-500 hover:bg-sky-400 text-white text-xs font-bold rounded-xl"
                 >
                   Confirmar Traslado

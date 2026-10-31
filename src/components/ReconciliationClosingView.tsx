@@ -45,11 +45,11 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
     if (currentUser.role === 'seller') {
       return s.sellerId === currentUser.id;
     }
-    return s.status === 'en_curso' || s.status === 'conciliada' || s.status === 'liquidada';
+    return s.status === 'en_curso' || s.status === 'esperando_cierre' || s.status === 'conciliada' || s.status === 'liquidada';
   });
 
   const [selectedShiftId, setSelectedShiftId] = useState<string>(
-    activeOrRecentShifts.find((s) => s.status === 'en_curso')?.id || activeOrRecentShifts[0]?.id || ''
+    activeOrRecentShifts.find((s) => s.status === 'en_curso'||s.status==='esperando_cierre')?.id || activeOrRecentShifts[0]?.id || ''
   );
 
   const selectedShift = shifts.find((s) => s.id === selectedShiftId) || activeOrRecentShifts[0];
@@ -58,6 +58,7 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
   // Estados del Formulario de Cierre Físico
   const [cashDeclared, setCashDeclared] = useState<number>(selectedShift
     ? (historicalSettlement ? selectedShift.cashDeclared ?? selectedShift.cashExpected : selectedShift.cashExpected) : 0);
+  const [returnHouseId,setReturnHouseId]=useState(selectedShift?.returnHouseId||selectedShift?.houseId||'');
   const [gasPercentEnd, setGasPercentEnd] = useState<number>(65);
   
   // Stock devuelto contado
@@ -92,6 +93,7 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
   // Inicializar conteos al cambiar de jornada seleccionada
   React.useEffect(() => {
     if (selectedShift) {
+      setReturnHouseId(selectedShift.returnHouseId||selectedShift.houseId);
       setCashDeclared(historicalSettlement ? selectedShift.cashDeclared ?? selectedShift.cashExpected : selectedShift.cashExpected);
       const initial: Record<string, { count: number; waste: number }> = {};
       selectedShift.stockItems.forEach((item) => {
@@ -160,6 +162,7 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
       const reconciled = await storageService.closeAndReconcileShift({
         shiftId: selectedShift.id,
         cashDeclared,
+        returnHouseId,
         gasPercentEnd,
         returnedItems,
         deductionMissingRatePerUnit: deductionMissingRate,
@@ -342,6 +345,11 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
             <form onSubmit={handlePerformClosing} className="space-y-5">
               <fieldset disabled={pendingOperation !== null} className="contents">
               
+              {canConfirmSettlement&&<label className="block text-sm font-bold mb-4">Casa de regreso
+                <select aria-label="Casa de regreso" disabled={historicalSettlement} value={returnHouseId} onChange={event=>setReturnHouseId(event.target.value)} className="block w-full border-2 border-slate-300 bg-white text-slate-950 p-3 rounded-xl mt-2">
+                {houses.filter(house=>house.isActive||house.id===returnHouseId).map(house=><option key={house.id} value={house.id}>{house.name}</option>)}
+                </select>
+              </label>}
               {/* 1. Conteo Físico de Tequeños Devueltos */}
               <div className="space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
@@ -534,7 +542,7 @@ export const ReconciliationClosingView: React.FC<ReconciliationClosingViewProps>
               </div>
 
               {/* Botón de Cierre de Jornada */}
-              {selectedShift.status === 'en_curso' && (
+              {['en_curso','esperando_cierre'].includes(selectedShift.status) && (
                 <button
                   type="submit"
                   disabled={pendingOperation !== null || !canConfirmSettlement}

@@ -5,7 +5,6 @@
  */
 
 import React, { useState } from 'react';
-import { LegacyRecoveryPanel } from './LegacyRecoveryPanel';
 import {
   Settings,
   Truck,
@@ -41,7 +40,6 @@ import {
 import { IssuePasswordActivationModal } from './PasswordManagement';
 import { validateAccountPassword, MIN_PASSWORD_LENGTH, MAX_NEW_PASSWORD_LENGTH } from '../shared/passwordPolicy';
 import { CommissionTiersTab } from './CommissionTiersTab';
-import { MercadoPagoTestLabModal } from './MercadoPagoTestLabModal';
 import { AppState, storageService } from '../services/storageService';
 import { checkMercadoPagoConfigStatus } from '../services/aiValidationService';
 import {
@@ -71,7 +69,7 @@ type AdminTab =
   | 'recipes'
   | 'suppliers'
   | 'users'
-  | 'recovery';
+ ;
 
 export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
   const [activeTab, setActiveTab] = useState<AdminTab>('params');
@@ -112,7 +110,6 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
   const [globalParams, setGlobalParams] = useState<SystemConfig>(state.systemConfig);
   const globalParamsDirty = React.useRef(false);
   const [mpStatus, setMpStatus] = useState<any | null>(null);
-  const [showTestLabModal, setShowTestLabModal] = useState(false);
 
   React.useEffect(() => {
     checkMercadoPagoConfigStatus().then(setMpStatus);
@@ -172,7 +169,6 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
 
       {/* Selector de Submódulos de Configuración */}
       <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 scrollbar-none border-b border-slate-800 text-xs font-medium">
-        <button type="button" onClick={()=>setActiveTab('recovery')} className="min-h-12 px-4 whitespace-nowrap border-2 border-amber-500 rounded-xl text-amber-400 font-bold">Recuperar datos anteriores</button>
         <button
           onClick={() => setActiveTab('params')}
           className={`px-4 py-2.5 rounded-xl flex items-center space-x-2 transition-all whitespace-nowrap ${
@@ -483,7 +479,7 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
                             ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                             : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                         }`}>
-                          {mpStatus.configured ? 'Token Live Conectado' : 'Modo Simulación / Prueba'}
+                          {mpStatus.configured ? 'Verificación de pagos disponible' : 'Verificación de pagos sin configurar'}
                         </span>
                       )}
                     </h3>
@@ -493,20 +489,7 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
                   </div>
                 </div>
 
-                <div className="flex items-center space-x-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowTestLabModal(true)}
-                    className="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black text-xs rounded-xl shadow-md shadow-amber-500/20 flex items-center space-x-1.5 cursor-pointer"
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>Laboratorio de Pruebas MP</span>
-                  </button>
 
-                  <div className="text-[11px] text-slate-400 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">
-                    Consulta: <strong className="text-white">API Oficial (server.ts)</strong>
-                  </div>
-                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -588,15 +571,7 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
                 </div>
               </div>
 
-              <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800 text-[11px] text-slate-400 space-y-1">
-                <span className="font-bold text-amber-400 flex items-center space-x-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  <span>Seguridad de Credenciales de Mercado Pago:</span>
-                </span>
-                <p>
-                  Por estrictas normas de seguridad, el <strong>Token de Acceso de Mercado Pago</strong> (<code>MERCADOPAGO_ACCESS_TOKEN</code>) nunca se almacena en el navegador ni en la base de datos visible; se configura como variable de entorno en el servidor. Todas las consultas de verificación y cruce se procesan de forma privada en el backend (<code>server.ts</code>).
-                </p>
-              </div>
+
             </div>
 
             <div className="md:col-span-2 flex justify-end">
@@ -1297,7 +1272,6 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
         </div>
       )}
 
-      {activeTab === 'recovery' && <LegacyRecoveryPanel />}
       {activationUser && <IssuePasswordActivationModal user={activationUser} onClose={() => setActivationUser(null)} />}
 
       {/* --- MODALES DE EDICIÓN / CREACIÓN --- */}
@@ -1380,12 +1354,12 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
             setIsCreatingMaterial(false);
             setEditingMaterial(null);
           }}
-          onSave={(matData) => {
+          onSave={async (matData) => {
             if (editingMaterial) {
-              storageService.updateRawMaterial(editingMaterial.id, matData);
+              await storageService.updateRawMaterial(editingMaterial.id, matData);
               notifySuccess(`Insumo ${editingMaterial.name} actualizado`);
             } else {
-              storageService.createRawMaterial(matData as any);
+              await storageService.createRawMaterial(matData as any);
               notifySuccess('Nuevo insumo registrado');
             }
             setIsCreatingMaterial(false);
@@ -1428,12 +1402,12 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
             setIsCreatingRecipe(false);
             setEditingRecipe(null);
           }}
-          onSave={(recData) => {
+          onSave={async (recData) => {
             if (editingRecipe) {
-              storageService.updateRecipe(editingRecipe.id, recData);
+              await storageService.updateRecipe(editingRecipe.id, recData);
               notifySuccess(`Receta ${editingRecipe.name} actualizada`);
             } else {
-              storageService.createRecipe(recData as any);
+              await storageService.createRecipe(recData as any);
               notifySuccess('Nueva receta maestra creada con éxito');
             }
             setIsCreatingRecipe(false);
@@ -1451,12 +1425,12 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
             setIsCreatingSupplier(false);
             setEditingSupplier(null);
           }}
-          onSave={(supData) => {
+          onSave={async (supData) => {
             if (editingSupplier) {
-              storageService.updateSupplier(editingSupplier.id, supData);
+              await storageService.updateSupplier(editingSupplier.id, supData);
               notifySuccess(`Proveedor ${editingSupplier.name} actualizado`);
             } else {
-              storageService.createSupplier(supData as any);
+              await storageService.createSupplier(supData as any);
               notifySuccess('Nuevo proveedor registrado');
             }
             setIsCreatingSupplier(false);
@@ -1465,12 +1439,7 @@ export const AdminConfigView: React.FC<AdminConfigViewProps> = ({ state }) => {
         />
       )}
 
-      {/* Modal Laboratorio de Pruebas Mercado Pago */}
-      <MercadoPagoTestLabModal
-        isOpen={showTestLabModal}
-        onClose={() => setShowTestLabModal(false)}
-        varieties={state.varieties}
-      />
+
 
     </div>
   );
@@ -1491,7 +1460,7 @@ const CartModal: React.FC<CartModalProps> = ({ cart, houses, onClose, onSave }) 
   const [formData, setFormData] = useState({
     code: cart?.code || '',
     model: cart?.model || 'Modelo Playa Pro 2026 - Ruedas Globo',
-    houseId: cart?.houseId || houses[0]?.id || '',
+    houseId: cart?.houseId || '',
     status: cart?.status || 'operativo',
     locationNotes: cart?.locationNotes || '',
     notes: cart?.notes || ''
@@ -1520,7 +1489,7 @@ const CartModal: React.FC<CartModalProps> = ({ cart, houses, onClose, onSave }) 
           className="space-y-3 text-xs"
         >
           <div>
-            <label className="block text-slate-300 font-semibold mb-1">Código / Nombre Identificador</label>
+            <label className="block text-slate-300 font-semibold mb-1">Nombre del carrito</label>
             <input
               type="text"
               value={formData.code}
@@ -1544,13 +1513,14 @@ const CartModal: React.FC<CartModalProps> = ({ cart, houses, onClose, onSave }) 
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-slate-300 font-semibold mb-1">Base Asignada</label>
+              <label className="block text-slate-300 font-semibold mb-1">Ubicación actual (opcional)</label>
               <select
                 value={formData.houseId}
                 onChange={(e) => setFormData({ ...formData, houseId: e.target.value })}
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white"
               >
-                {houses.map((h) => (
+                <option value="">Sin ubicación asignada</option>
+              {houses.map((h) => (
                   <option key={h.id} value={h.id}>{h.name}</option>
                 ))}
               </select>
@@ -1917,10 +1887,12 @@ interface MaterialModalProps {
   categories: SupplyCategory[];
   suppliers: Supplier[];
   onClose: () => void;
-  onSave: (data: Partial<RawMaterial>) => void;
+  onSave: (data: Partial<RawMaterial>) => Promise<void>;
 }
 
 const MaterialModal: React.FC<MaterialModalProps> = ({ material, categories, suppliers, onClose, onSave }) => {
+  const [saveError,setSaveError]=useState('');
+  const [saving,setSaving]=useState(false);
   const [formData, setFormData] = useState({
     name: material?.name || '',
     categoryId: material?.categoryId || categories[0]?.id || '',
@@ -1945,11 +1917,12 @@ const MaterialModal: React.FC<MaterialModalProps> = ({ material, categories, sup
         </div>
 
         <form
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
             const cat = categories.find((c) => c.id === formData.categoryId);
             const sup = suppliers.find((s) => s.id === formData.supplierId);
-            onSave({
+            if(saving)return;setSaving(true);setSaveError('');
+            try{await onSave({
               ...formData,
               categoryName: cat?.name || 'General',
               supplier: sup?.name || formData.supplier,
@@ -1957,9 +1930,11 @@ const MaterialModal: React.FC<MaterialModalProps> = ({ material, categories, sup
               minStockAlert: Number(formData.minStockAlert),
               costPerUnit: Number(formData.costPerUnit)
             });
+            }catch(error){setSaveError(error instanceof Error?error.message:'No se pudo guardar.');}finally{setSaving(false);}
           }}
           className="space-y-3 text-xs"
         >
+          {saveError&&<p role="alert" className="text-rose-700">{saveError}</p>}
           <div>
             <label className="block text-slate-300 font-semibold mb-1">Nombre del Insumo</label>
             <input
@@ -2056,7 +2031,7 @@ const MaterialModal: React.FC<MaterialModalProps> = ({ material, categories, sup
               Cancelar
             </button>
             <button
-              type="submit"
+              type="submit" disabled={saving}
               className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg"
             >
               Guardar Insumo
@@ -2228,7 +2203,7 @@ const UserModal: React.FC<UserModalProps> = ({ user, houses, defaultCommissionRa
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-slate-300 font-semibold mb-1">Base Asignada</label>
+              <label className="block text-slate-300 font-semibold mb-1">Ubicación actual (opcional)</label>
               <select
                 value={formData.assignedHouseId}
                 onChange={(e) => setFormData({ ...formData, assignedHouseId: e.target.value })}
@@ -2297,10 +2272,13 @@ interface RecipeModalProps {
   materials: RawMaterial[];
   varieties: ProductVariety[];
   onClose: () => void;
-  onSave: (data: Partial<ProductionRecipe>) => void;
+  onSave: (data: Partial<ProductionRecipe>) => Promise<void>;
 }
 
 const RecipeModal: React.FC<RecipeModalProps> = ({ recipe, materials, varieties, onClose, onSave }) => {
+  const [saveError,setSaveError]=useState('');
+  const [saving,setSaving]=useState(false);
+  const [ingredients,setIngredients]=useState(recipe?.ingredients||[]);
   const [formData, setFormData] = useState({
     name: recipe?.name || '',
     type: recipe?.type || ('tequenos' as ProductionRecipe['type']),
@@ -2325,20 +2303,21 @@ const RecipeModal: React.FC<RecipeModalProps> = ({ recipe, materials, varieties,
         </div>
 
         <form
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
-            onSave({
+            if(saving)return;setSaving(true);setSaveError('');
+            try{await onSave({
               ...formData,
               expectedYield: Number(formData.expectedYield),
               estimatedLaborCost: Number(formData.estimatedLaborCost),
               estimatedEnergyPackagingCost: Number(formData.estimatedEnergyPackagingCost),
-              ingredients: recipe?.ingredients || [
-                { materialId: materials[0]?.id || 'MAT-HARINA', materialName: materials[0]?.name || 'Harina', quantityRequired: 10, unit: 'kg' }
-              ]
+              ingredients: ingredients.filter(entry=>entry.quantityRequired>0)
             });
+            }catch(error){setSaveError(error instanceof Error?error.message:'No se pudo guardar.');}finally{setSaving(false);}
           }}
           className="space-y-3 text-xs"
         >
+          {saveError&&<p role="alert" className="text-rose-700">{saveError}</p>}
           <div>
             <label className="block text-slate-300 font-semibold mb-1">Nombre de la Receta</label>
             <input
@@ -2378,6 +2357,16 @@ const RecipeModal: React.FC<RecipeModalProps> = ({ recipe, materials, varieties,
             </div>
           </div>
 
+          <label className="block text-sm font-semibold">Producto elaborado
+            <select aria-label="Producto elaborado" value={formData.varietyId} onChange={event=>setFormData({...formData,varietyId:event.target.value})} className="block w-full border rounded-xl p-3">
+              <option value="">Seleccionar producto</option>{varieties.filter(variety=>variety.isActive!==false).map(variety=><option key={variety.id} value={variety.id}>{variety.name}</option>)}
+            </select>
+          </label>
+          <fieldset><legend className="font-bold mb-2">Insumos por tanda</legend>
+          {materials.filter(material=>material.isActive!==false).map(material=><label key={material.id} className="flex justify-between items-center gap-2 mb-2">{material.name} ({material.unit})
+            <input aria-label={`Receta ${material.name}`} type="number" min="0" step="0.001" value={ingredients.find(entry=>entry.materialId===material.id)?.quantityRequired||0} onChange={event=>setIngredients([...ingredients.filter(entry=>entry.materialId!==material.id),{materialId:material.id,materialName:material.name,unit:material.unit,quantityRequired:Number(event.target.value)}])} className="border rounded-lg p-2 w-24"/>
+          </label>)}
+          </fieldset>
           <div>
             <label className="block text-slate-300 font-semibold mb-1">Instrucciones y Control de Calidad</label>
             <textarea
@@ -2398,7 +2387,7 @@ const RecipeModal: React.FC<RecipeModalProps> = ({ recipe, materials, varieties,
               Cancelar
             </button>
             <button
-              type="submit"
+              type="submit" disabled={saving}
               className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg"
             >
               Guardar Receta
@@ -2414,10 +2403,12 @@ interface SupplierModalProps {
   supplier: Supplier | null;
   categories: SupplyCategory[];
   onClose: () => void;
-  onSave: (data: Partial<Supplier>) => void;
+  onSave: (data: Partial<Supplier>) => Promise<void>;
 }
 
 const SupplierModal: React.FC<SupplierModalProps> = ({ supplier, categories, onClose, onSave }) => {
+  const [saveError,setSaveError]=useState('');
+  const [saving,setSaving]=useState(false);
   const [formData, setFormData] = useState({
     name: supplier?.name || '',
     contactName: supplier?.contactName || '',
@@ -2440,12 +2431,15 @@ const SupplierModal: React.FC<SupplierModalProps> = ({ supplier, categories, onC
         </div>
 
         <form
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
-            onSave(formData);
+            if(saving)return;setSaving(true);setSaveError('');
+            try{await onSave(formData);
+            }catch(error){setSaveError(error instanceof Error?error.message:'No se pudo guardar.');}finally{setSaving(false);}
           }}
           className="space-y-3 text-xs"
         >
+          {saveError&&<p role="alert" className="text-rose-700">{saveError}</p>}
           <div>
             <label className="block text-slate-300 font-semibold mb-1">Razón Social / Proveedor</label>
             <input
@@ -2522,7 +2516,7 @@ const SupplierModal: React.FC<SupplierModalProps> = ({ supplier, categories, onC
               Cancelar
             </button>
             <button
-              type="submit"
+              type="submit" disabled={saving}
               className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg"
             >
               Guardar Proveedor

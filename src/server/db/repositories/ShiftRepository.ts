@@ -25,7 +25,7 @@ export class ShiftRepository {
   async getAll(): Promise<DailyShift[]> {
     const shiftsRes = await query(`
       SELECT 
-        s.id, s.date::text, s.house_id as "houseId", s.house_name as "houseName",
+        s.id, s.date::text, s.house_id as "houseId", s.house_name as "houseName", s.return_house_id as "returnHouseId",s.return_house_name as "returnHouseName",
         s.coordinator_id as "coordinatorId", s.coordinator_name as "coordinatorName",
         s.seller_id as "sellerId", s.seller_name as "sellerName",
         s.cart_id as "cartId", s.cart_code as "cartCode",
@@ -104,7 +104,7 @@ export class ShiftRepository {
     const execute = client ? client.query.bind(client) : query;
     const shiftRes = await execute(`
       SELECT 
-        s.id, s.date::text, s.house_id as "houseId", s.house_name as "houseName",
+        s.id, s.date::text, s.house_id as "houseId", s.house_name as "houseName", s.return_house_id as "returnHouseId",s.return_house_name as "returnHouseName",
         s.coordinator_id as "coordinatorId", s.coordinator_name as "coordinatorName",
         s.seller_id as "sellerId", s.seller_name as "sellerName",
         s.cart_id as "cartId", s.cart_code as "cartCode",
@@ -193,7 +193,7 @@ export class ShiftRepository {
       const seller = await client.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [input.sellerId]);
       const cart = await client.query('SELECT * FROM selling_carts WHERE id = $1 FOR UPDATE', [input.cartId]);
       if (!seller.rows[0]?.is_active || !['seller', 'coordinator'].includes(seller.rows[0]?.role)) throw new DataIntegrityError('INVALID_SELLER', 'Vendedor inactivo o incompatible con el despacho.');
-      if (!cart.rows[0]?.is_active || cart.rows[0]?.status !== 'operativo' || cart.rows[0]?.house_id !== input.houseId) throw new DataIntegrityError('INVALID_CART', 'Carrito no disponible en la casa seleccionada.');
+      if (!cart.rows[0]?.is_active || cart.rows[0]?.status !== 'operativo') throw new DataIntegrityError('INVALID_CART', 'Carrito no disponible.');
       if (!house.rows[0]?.is_active) throw new DataIntegrityError('INVALID_HOUSE', 'Casa operativa no disponible.');
       const coordinatorId = actor?.userId ?? input.coordinatorId;
       assertOperationId(coordinatorId, 'Coordinador');
@@ -243,7 +243,7 @@ export class ShiftRepository {
         (id,shift_id,variety_id,variety_name,delivered_units,difference_units) VALUES ($1,$2,$3,$4,$5,$5)`,
         [`STK-${randomUUID()}`,shiftId,item.varietyId,item.varietyName,item.deliveredUnits]);
       await client.query('UPDATE daily_shifts SET dispatch_snapshot=$2 WHERE id=$1',[shiftId,JSON.stringify({ identity: dispatchIdentity,actorId: coordinatorId })]);
-      await client.query('UPDATE selling_carts SET current_seller_id = $2, gas_level_percent = $3 WHERE id = $1', [input.cartId,input.sellerId,supplies.gasPercentStart]);
+      await client.query('UPDATE selling_carts SET current_seller_id = $2, gas_level_percent = $3,house_id=$4 WHERE id = $1', [input.cartId,input.sellerId,supplies.gasPercentStart,input.houseId]);
       return (await this.getById(shiftId, client))!;
     });
   }
@@ -268,13 +268,19 @@ export class ShiftRepository {
       if (actor && !['admin','coordinator'].includes(actor.role)) throw new DataIntegrityError('FORBIDDEN', 'Rol sin permiso para cierre.', 403);
       const returned = closingData.returnedItems ?? closingData.stockItems?.map((item) => ({ varietyId: item.varietyId, count: item.returnedUnits, wasteCount: item.wasteUnits }));
       if (!Array.isArray(returned)) throw new DataIntegrityError('INVALID_COUNTS', 'Se requieren conteos físicos por variedad.');
-      const closingIdentity = JSON.stringify([closingData.cashDeclared,bonus,closingData.gasPercentEnd ?? null,
-        closingData.notes ?? null,countIdentity(returned)]);
+      const returnHouseId=closingData.returnHouseId||shift.house_id;assertOperationId(returnHouseId,'Casa de regreso');
+      const identityParts:any[]=[closingData.cashDeclared,bonus,closingData.gasPercentEnd??null,closingData.notes??null,countIdentity(returned)];
+      if(returnHouseId!==shift.house_id)identityParts.push(returnHouseId);
+      const closingIdentity=JSON.stringify(identityParts);
       if (!['en_curso','esperando_cierre'].includes(shift.status)) {
         if (shift.settlement_snapshot?.closingIdentity === closingIdentity) return (await this.getById(shiftId,client))!;
         throw new DataIntegrityError('SHIFT_ALREADY_CLOSED','La liquidación histórica no se puede sobrescribir.',409);
       }
-      await client.query('SELECT id FROM operational_houses WHERE id=$1 FOR UPDATE', [shift.house_id]);
+      const destination=(await client.query('SELECT id,name,is_active,freezer_capacity_units FROM operational_houses WHERE id=$1 FOR UPDATE',[returnHouseId])).rows[0];
+      if(!destination?.is_active)throw new DataIntegrityError('INVALID_HOUSE','Casa de regreso no disponible.',409);
+      const storedUnits=Number((await client.query('SELECT COALESCE(SUM(units),0) AS units FROM house_stock WHERE house_id=$1',[returnHouseId])).rows[0].units);
+      const returningUnits=returned.reduce((sum,entry)=>{assertOperationQuantity(entry.count,'Devueltos',true);return sum+entry.count;},0);
+      if(storedUnits+returningUnits>destination.freezer_capacity_units)throw new DataIntegrityError('HOUSE_CAPACITY','La casa de regreso no tiene capacidad suficiente.',409);
       const stockResult = await client.query('SELECT * FROM shift_stock_items WHERE shift_id = $1 ORDER BY variety_id', [shiftId]);
       const stock = stockResult.rows;
       const declared = new Map<string, { count: number; wasteCount?: number }>();
@@ -317,7 +323,7 @@ export class ShiftRepository {
         if (difference < 0) throw new DataIntegrityError('INVENTORY_OVERCOUNT', 'Los conteos exceden el stock entregado.', 409);
         returnedTotal += count.count; wasteTotal += waste; differenceTotal += difference;
         if (count.count > 0) await client.query(`INSERT INTO house_stock (house_id,variety_id,units) VALUES ($1,$2,$3)
-          ON CONFLICT (house_id,variety_id) DO UPDATE SET units=house_stock.units+$3,updated_at=CURRENT_TIMESTAMP`, [shift.house_id,item.variety_id,count.count]);
+          ON CONFLICT (house_id,variety_id) DO UPDATE SET units=house_stock.units+$3,updated_at=CURRENT_TIMESTAMP`, [returnHouseId,item.variety_id,count.count]);
         await client.query(`UPDATE shift_stock_items SET sold_units=$3,returned_units=$4,waste_units=$5,difference_units=$6
           WHERE shift_id=$1 AND variety_id=$2`, [shiftId,item.variety_id,sold,count.count,waste,difference]);
       }
@@ -355,7 +361,8 @@ export class ShiftRepository {
         await client.query('UPDATE selling_carts SET gas_level_percent=$2 WHERE id=$1', [shift.cart_id,closingData.gasPercentEnd]);
         await client.query("UPDATE daily_shifts SET supplies_provided=jsonb_set(supplies_provided,'{gasPercentEnd}',$2::jsonb) WHERE id=$1",[shiftId,JSON.stringify(closingData.gasPercentEnd)]);
       }
-      await client.query('UPDATE selling_carts SET current_seller_id=NULL,total_days_in_use=total_days_in_use+1 WHERE id=$1', [shift.cart_id]);
+      await client.query('UPDATE daily_shifts SET return_house_id=$2,return_house_name=$3 WHERE id=$1',[shiftId,returnHouseId,destination.name]);
+      await client.query('UPDATE selling_carts SET current_seller_id=NULL,total_days_in_use=total_days_in_use+1,house_id=$2 WHERE id=$1', [shift.cart_id,returnHouseId]);
       return (await this.getById(shiftId, client))!;
     });
   }

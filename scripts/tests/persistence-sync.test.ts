@@ -364,3 +364,35 @@ test('Lotes limitados al máximo central conservan el resto del backlog sin borr
   assert.equal(result.pending, 1);
   assert.deepEqual(readQueue().map((sale) => sale.id), ['sale-500']);
 });
+
+test('Lote sin respuesta conserva ID; reintento confirma una sola operación y vuelve a leer cámara central',async()=>{
+  Object.assign(service.getState(),snapshot(),{currentUser:administrator,centralHydrated:true,centralOwnerUserId:administrator.id,isOnline:true});
+  const input={varietyId:INITIAL_VARIETIES[0].id,unitsProduced:20,laborCost:0,energyAndPackagingCost:0,ingredientsUsed:[]};
+  const sent:any[]=[];let lost=true;
+  responder=async(url,request)=>{
+    if(url==='/api/production/commands'){const body=JSON.parse(String(request?.body));sent.push(body);if(lost){lost=false;throw new Error('Respuesta perdida después de COMMIT');}return Response.json({success:true,result:{id:body.id}});}
+    if(url==='/api/bootstrap')return Response.json({success:true,configured:true,state:{...snapshot(),productionBatches:[{...input,id:sent[0].id,remainingUnitsInCentral:20}],rawMaterials:[],recipes:[],transfers:[]}});
+    throw new Error('Ruta inesperada');
+  };
+  await assert.rejects(service.registerProductionBatch(input),/No se confirmó/);assert.equal(service.getState().productionBatches.length,0);
+  const lot=await service.registerProductionBatch(input);assert.equal(lot.id,sent[0].id);assert.deepEqual(sent[0],sent[1]);assert.equal(service.getState().productionBatches.length,1);assert.deepEqual(JSON.parse(storage.get('SGMO_PENDING_OPERATIONS')||'[]'),[]);
+});
+
+test('Actualizar fábrica guarda existencias antiguas antes de sustituir caché y no ejecuta traslados anteriores',async()=>{
+  Object.assign(service.getState(),snapshot(),{currentUser:administrator,centralHydrated:true,centralOwnerUserId:administrator.id,isOnline:true,productionBatches:[{id:'LOT-ANTERIOR',remainingUnitsInCentral:12}],transfers:[{id:'TRANSFER-ANTERIOR'}]});
+  responder=async(url)=>{assert.equal(url,'/api/bootstrap');return Response.json({success:true,configured:true,state:{...snapshot(),productionBatches:[],transfers:[]}});};
+  assert.equal(await service.refreshCentralState(),true);assert.equal(service.getState().productionBatches.length,0);assert.equal(JSON.parse(storage.get('SGMO_FACTORY_LEGACY_V1')!).productionBatches[0].remainingUnitsInCentral,12);assert.equal(service.hasLegacyFactoryData(),true);assert.equal(requestCount,1);
+});
+
+test('Snapshot iniciado antes de guardar lote no pisa una confirmación más reciente',async()=>{
+  Object.assign(service.getState(),snapshot(),{currentUser:administrator,centralHydrated:true,centralOwnerUserId:administrator.id,isOnline:true});
+  let release!:(response:Response)=>void;let reads=0;let savedId='';
+  responder=async(url,request)=>{
+    if(url==='/api/bootstrap'&&++reads===1)return new Promise<Response>(resolve=>{release=resolve;});
+    if(url==='/api/production/commands'){savedId=JSON.parse(String(request?.body)).id;return Response.json({success:true,result:{id:savedId}});}
+    return Response.json({success:true,configured:true,state:{...snapshot(),productionBatches:[{id:savedId,remainingUnitsInCentral:20}],transfers:[]}});
+  };
+  const stale=service.refreshCentralState();await new Promise(resolve=>setImmediate(resolve));
+  const saving=service.registerProductionBatch({varietyId:INITIAL_VARIETIES[0].id,unitsProduced:20,laborCost:0,energyAndPackagingCost:0,ingredientsUsed:[]});await new Promise(resolve=>setImmediate(resolve));
+  release(Response.json({success:true,configured:true,state:{...snapshot(),productionBatches:[],transfers:[]}}));await stale;await saving;assert.equal(service.getState().productionBatches[0].id,savedId);
+});

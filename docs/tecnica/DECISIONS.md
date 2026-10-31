@@ -8,6 +8,16 @@
 
 ## Actualización vigente — 13 de octubre de 2026
 
+### ADR-025: producción y traslados centrales, carritos móviles y tema claro — 31/10/2026
+
+Diagnóstico: registrarProductionBatch/transferToHouse modifican sólo estado local; bootstrap repone house_stock oficial sin esas operaciones. El traslado usa VAR-CLASICO/VAR-AHUMADO fijos. La creación de carritos valida una base obligatoria vacía y el despacho exige que el carrito pertenezca a la casa elegida. Estas condiciones contradicen el circuito informado por Sebas.
+
+Se conserva React/Express/PostgreSQL y el cálculo financiero. Se agrega un documento PostgreSQL tipado para la operación de fábrica, protegido por transacción y bloqueo por operación, y recibos idempotentes por comando. El servidor valida insumos, recetas, lotes y cantidades; calcula costos; cámara y house_stock se modifican atómicamente, con bloqueo de casas y capacidad. Bootstrap devuelve las existencias de cámara/casas desde una lectura consistente y el cliente espera ACK. Cantidades/costos no se aceptan como resultados calculados por el navegador. Cada comando se audita. Los datos locales anteriores se respaldan antes de reemplazar las colecciones y se incorporan sólo mediante confirmación explícita de existencias; no acreditar otra vez traslados locales anteriores.
+
+El nombre libre del carrito es independiente de su ID interno. Su casa es ubicación actual opcional, no base permanente. El despacho establece el origen de esa jornada y el cierre permite devolver a otra casa; se conserva origen y destino en historial sin alterar comisiones/deducciones. Salidas/reintentos no duplican stock. Se prueban capacidad, sobrestock, permisos, respuesta perdida y concurrencia.
+
+La interfaz usa un tema claro coherente, con acentos por estado y superposición de modales legible. Laboratorio MP y explicaciones internas salen de administración; recuperación histórica queda en una ruta de soporte, no como pestaña habitual. Se actualiza el registro de continuidad existente, sin crear un informe por hito.
+
 ### ADR-024: entrega sobre el dominio principal, recuperación local y documentación agrupada — 29/10/2026
 
 Sebas autoriza preparar production, integrar main y publicar sobre el proyecto Vercel `sgmo`, preservando el otro proyecto `deareys-studio`, que es otro negocio. La base productiva tiene respaldo `br-silent-boat-b6cvphw3`. Se ensayan las migraciones en `br-steep-smoke-b6y1kh4s`. El control automático rechaza aplicar la semilla 002 en producción por sus personas ficticias y posibilidad de sobrescritura. Se utiliza la alternativa `scripts/sql/production-baseline.sql`: sólo el espacio del dueño sin credenciales, parámetros iniciales cero y ninguna venta, casa, producto o carrito ficticio; INSERT con ON CONFLICT DO NOTHING. El runner reconoce `002_production_baseline` y nunca reintroduce la semilla demo. El acceso de la aplicación usa `sgmo_app`, sin DDL ni escritura de versiones; migraciones HTTP deshabilitadas por defecto en producción.

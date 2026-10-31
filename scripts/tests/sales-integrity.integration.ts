@@ -34,7 +34,7 @@ if (mode === '--wasm') {
   }
   const execute = async (sql: string, parameters?: unknown[]) => {
     const result = parameters?.length ? await database.query(sql,parameters) : (await database.exec(sql)).at(-1);
-    return { ...result, rows: result?.rows ?? [], rowCount: result?.affectedRows ?? 0 };
+    return { ...result, rows: result?.rows ?? [], rowCount: result?.rows?.length || result?.affectedRows || 0 };
   };
   Pool.prototype.query = (async function(sql: string, parameters?: unknown[]) {
     const unlock = await acquire(); try { return await execute(sql,parameters); } finally { unlock(); }
@@ -275,6 +275,71 @@ try {
       assert.deepEqual((await query('SELECT settlement_snapshot FROM daily_shifts WHERE id=$1',[shiftId])).rows[0].settlement_snapshot,historical);
     });
   }
+
+  const {productionRepository:factory}=await import('../../src/server/db/repositories/ProductionRepository');
+  const {configurationRepository:configuration}=await import('../../src/server/db/repositories/ConfigurationRepository');
+  const command=(id:string,kind:string,input:any)=>factory.command({id,kind,input},actor);
+  const stockAt=async(house:string,variety='VAR-FACTORY')=>Number((await query('SELECT COALESCE(SUM(units),0) AS units FROM house_stock WHERE house_id=$1 AND variety_id=$2',[house,variety])).rows[0].units);
+  await check('Carritos admiten nombres libres Unicode y ninguna base obligatoria',async()=>{
+    for(const [id,name] of [['CART-LIBRE','la Tota 👓'],['CART-ANTEOJOS','anteojos']])await configuration.saveEntity('carts',id,{code:name,houseId:''},actor.userId,true);
+    const carts=(await configuration.getBootstrapCatalog()).carts;assert.equal(carts.find(cart=>cart.id==='CART-LIBRE')?.code,'la Tota 👓');assert.equal(carts.find(cart=>cart.id==='CART-LIBRE')?.houseId,'');
+    await configuration.saveEntity('houses','HOUSE-FACTORY-A',{name:'Base ensayo A',address:'Ensayo',freezerCapacityUnits:200,fixedCostDaily:0},actor.userId,true);
+    await configuration.saveEntity('houses','HOUSE-FACTORY-B',{name:'Base ensayo B',address:'Ensayo',freezerCapacityUnits:200,fixedCostDaily:0},actor.userId,true);
+    await configuration.saveEntity('varieties','VAR-FACTORY',{name:'Producto propio ensayo',basePriceIndividual:10,comboPrices:{combo3:25,combo6:45,combo12:85}},actor.userId,true);
+  });
+  await check('Insumo, compra, receta y lote usan costos del servidor y persisten en lecturas nuevas',async()=>{
+    await command('FAC-MATERIAL','catalog',{collection:'rawMaterials',entityId:'MAT-FACTORY',create:true,attributes:{name:'Insumo ensayo',unit:'kg',currentStock:10,minStockAlert:1,costPerUnit:2,isActive:true}});
+    await command('FAC-PURCHASE','purchase',{materialId:'MAT-FACTORY',quantity:5,unitCost:3,supplier:'Proveedor ensayo'});
+    await command('FAC-RECIPE','catalog',{collection:'recipes',entityId:'REC-FACTORY',create:true,attributes:{name:'Receta ensayo',varietyId:'VAR-FACTORY',type:'tequenos',outputUnit:'unidad',expectedYield:100,estimatedLaborCost:2,estimatedEnergyPackagingCost:1,ingredients:[{materialId:'MAT-FACTORY',quantityRequired:1}],isActive:true}});
+    const input={varietyId:'VAR-FACTORY',unitsProduced:100,laborCost:2,energyAndPackagingCost:1,ingredientsUsed:[{materialId:'MAT-FACTORY',quantity:1,cost:999}],totalBatchCost:999};
+    await command('FAC-BATCH','batch',input);await command('FAC-BATCH','batch',input);
+    const {factory:state}=await factory.snapshot();const batch=state.productionBatches.find(batch=>batch.id==='FAC-BATCH')!;
+    assert.equal(batch.totalBatchCost,6);assert.equal(batch.remainingUnitsInCentral,100);assert.equal(state.rawMaterials.find(material=>material.id==='MAT-FACTORY')?.currentStock,14);
+    assert.equal(state.productionBatches.filter(batch=>batch.id==='FAC-BATCH').length,1);
+    await assert.rejects(command('FAC-BATCH','batch',{...input,unitsProduced:101}));
+    await assert.rejects(command('FAC-INVALID','batch',{...input,unitsProduced:-1}));
+    await assert.rejects(command('FAC-INSUFFICIENT','batch',{...input,ingredientsUsed:[{materialId:'MAT-FACTORY',quantity:99}]}));
+    assert.equal((await factory.snapshot()).factory.productionBatches.length,1);
+  });
+  await check('Dos traslados compiten por cámara sin sobregiro; reintento no duplica destino',async()=>{
+    const transfer=(toHouseId:string,quantity:number)=>({toHouseId,items:[{varietyId:'VAR-FACTORY',quantity}]});
+    const competing=await Promise.allSettled([command('FAC-TRANSFER-A','transfer',transfer('HOUSE-FACTORY-A',70)),command('FAC-TRANSFER-B','transfer',transfer('HOUSE-FACTORY-B',70))]);
+    assert.equal(competing.filter(result=>result.status==='fulfilled').length,1);assert.equal(competing.filter(result=>result.status==='rejected').length,1);
+    const winner=competing[0].status==='fulfilled'?'A':'B';await command('FAC-TRANSFER-'+winner,'transfer',transfer('HOUSE-FACTORY-'+winner,70));
+    assert.equal(await stockAt('HOUSE-FACTORY-A')+await stockAt('HOUSE-FACTORY-B'),70);assert.equal((await factory.snapshot()).factory.productionBatches[0].remainingUnitsInCentral,30);
+    // Normalizar destino de la prueba siguiente mediante otro movimiento real.
+    if(winner==='B')await command('FAC-HOUSE-TRANSFER','transfer',{...transfer('HOUSE-FACTORY-A',70),fromHouseId:'HOUSE-FACTORY-B'});
+    const before=await factory.snapshot();await assert.rejects(command('FAC-ROLLBACK','transfer',{toHouseId:'HOUSE-FACTORY-B',items:[{varietyId:'VAR-FACTORY',quantity:5},{varietyId:'VAR-CLASICO',quantity:1}]}));assert.deepEqual(await factory.snapshot(),before);
+    await assert.rejects(factory.command({id:'FAC-FORBIDDEN',kind:'batch',input:{}},{...actor,role:'seller'}));
+  });
+  await check('Órdenes completadas generan un solo lote, descuentan receta y rechazan una segunda finalización',async()=>{
+    await command('FAC-ORDER','order-create',{recipeId:'REC-FACTORY',requestedQuantity:100,targetDate:'2026-10-31'});
+    await command('FAC-ORDER-START','order-start',{orderId:'FAC-ORDER'});
+    const completion={orderId:'FAC-ORDER',realProducedQuantity:100,wasteQuantity:2};await command('FAC-ORDER-END','order-complete',completion);await command('FAC-ORDER-END','order-complete',completion);
+    await assert.rejects(command('FAC-ORDER-OTHER','order-complete',completion));
+    const state=(await factory.snapshot()).factory;assert.equal(state.productionOrders.find(order=>order.id==='FAC-ORDER')?.status,'completada');assert.equal(state.productionBatches.filter(batch=>batch.id==='FAC-ORDER-END').length,1);assert.equal(state.rawMaterials.find(material=>material.id==='MAT-FACTORY')?.currentStock,13);
+  });
+  await check('Despacho desde otra casa y regreso independiente conservan stock y cierre inmutable',async()=>{
+    await configuration.saveEntity('carts','CART-LIBRE',{houseId:'HOUSE-FACTORY-B'},actor.userId);
+    const draft={...shiftDraft('SHIFT-MOBILE','USR-VEND-01','CART-LIBRE'),houseId:'HOUSE-FACTORY-A',stockItems:[{varietyId:'VAR-FACTORY',deliveredUnits:30} as any]};
+    await shiftRepository.createShift(draft,actor);assert.equal(await stockAt('HOUSE-FACTORY-A'),40);
+    const close={cashDeclared:0,returnHouseId:'HOUSE-FACTORY-B',returnedItems:[{varietyId:'VAR-FACTORY',count:30}]};
+    await configuration.saveEntity('houses','HOUSE-FACTORY-B',{freezerCapacityUnits:20},actor.userId);
+    await assert.rejects(shiftRepository.closeAndReconcileShift('SHIFT-MOBILE',close,actor),conflict('HOUSE_CAPACITY'));assert.equal(await stockAt('HOUSE-FACTORY-B'),0);assert.equal((await shiftRepository.getById('SHIFT-MOBILE'))?.status,'en_curso');
+    await configuration.saveEntity('houses','HOUSE-FACTORY-B',{freezerCapacityUnits:200},actor.userId);
+    const closed=await shiftRepository.closeAndReconcileShift('SHIFT-MOBILE',close,actor);await shiftRepository.closeAndReconcileShift('SHIFT-MOBILE',close,actor);
+    assert.equal(closed.returnHouseId,'HOUSE-FACTORY-B');assert.equal(await stockAt('HOUSE-FACTORY-A'),40);assert.equal(await stockAt('HOUSE-FACTORY-B'),30);
+    assert.equal((await configuration.getBootstrapCatalog()).carts.find(cart=>cart.id==='CART-LIBRE')?.houseId,'HOUSE-FACTORY-B');
+    await assert.rejects(shiftRepository.closeAndReconcileShift('SHIFT-MOBILE',{...close,returnHouseId:'HOUSE-FACTORY-A'},actor));
+  });
+  await check('Existencias anteriores se incorporan una vez; archivos y traslados históricos no acreditan casas',async()=>{
+    const beforeA=await stockAt('HOUSE-FACTORY-A'),beforeB=await stockAt('HOUSE-FACTORY-B');
+    const legacy={productionBatches:[{id:'LOT-LEGACY-FACTORY',date:'2026-10-30',varietyId:'VAR-FACTORY',unitsProduced:10,remainingUnitsInCentral:7,laborCost:0,energyAndPackagingCost:0,totalBatchCost:0,ingredientsUsed:[]}],transfers:[{id:'TRANSFER-LEGACY',toHouseId:'HOUSE-FACTORY-A',items:[{varietyId:'VAR-FACTORY',quantity:3}]}],materialPurchases:[]};
+    await command('FAC-IMPORT','import-local',{state:legacy});await command('FAC-IMPORT','import-local',{state:legacy});
+    assert.equal((await factory.snapshot()).factory.productionBatches.filter(batch=>batch.id==='LOT-LEGACY-FACTORY').length,1);assert.equal(await stockAt('HOUSE-FACTORY-A'),beforeA);assert.equal(await stockAt('HOUSE-FACTORY-B'),beforeB);
+    const archives=await query("SELECT payload FROM factory_legacy_archives WHERE id='FAC-IMPORT'");assert.equal(archives.rows.length,1);assert.deepEqual(archives.rows[0].payload.transfers,legacy.transfers);
+    await assert.rejects(command('FAC-IMPORT-BAD','import-local',{state:{productionBatches:[{...legacy.productionBatches[0],id:'LOT-BAD',remainingUnitsInCentral:11}]}}));assert.equal((await query("SELECT id FROM factory_legacy_archives WHERE id='FAC-IMPORT-BAD'")).rows.length,0);
+  });
   console.log(`RESULTADO: ${passed} pruebas SQL reales aprobadas sobre ${mode === '--wasm' ? 'WASM (concurrencia distribuida no demostrada)' : 'PostgreSQL local aislado'}.`);
 } finally {
   Pool.prototype.query = originalQuery; Pool.prototype.connect = originalConnect;

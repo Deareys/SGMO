@@ -69,6 +69,8 @@ import { soundAlerts } from '../utils/soundAlerts';
 import { authenticatedFetch, resetCsrfToken } from './apiClient';
 import { captureLegacyBackup, canReplaceLegacyCache } from './legacyRecovery';
 
+import { FACTORY_COLLECTIONS, type FactoryState } from '../shared/factoryState';
+const FACTORY_BACKUP_KEY = 'SGMO_FACTORY_LEGACY_V1';
 const STORAGE_KEY = 'SGMO_TEQUENOS_COSTA_V2';
 const OFFLINE_QUEUE_KEY = 'SGMO_OFFLINE_SALES_QUEUE';
 const PENDING_OPERATIONS_KEY = 'SGMO_PENDING_OPERATIONS';
@@ -116,7 +118,7 @@ export interface AppState {
   transfers: StockTransfer[];
 }
 
-export interface CentralSnapshot {
+export interface CentralSnapshot extends Partial<FactoryState> {
   users: UserProfile[];
   shifts: DailyShift[];
   sales: SaleTransaction[];
@@ -141,6 +143,7 @@ export type UserCredentialInput = Partial<UserProfile> & { password?: string };
 
 export class StorageService {
   private authRevision = 0;
+  private centralMutationRevision = 0;
   private logoutRequest: Promise<{ success: boolean; error?: string }> | null = null;
   private state: AppState;
   private listeners: Set<Listener> = new Set();
@@ -346,6 +349,7 @@ export class StorageService {
 
   private async loadCentralSnapshot(): Promise<boolean> {
     const sessionUser = this.state.currentUser;
+    const mutationRevision = this.centralMutationRevision;
     if (!sessionUser) return false;
     this.state.centralStatus = 'loading';
     this.state.centralError = undefined;
@@ -367,7 +371,7 @@ export class StorageService {
       if (!snapshot.systemConfig || !Array.isArray(snapshot.systemConfig.commissionTiers)) {
         throw new Error('El servidor no confirmó la configuración operativa.');
       }
-      if (this.state.currentUser?.id !== sessionUser.id) return false;
+      if (this.state.currentUser?.id !== sessionUser.id || mutationRevision !== this.centralMutationRevision) return false;
       // Reflejar cambios de nombre/base de esta cuenta confirmados por el servidor.
       if (payload.currentUser?.id === sessionUser.id && payload.currentUser.role === sessionUser.role) {
         this.state.currentUser = this.withoutCredentials(payload.currentUser);
@@ -389,6 +393,17 @@ export class StorageService {
       this.state.carts = snapshot.carts;
       this.state.zones = snapshot.zones;
       this.state.systemConfig = snapshot.systemConfig;
+      if (Array.isArray(snapshot.productionBatches)) {
+        // Una única copia antes de adoptar fábrica central; nunca borrar lotes locales silenciosamente.
+        if (!localStorage.getItem('SGMO_FACTORY_CENTRAL_V1') && !this.state.demoMode) {
+          const legacy = Object.fromEntries(FACTORY_COLLECTIONS.map(key=>[key,this.state[key]]));
+          if (FACTORY_COLLECTIONS.some(key=>this.state[key].length) && !localStorage.getItem(FACTORY_BACKUP_KEY)) {
+            localStorage.setItem(FACTORY_BACKUP_KEY, JSON.stringify(legacy));
+          }
+          localStorage.setItem('SGMO_FACTORY_CENTRAL_V1','1');
+        }
+        for (const key of FACTORY_COLLECTIONS) (this.state as any)[key] = snapshot[key] || [];
+      }
       this.state.centralHydrated = true;
       this.state.centralOwnerUserId = sessionUser.id;
       this.state.demoMode = payload.demoMode === true;
@@ -622,159 +637,39 @@ export class StorageService {
   }
 
   // --- 1. Gestión de Materias Primas y Producción ---
-  public addMaterialPurchase(data: Omit<MaterialPurchase, 'id' | 'registeredBy'>): void {
-    const id = `PUR-${Date.now()}`;
-    const purchase: MaterialPurchase = {
-      ...data,
-      id,
-      registeredBy: this.state.currentUser?.name || 'Administración'
-    };
-
-    // Actualizar stock del insumo y costo unitario
-    const material = this.state.rawMaterials.find((m) => m.id === data.materialId);
-    if (material) {
-      material.currentStock += data.quantity;
-      material.costPerUnit = data.unitCost;
-      material.lastPurchaseDate = data.date;
-      material.supplier = data.supplier;
+  /** Comandos de fábrica: guardar intención antes de enviar; reintentar con el mismo ID ante respuesta perdida. */
+  private async persistFactoryCommand(kind:string,input:unknown):Promise<{id:string;entityId?:string}> {
+    const user=this.requireCentralOperation(['admin','factory_worker','coordinator']);
+    const url='/api/production/commands';
+    const semanticInput=kind==='catalog'&&(input as any).create?{...(input as any),entityId:undefined}:input;
+    const key=JSON.stringify([user.id,'POST',url,kind,semanticInput]);
+    let intent=this.readPendingOperations().find(operation=>operation.key===key);
+    if(!intent){intent={key,userId:user.id,url,method:'POST',payload:{id:`FAC-${crypto.randomUUID()}`,kind,input}};localStorage.setItem(PENDING_OPERATIONS_KEY,JSON.stringify([...this.readPendingOperations(),intent]));}
+    let response:Response;let payload:any;
+    try{response=await authenticatedFetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(intent.payload)});payload=await response.json();}
+    catch{throw new Error('No se confirmó el guardado. Reintentá: no se duplicará la operación.');}
+    if(!response.ok||!payload.success||!payload.result?.id){
+      if(response.status>=400&&response.status<500)localStorage.setItem(PENDING_OPERATIONS_KEY,JSON.stringify(this.readPendingOperations().filter(operation=>operation.key!==key)));
+      throw new Error(payload.message||'No se pudo guardar.');
     }
-
-    this.state.materialPurchases = [purchase, ...this.state.materialPurchases];
-    this.addAuditLog(
-      'COMPRA_MATERIA_PRIMA',
-      'produccion',
-      id,
-      `Compra de ${data.quantity} ${material?.unit || 'u'} de ${data.materialName} a $${data.totalCost}`
-    );
-    this.saveState();
+    this.centralMutationRevision++;
+    if(this.hydrationPromise) await this.hydrationPromise;
+    if(this.state.currentUser?.id!==user.id)throw new Error('Cambió la sesión. Ingresá de nuevo para consultar el resultado.');
+    if(!await this.refreshCentralState())throw new Error('Guardado confirmado. Falta actualizar la vista; reintentá para consultar el resultado.');
+    localStorage.setItem(PENDING_OPERATIONS_KEY,JSON.stringify(this.readPendingOperations().filter(operation=>operation.key!==key)));
+    return payload.result;
   }
-
-  public registerProductionBatch(batchData: {
-    varietyId: string;
-    unitsProduced: number;
-    laborCost: number;
-    energyAndPackagingCost: number;
-    ingredientsUsed: { materialId: string; quantity: number }[];
-    notes?: string;
-  }): ProductionBatch {
-    const variety = this.state.varieties.find((v) => v.id === batchData.varietyId);
-    const varietyName = variety ? variety.name : 'Tequeño';
-
-    // Descontar materias primas y calcular costo de ingredientes
-    let ingredientsCost = 0;
-    const detailedIngredients = batchData.ingredientsUsed.map((ing) => {
-      const mat = this.state.rawMaterials.find((m) => m.id === ing.materialId);
-      const cost = (mat ? mat.costPerUnit : 0) * ing.quantity;
-      ingredientsCost += cost;
-      if (mat) {
-        mat.currentStock = Math.max(0, mat.currentStock - ing.quantity);
-      }
-      return {
-        materialId: ing.materialId,
-        materialName: mat ? mat.name : 'Insumo',
-        quantity: ing.quantity,
-        cost
-      };
-    });
-
-    const totalBatchCost = ingredientsCost + batchData.laborCost + batchData.energyAndPackagingCost;
-    const unitCostCalculated = Number((totalBatchCost / (batchData.unitsProduced || 1)).toFixed(2));
-
-    const id = `LOT-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(this.state.productionBatches.length + 1).padStart(2, '0')}`;
-
-    const newBatch: ProductionBatch = {
-      id,
-      date: new Date().toISOString().slice(0, 10),
-      varietyId: batchData.varietyId,
-      varietyName,
-      unitsProduced: batchData.unitsProduced,
-      ingredientsUsed: detailedIngredients,
-      laborCost: batchData.laborCost,
-      energyAndPackagingCost: batchData.energyAndPackagingCost,
-      totalBatchCost,
-      unitCostCalculated,
-      status: 'en_camara_central',
-      remainingUnitsInCentral: batchData.unitsProduced,
-      notes: batchData.notes
-    };
-
-    this.state.productionBatches = [newBatch, ...this.state.productionBatches];
-    this.addAuditLog(
-      'NUEVO_LOTE_PRODUCCION',
-      'produccion',
-      id,
-      `Producción de ${batchData.unitsProduced} unidades de ${varietyName}. Costo unitario calculado: $${unitCostCalculated}`
-    );
-    this.saveState();
-    return newBatch;
+  public hasLegacyFactoryData():boolean { return !!localStorage.getItem(FACTORY_BACKUP_KEY); }
+  public async importLegacyFactoryData():Promise<void>{
+    const state=JSON.parse(localStorage.getItem(FACTORY_BACKUP_KEY)||'null');if(!state)throw new Error('No hay existencias anteriores en este dispositivo.');
+    await this.persistFactoryCommand('import-local',{state});localStorage.removeItem(FACTORY_BACKUP_KEY);
   }
-
-  // --- 2. Traslado a Casas / Bases Operativas ---
-  public transferToHouse(toHouseId: string, items: { varietyId: string; quantity: number }[], notes?: string): StockTransfer {
-    const house = this.state.houses.find((h) => h.id === toHouseId);
-    const toHouseName = house ? house.name : 'Base Operativa';
-
-    const transferItems = items.map((it) => {
-      const variety = this.state.varieties.find((v) => v.id === it.varietyId);
-      return {
-        varietyId: it.varietyId,
-        varietyName: variety ? variety.name : 'Tequeño',
-        quantity: it.quantity
-      };
-    });
-
-    // Descontar de lotes en cámara central
-    items.forEach((item) => {
-      let needed = item.quantity;
-      for (const batch of this.state.productionBatches) {
-        if (batch.varietyId === item.varietyId && batch.remainingUnitsInCentral > 0 && needed > 0) {
-          const take = Math.min(batch.remainingUnitsInCentral, needed);
-          batch.remainingUnitsInCentral -= take;
-          needed -= take;
-          if (batch.remainingUnitsInCentral === 0) {
-            batch.status = 'distribuido';
-          }
-        }
-      }
-
-      // Sumar al stock de la casa destino
-      if (house) {
-        const stockEntry = house.currentStock.find((s) => s.varietyId === item.varietyId);
-        if (stockEntry) {
-          stockEntry.quantity += item.quantity;
-        } else {
-          const variety = this.state.varieties.find((v) => v.id === item.varietyId);
-          house.currentStock.push({
-            varietyId: item.varietyId,
-            varietyName: variety ? variety.name : 'Tequeño',
-            quantity: item.quantity
-          });
-        }
-      }
-    });
-
-    const id = `TRF-${Date.now()}`;
-    const transfer: StockTransfer = {
-      id,
-      date: new Date().toISOString().slice(0, 10),
-      fromLocation: 'Camara Central',
-      toHouseId,
-      toHouseName,
-      transferredBy: this.state.currentUser?.name || 'Coordinación',
-      items: transferItems,
-      status: 'recibido_conforme',
-      notes
-    };
-
-    this.state.transfers = [transfer, ...this.state.transfers];
-    this.addAuditLog(
-      'TRASLADO_CENTRAL_A_CASA',
-      'stock',
-      id,
-      `Traslado de mercadería hacia ${toHouseName}`
-    );
-    this.saveState();
-    return transfer;
+  public async addMaterialPurchase(data:Omit<MaterialPurchase,'id'|'registeredBy'>):Promise<void>{await this.persistFactoryCommand('purchase',data);}
+  public async registerProductionBatch(batchData:{varietyId:string;unitsProduced:number;laborCost:number;energyAndPackagingCost:number;ingredientsUsed:{materialId:string;quantity:number}[];notes?:string}):Promise<ProductionBatch>{
+    const receipt=await this.persistFactoryCommand('batch',batchData);return this.state.productionBatches.find(batch=>batch.id===receipt.id)!;
+  }
+  public async transferToHouse(toHouseId:string,items:{varietyId:string;quantity:number}[],notes?:string,fromHouseId?:string):Promise<StockTransfer>{
+    const receipt=await this.persistFactoryCommand('transfer',{toHouseId,items,notes,fromHouseId});return this.state.transfers.find(transfer=>transfer.id===receipt.id)!;
   }
 
   /** Ejecuta el cálculo previo sin publicar ni guardar sus efectos económicos. */
@@ -842,11 +737,13 @@ export class StorageService {
       throw new Error('La sesión cambió mientras se confirmaba la operación. Actualizá la operación central.');
     }
     if (!result.shift?.id) throw new Error('El servidor no confirmó la jornada actualizada.');
+    this.centralMutationRevision++;
     localStorage.setItem(PENDING_OPERATIONS_KEY, JSON.stringify(this.readPendingOperations().filter((operation) => operation.key !== intentKey)));
     this.state.shifts = [result.shift, ...this.state.shifts.filter((shift) => shift.id !== result.shift.id)];
     this.saveState();
     // Casas/carritos/catálogo se adoptan desde sus fuentes centrales, no desde
     // el borrador que descuenta congeladores sólo en el dispositivo.
+    if(this.hydrationPromise) await this.hydrationPromise;
     await this.refreshCentralState();
     return result;
   }
@@ -1338,6 +1235,7 @@ export class StorageService {
   // --- 6. Cierre de Jornada, Conciliación y Liquidación ---
   private draftCloseAndReconcileShift(data: {
     shiftId: string;
+    returnHouseId?: string;
     cashDeclared: number;
     gasPercentEnd: number;
     returnedItems: { varietyId: string; count: number; wasteCount: number }[];
@@ -1349,7 +1247,7 @@ export class StorageService {
     const shift = this.state.shifts.find((s) => s.id === data.shiftId);
     if (!shift) throw new Error('Jornada no encontrada');
 
-    const house = this.state.houses.find((h) => h.id === shift.houseId);
+    const house = this.state.houses.find((h) => h.id === (data.returnHouseId||shift.houseId));
     const cart = this.state.carts.find((c) => c.id === shift.cartId);
 
     // Calcular diferencias de stock
@@ -1856,6 +1754,7 @@ export class StorageService {
     const response = await authenticatedFetch(endpoint, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const result = await response.json();
     if (!response.ok || !result.success || !result.catalog) throw new Error(result.message || 'El servidor no confirmó el cambio.');
+    this.centralMutationRevision++;
     const catalog = result.catalog;
     this.state.systemConfig = catalog.systemConfig;
     this.state.houses = catalog.houses;
@@ -1935,238 +1834,30 @@ export class StorageService {
   }
 
   // --- 11.d) Gestión de Insumos y Categorías (Admin) ---
-  public createRawMaterial(data: Omit<RawMaterial, 'id'>): RawMaterial {
-    const id = `MAT-${Date.now()}`;
-    const newMat: RawMaterial = {
-      ...data,
-      id,
-      isActive: true,
-      priceHistory: [
-        { date: new Date().toISOString().slice(0, 10), costPerUnit: data.costPerUnit, supplier: data.supplier }
-      ]
-    };
-    this.state.rawMaterials = [...this.state.rawMaterials, newMat];
-    this.addAuditLog('CREAR_INSUMO', 'produccion', id, `Nuevo insumo registrado: ${newMat.name} ($${newMat.costPerUnit}/${newMat.unit})`);
-    this.saveState();
-    return newMat;
+  /** El catálogo de fábrica comparte el mismo contrato persistente que lotes y traslados. */
+  public async createRawMaterial(data:Omit<RawMaterial,'id'>):Promise<RawMaterial>{
+    const id=`MAT-${crypto.randomUUID()}`;const receipt=await this.persistFactoryCommand('catalog',{collection:'rawMaterials',entityId:id,attributes:{...data,isActive:true},create:true});return this.state.rawMaterials.find(entry=>entry.id===receipt.entityId)!;
   }
-
-  public updateRawMaterial(materialId: string, data: Partial<RawMaterial>): void {
-    const mat = this.state.rawMaterials.find((m) => m.id === materialId);
-    if (!mat) return;
-    
-    // Si cambia el costo unitario, registrar en historial
-    if (data.costPerUnit !== undefined && data.costPerUnit !== mat.costPerUnit) {
-      const history = mat.priceHistory || [];
-      mat.priceHistory = [
-        ...history,
-        {
-          date: new Date().toISOString().slice(0, 10),
-          costPerUnit: data.costPerUnit,
-          supplier: data.supplier || mat.supplier
-        }
-      ];
-    }
-
-    Object.assign(mat, data);
-    this.addAuditLog('EDITAR_INSUMO', 'produccion', materialId, `Insumo ${mat.name} actualizado. Stock: ${mat.currentStock} ${mat.unit}`);
-    this.saveState();
+  public async updateRawMaterial(id:string,data:Partial<RawMaterial>):Promise<void>{await this.persistFactoryCommand('catalog',{collection:'rawMaterials',entityId:id,attributes:data});}
+  public async toggleRawMaterialActive(id:string):Promise<void>{const entry=this.state.rawMaterials.find(row=>row.id===id);if(!entry)throw new Error('Registro no encontrado.');await this.updateRawMaterial(id,{isActive:entry.isActive===false});}
+  public async createSupplier(data:Omit<Supplier,'id'>):Promise<Supplier>{
+    const id=`SUP-${crypto.randomUUID()}`;const receipt=await this.persistFactoryCommand('catalog',{collection:'suppliers',entityId:id,attributes:{...data,isActive:true},create:true});return this.state.suppliers.find(entry=>entry.id===receipt.entityId)!;
   }
-
-  public toggleRawMaterialActive(materialId: string): void {
-    const mat = this.state.rawMaterials.find((m) => m.id === materialId);
-    if (!mat) return;
-    mat.isActive = mat.isActive === undefined ? false : !mat.isActive;
-    this.addAuditLog('ESTADO_INSUMO', 'produccion', materialId, `Insumo ${mat.name} ${mat.isActive ? 'activado' : 'desactivado'}`);
-    this.saveState();
+  public async updateSupplier(id:string,data:Partial<Supplier>):Promise<void>{await this.persistFactoryCommand('catalog',{collection:'suppliers',entityId:id,attributes:data});}
+  public async toggleSupplierActive(id:string):Promise<void>{const entry=this.state.suppliers.find(row=>row.id===id);if(!entry)throw new Error('Registro no encontrado.');await this.updateSupplier(id,{isActive:entry.isActive===false});}
+  public async createRecipe(data:Omit<ProductionRecipe,'id'>):Promise<ProductionRecipe>{
+    const id=`REC-${crypto.randomUUID()}`;const receipt=await this.persistFactoryCommand('catalog',{collection:'recipes',entityId:id,attributes:{...data,isActive:true},create:true});return this.state.recipes.find(entry=>entry.id===receipt.entityId)!;
   }
-
-  public createSupplyCategory(data: Omit<SupplyCategory, 'id'>): SupplyCategory {
-    const id = `CAT-${Date.now()}`;
-    const newCat: SupplyCategory = { ...data, id };
-    this.state.supplyCategories = [...this.state.supplyCategories, newCat];
-    this.addAuditLog('CREAR_CATEGORIA_INSUMO', 'produccion', id, `Categoría creada: ${newCat.name}`);
-    this.saveState();
-    return newCat;
+  public async updateRecipe(id:string,data:Partial<ProductionRecipe>):Promise<void>{await this.persistFactoryCommand('catalog',{collection:'recipes',entityId:id,attributes:data});}
+  public async toggleRecipeActive(id:string):Promise<void>{const entry=this.state.recipes.find(row=>row.id===id);if(!entry)throw new Error('Registro no encontrado.');await this.updateRecipe(id,{isActive:entry.isActive===false});}
+  public async createSupplyCategory(data:Omit<SupplyCategory,'id'>):Promise<SupplyCategory>{
+    const id=`CAT-${crypto.randomUUID()}`;const receipt=await this.persistFactoryCommand('catalog',{collection:'supplyCategories',entityId:id,attributes:{...data},create:true});return this.state.supplyCategories.find(entry=>entry.id===receipt.entityId)!;
   }
-
-  // --- 11.e) Gestión de Proveedores (Admin) ---
-  public createSupplier(data: Omit<Supplier, 'id'>): Supplier {
-    const id = `SUP-${Date.now()}`;
-    const newSup: Supplier = { ...data, id, isActive: true };
-    this.state.suppliers = [...this.state.suppliers, newSup];
-    this.addAuditLog('CREAR_PROVEEDOR', 'produccion', id, `Proveedor registrado: ${newSup.name}`);
-    this.saveState();
-    return newSup;
-  }
-
-  public updateSupplier(supplierId: string, data: Partial<Supplier>): void {
-    const sup = this.state.suppliers.find((s) => s.id === supplierId);
-    if (!sup) return;
-    Object.assign(sup, data);
-    this.addAuditLog('EDITAR_PROVEEDOR', 'produccion', supplierId, `Proveedor ${sup.name} actualizado`);
-    this.saveState();
-  }
-
-  public toggleSupplierActive(supplierId: string): void {
-    const sup = this.state.suppliers.find((s) => s.id === supplierId);
-    if (!sup) return;
-    sup.isActive = sup.isActive === undefined ? false : !sup.isActive;
-    this.addAuditLog('ESTADO_PROVEEDOR', 'produccion', supplierId, `Proveedor ${sup.name} ${sup.isActive ? 'activado' : 'desactivado'}`);
-    this.saveState();
-  }
-
-  // --- 11.f) Recetas de Producción (Admin) ---
-  public createRecipe(data: Omit<ProductionRecipe, 'id'>): ProductionRecipe {
-    const id = `REC-${Date.now()}`;
-    const newRecipe: ProductionRecipe = { ...data, id, isActive: true };
-    this.state.recipes = [...this.state.recipes, newRecipe];
-    this.addAuditLog('CREAR_RECETA', 'produccion', id, `Receta creada: ${newRecipe.name} (Rendimiento: ${newRecipe.expectedYield} ${newRecipe.outputUnit})`);
-    this.saveState();
-    return newRecipe;
-  }
-
-  public updateRecipe(recipeId: string, data: Partial<ProductionRecipe>): void {
-    const rec = this.state.recipes.find((r) => r.id === recipeId);
-    if (!rec) return;
-    Object.assign(rec, data);
-    this.addAuditLog('EDITAR_RECETA', 'produccion', recipeId, `Receta ${rec.name} actualizada`);
-    this.saveState();
-  }
-
-  public toggleRecipeActive(recipeId: string): void {
-    const rec = this.state.recipes.find((r) => r.id === recipeId);
-    if (!rec) return;
-    rec.isActive = rec.isActive === undefined ? false : !rec.isActive;
-    this.addAuditLog('ESTADO_RECETA', 'produccion', recipeId, `Receta ${rec.name} ${rec.isActive ? 'activada' : 'desactivada'}`);
-    this.saveState();
-  }
-
-  // --- 12. Panel y Flujo de Fábrica / Cuadra de Producción ---
-  public createProductionOrder(data: Omit<ProductionOrder, 'id' | 'createdAt' | 'status'>): ProductionOrder {
-    const id = `ORD-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(this.state.productionOrders.length + 1).padStart(2, '0')}`;
-    const newOrder: ProductionOrder = {
-      ...data,
-      id,
-      status: 'pendiente',
-      createdAt: new Date().toISOString().replace('T', ' ').substring(0, 16)
-    };
-    this.state.productionOrders = [newOrder, ...this.state.productionOrders];
-    this.addAuditLog('CREAR_ORDEN_PRODUCCION', 'produccion', id, `Orden ${id} para ${newOrder.requestedQuantity} ${newOrder.requestedUnit} de ${newOrder.productName}`);
-    this.saveState();
-    return newOrder;
-  }
-
-  public startProductionOrder(orderId: string): void {
-    const order = this.state.productionOrders.find((o) => o.id === orderId);
-    if (!order) return;
-    order.status = 'en_proceso';
-    order.startedAt = new Date().toISOString().replace('T', ' ').substring(0, 16);
-    this.addAuditLog('INICIAR_PRODUCCION', 'produccion', orderId, `Orden ${orderId} iniciada por ${this.state.currentUser?.name || 'Fábrica'}`);
-    this.saveState();
-  }
-
-  public completeProductionOrder(
-    orderId: string,
-    realProducedQuantity: number,
-    wasteQuantity: number,
-    wasteReason?: string,
-    notes?: string
-  ): ProductionBatch | null {
-    const order = this.state.productionOrders.find((o) => o.id === orderId);
-    if (!order) return null;
-
-    const recipe = this.state.recipes.find((r) => r.id === order.recipeId);
-    const now = new Date().toISOString().replace('T', ' ').substring(0, 16);
-
-    // Calcular factor de escala según cantidad real
-    const yieldBase = recipe ? recipe.expectedYield : (order.requestedQuantity || 1);
-    const scaleFactor = realProducedQuantity / (yieldBase || 1);
-
-    // Descontar materias primas proporcionalmente
-    const ingredientsUsed: { materialId: string; quantity: number }[] = [];
-    if (recipe) {
-      recipe.ingredients.forEach((ing) => {
-        const qtyToDiscount = Number((ing.quantityRequired * scaleFactor).toFixed(2));
-        ingredientsUsed.push({ materialId: ing.materialId, quantity: qtyToDiscount });
-      });
-    }
-
-    const laborCost = recipe ? Math.round(recipe.estimatedLaborCost * scaleFactor) : 50000;
-    const energyAndPackagingCost = recipe ? Math.round(recipe.estimatedEnergyPackagingCost * scaleFactor) : 20000;
-
-    // Crear Lote
-    const batch = this.registerProductionBatch({
-      varietyId: recipe?.varietyId || 'VAR-CLASICO',
-      unitsProduced: realProducedQuantity,
-      laborCost,
-      energyAndPackagingCost,
-      ingredientsUsed,
-      notes: `Lote generado desde Orden ${order.id}. Mermas registradas: ${wasteQuantity}. ${wasteReason ? 'Causa: ' + wasteReason : ''} | ${notes || ''}`
-    });
-
-    order.status = 'completada';
-    order.completedAt = now;
-    order.realProducedQuantity = realProducedQuantity;
-    order.wasteQuantity = wasteQuantity;
-    order.wasteReason = wasteReason;
-    order.efficiencyPercent = Number(((realProducedQuantity / ((realProducedQuantity + wasteQuantity) || 1)) * 100).toFixed(1));
-    order.generatedBatchId = batch.id;
-    order.productionNotes = (order.productionNotes ? order.productionNotes + ' | ' : '') + (notes || '');
-
-    this.addAuditLog(
-      'COMPLETAR_ORDEN_PRODUCCION',
-      'produccion',
-      orderId,
-      `Orden ${orderId} completada. Producidos: ${realProducedQuantity}, Mermas: ${wasteQuantity}. Lote: ${batch.id}`
-    );
-
-    this.saveState();
-    return batch;
-  }
-
-  public reportFactoryIncident(incidentData: {
-    type: FactoryIncident['type'];
-    severity: FactoryIncident['severity'];
-    message: string;
-  }): FactoryIncident {
-    const id = `FINC-${Date.now()}`;
-    const incident: FactoryIncident = {
-      id,
-      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
-      reportedBy: this.state.currentUser?.name || 'Personal de Fábrica',
-      type: incidentData.type,
-      severity: incidentData.severity,
-      message: incidentData.message,
-      resolved: false
-    };
-
-    this.state.factoryIncidents = [incident, ...this.state.factoryIncidents];
-
-    this.state.alerts.unshift({
-      id: `ALT-${Date.now()}`,
-      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-      level: incidentData.severity === 'alta' ? 'critica' : 'advertencia',
-      title: `Incidencia en Fábrica (${incidentData.type})`,
-      message: `${this.state.currentUser?.name || 'Fábrica'}: ${incidentData.message}`,
-      category: 'stock',
-      relatedEntityId: incident.id,
-      isRead: false,
-      resolved: false
-    });
-
-    this.addAuditLog('INCIDENCIA_FABRICA', 'produccion', id, incidentData.message);
-    this.saveState();
-    return incident;
-  }
-
-  public resolveFactoryIncident(incidentId: string): void {
-    const inc = this.state.factoryIncidents.find((i) => i.id === incidentId);
-    if (!inc) return;
-    inc.resolved = true;
-    this.addAuditLog('RESOLVER_INCIDENCIA_FABRICA', 'produccion', incidentId, `Incidencia resuelta en planta.`);
-    this.saveState();
-  }
+  public async createProductionOrder(data:Omit<ProductionOrder,'id'|'createdAt'|'status'>):Promise<ProductionOrder>{const receipt=await this.persistFactoryCommand('order-create',data);return this.state.productionOrders.find(order=>order.id===receipt.id)!;}
+  public async startProductionOrder(orderId:string):Promise<void>{await this.persistFactoryCommand('order-start',{orderId});}
+  public async completeProductionOrder(orderId:string,realProducedQuantity:number,wasteQuantity:number,wasteReason?:string,notes?:string):Promise<ProductionBatch|null>{const receipt=await this.persistFactoryCommand('order-complete',{orderId,realProducedQuantity,wasteQuantity,wasteReason,notes});return this.state.productionBatches.find(batch=>batch.id===receipt.id)||null;}
+  public async reportFactoryIncident(incidentData:{type:FactoryIncident['type'];severity:FactoryIncident['severity'];message:string}):Promise<FactoryIncident>{const receipt=await this.persistFactoryCommand('incident',incidentData);return this.state.factoryIncidents.find(incident=>incident.id===receipt.id)!;}
+  public async resolveFactoryIncident(incidentId:string):Promise<void>{await this.persistFactoryCommand('incident-resolve',{incidentId});}
 
   // --- 11. Reportes de Estado de Playa en Vivo ---
   public createBeachReport(data: {

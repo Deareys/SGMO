@@ -31,7 +31,7 @@ async function main(){
  const backup=await page.evaluate(()=>JSON.parse(localStorage.getItem('SGMO_LEGACY_BACKUP_V1')));
  assert.equal(backup.state.sales[0].id,'LEGACY-SALE');assert.ok(!JSON.stringify(backup).includes(legacySecret));
  checks.push('La actualización conserva el respaldo del navegador antes de hidratar y retira las claves antiguas');
- await page.getByRole('button',{name:'Recuperar datos anteriores',exact:true}).click();
+ await page.goto(origin+'/soporte/recuperacion');
  const savedArchive=page.waitForResponse(response=>response.url()===origin+'/api/legacy-imports'&&response.request().method()==='POST');
  await page.getByRole('button',{name:'Guardar respaldo en Neon',exact:true}).click();assert.equal((await savedArchive).status(),200);
  const duplicate=await write(owner,'/api/legacy-imports',backup);assert.equal(duplicate.status(),200);
@@ -42,6 +42,7 @@ async function main(){
  await page.getByText('Catálogo incorporado. Asigná contraseñas',{exact:false}).waitFor();
  let central=await snapshot(owner);assert.ok(central.users.some(user=>user.id==='LEGACY-USER'&&!user.isProvisioned));assert.ok(!central.sales.some(sale=>sale.id==='LEGACY-SALE'));
  checks.push('Respaldo SQL descargable e idempotente; incorpora perfiles sin contraseñas y conserva historial sin aprobar pagos');
+ await page.goto(origin);await configure(page);
  await page.getByRole('button',{name:/^Bases Operativas \(/}).click();await page.getByRole('button',{name:'Nueva Base Operativa',exact:true}).click();
  const houseForm=page.locator('form').filter({has:page.getByPlaceholder('Ej: Base Operativa Centro — Calle 30')});
  await houseForm.getByPlaceholder('Ej: Base Operativa Centro — Calle 30').fill('Casa QA entrega');await houseForm.getByPlaceholder('Av. Costanera & Calle 30').fill('Dirección QA');

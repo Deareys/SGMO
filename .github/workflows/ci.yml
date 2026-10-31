@@ -119,6 +119,13 @@ jobs:
           SGMO_PGLITE_ROOT: ${{ runner.temp }}/sgmo-browser-runtime/node_modules/@electric-sql/pglite
           SGMO_BROWSER_QA_DIR: ${{ runner.temp }}/sgmo-browser-report/configuration
           SGMO_BROWSER_CONFIGURATION_PORT: '3105'
+      - name: Factory, transfers and free cart names through browser
+        run: node scripts/tests/browser-inventory.smoke.cjs
+        env:
+          SGMO_PGLITE_ROOT: ${{ runner.temp }}/sgmo-browser-runtime/node_modules/@electric-sql/pglite
+          SGMO_PLAYWRIGHT_MODULES: ${{ runner.temp }}/sgmo-browser-runtime/node_modules
+          SGMO_BROWSER_QA_DIR: ${{ runner.temp }}/sgmo-browser-report
+          SGMO_BROWSER_INVENTORY_PORT: '3106'
       - name: Preserve browser QA evidence
         if: always()
         uses: actions/upload-artifact@v4

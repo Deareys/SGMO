@@ -1,3 +1,37 @@
+# Corrección operativa — 31 de octubre de 2026
+
+## Diagnóstico confirmado
+
+Los lotes, compras, recetas, órdenes y traslados modificaban localStorage, mientras bootstrap recargaba house_stock desde SQL. Así, producir no alimentaba una cámara compartida y el refresco descartaba el stock de casa que sólo existía en el navegador. El formulario de traslado y el despacho sólo conocían tres IDs de productos de ejemplo. Carritos exigía una casa válida aunque el formulario permitía llegar con base vacía: el error «Identificador inválido» correspondía a la casa, no al nombre. El servidor también impedía despachar un carrito ubicado en otra casa y devolvía sobrantes siempre al origen.
+
+## Hitos y prompt utilizado por el principal
+
+No se delegó a agentes. Se trabaja sobre main 1fc17da, preservando cambios ya publicados y datos reales de production (9 usuarios, 4 casas, 6 carritos, 9 productos, sin ventas ni jornadas al iniciar).
+
+| Hito | Cambios y comprobación |
+|---|---|
+| Fábrica compartida | Comandos SQL transaccionales para insumos/proveedores/recetas/compras/órdenes/lotes/incidencias; costos calculados por servidor, recibos idempotentes, lectura coherente de cámara y casas. Probar recarga y segunda sesión. |
+| Traslados y productos propios | Lista dinámica de productos en traslado y despacho; cámara→casa y casa→casa con saldo, capacidad y rollback; dos traslados compiten sin crear stock. |
+| Carritos móviles | Nombre libre separado de UUID; ubicación opcional; salida desde cualquier base y elección de casa de regreso, conservando origen/destino y liquidación inmutable. |
+| Interfaz | Paleta clara común, errores visibles conservando formularios, retirar laboratorio MP y textos internos. Recuperación histórica en /soporte/recuperacion para administrador. |
+| Publicación y respaldo | Respaldo Neon production-pre-stock-20261031 (br-lively-heart-b6oblwnm); ensayo stock-ensayo-20261031 (br-rough-star-b63zdo5o), migración 012 y permisos sgmo_app sin DDL. CI, build y verificación del dominio antes de declarar publicado. |
+
+```text
+Diagnosticar los casos informados leyendo código y estado remoto. Corregir el circuito lote → cámara → traslado → casa sin modificar fórmulas financieras ni reconstruir la app. Toda escritura espera confirmación SQL; operaciones con ID durable para reintentos, validación de saldo/capacidad y transacciones. Probar competencia por el último stock, rollback, respuesta perdida y lectura desde otra sesión. Formularios usan productos del catálogo, no IDs demo. Carrito admite nombre humano libre, ubicación opcional y distinto origen/regreso por jornada. Respaldar fábrica local antes de hidratar; incorporar existencias anteriores sólo con confirmación del dueño, archivar movimientos históricos sin duplicar créditos. Aplicar tema claro común y retirar controles internos de la navegación normal. Mantener seguridad de sesiones, reglas económicas e historial. Rehearsal y backup antes de migración aditiva; publicar sólo archivos de esta corrección sobre la revisión remota vigente. Documentar resultados aquí y pruebas del dueño en la guía existente.
+```
+
+## Alcance y conservación de datos
+
+La migración 012 es aditiva: documento tipado de fábrica, recibos, archivo de origen y dos columnas de destino de regreso. No borra ni vuelve a sembrar datos. Se serializan comandos de fábrica mediante bloqueo transaccional PostgreSQL; no es estado en memoria de Vercel. Es adecuado para este negocio pequeño; si crece el historial, normalizar/paginar fábrica sin cambiar el contrato de comandos.
+
+Antes de adoptar fábrica central se conserva SGMO_FACTORY_LEGACY_V1. La acción condicional «Guardar existencias anteriores» requiere confirmar que todavía están en cámara. Incorpora catálogo y saldos restantes de lotes que no existen en SQL; conserva todo el documento anterior en factory_legacy_archives. Órdenes/compras/traslados anteriores quedan archivados y no se vuelven a ejecutar ni convierten automáticamente en movimientos centrales. Hasta confirmación SQL se conserva el original del navegador. No se puede recuperar desde aquí un navegador privado que aún no envió sus datos.
+
+## Validación en curso
+
+202 pruebas unitarias aprobadas; SQL WASM operativo y Chromium real de configuración/inventario/ventas ejecutados. Pendiente consolidar resultado final, CI PostgreSQL con sockets y publicación exacta. No usar este registro provisional como certificación productiva.
+
+---
+
 # Estado vigente — entrega del 29 de octubre de 2026
 
 ## Publicación verificada de la operación central
