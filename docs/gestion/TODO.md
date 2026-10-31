@@ -2,7 +2,7 @@
 
 - [x] Diagnóstico: fábrica/traslados locales, catálogo fijo y casa obligatoria en carritos.
 - [x] Implementación central, productos dinámicos, carritos móviles y paleta clara; pruebas aisladas locales.
-- [ ] Consolidar CI PostgreSQL con sockets, migración productiva aditiva y despliegue exacto.
+- [x] CI PostgreSQL con sockets, migración 012 productiva y despliegue funcional 7950273 verificados en dominio habitual; resultados en CONTINUIDAD_HITOS.md.
 - [ ] Dueño revisa existencias locales de cada dispositivo antes de incorporarlas; confirmar stock físico.
 - [ ] Pagos/OCR con proveedores reales y aceptación completa del vendedor siguen pendientes; no certificarlos por estas pruebas de inventario.
 - [ ] Gastos/mantenimiento/radar siguen con límites de persistencia heredada; no presentarlos como compartidos.
