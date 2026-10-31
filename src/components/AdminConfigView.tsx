@@ -1898,8 +1898,8 @@ const MaterialModal: React.FC<MaterialModalProps> = ({ material, categories, sup
     categoryId: material?.categoryId || categories[0]?.id || '',
     unit: material?.unit || 'kg',
     currentStock: material?.currentStock || 0,
-    minStockAlert: material?.minStockAlert || 50,
-    costPerUnit: material?.costPerUnit || 1000,
+    minStockAlert: material?.minStockAlert ?? 50,
+    costPerUnit: material?.costPerUnit ?? 1000,
     supplierId: material?.supplierId || suppliers[0]?.id || '',
     supplier: material?.supplier || suppliers[0]?.name || ''
   });
@@ -2284,15 +2284,15 @@ const RecipeModal: React.FC<RecipeModalProps> = ({ recipe, materials, varieties,
     type: recipe?.type || ('tequenos' as ProductionRecipe['type']),
     varietyId: recipe?.varietyId || varieties[0]?.id || '',
     outputUnit: recipe?.outputUnit || 'unidad',
-    expectedYield: recipe?.expectedYield || 500,
-    estimatedLaborCost: recipe?.estimatedLaborCost || 24000,
-    estimatedEnergyPackagingCost: recipe?.estimatedEnergyPackagingCost || 9000,
+    expectedYield: recipe?.expectedYield ?? 500,
+    estimatedLaborCost: recipe?.estimatedLaborCost ?? 24000,
+    estimatedEnergyPackagingCost: recipe?.estimatedEnergyPackagingCost ?? 9000,
     instructions: recipe?.instructions || ''
   });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full max-h-[85vh] overflow-y-auto p-6 space-y-4 shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <h3 className="text-base font-bold text-white">
             {recipe ? `Editar ${recipe.name}` : 'Nueva Receta de Producción'}
@@ -2357,6 +2357,19 @@ const RecipeModal: React.FC<RecipeModalProps> = ({ recipe, materials, varieties,
             </div>
           </div>
 
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-sm font-semibold">Mano de obra por tanda ($)
+              <input aria-label="Mano de obra por tanda" type="number" min="0" step="0.01" required value={formData.estimatedLaborCost} onChange={event=>setFormData({...formData,estimatedLaborCost:Number(event.target.value)})} className="block w-full border rounded-xl p-3"/>
+            </label>
+            <label className="block text-sm font-semibold">Energía y envases por tanda ($)
+              <input aria-label="Energía y envases por tanda" type="number" min="0" step="0.01" required value={formData.estimatedEnergyPackagingCost} onChange={event=>setFormData({...formData,estimatedEnergyPackagingCost:Number(event.target.value)})} className="block w-full border rounded-xl p-3"/>
+            </label>
+          </div>
+          <label className="block text-sm font-semibold">Unidad de rendimiento
+            <select aria-label="Unidad de rendimiento" value={formData.outputUnit} onChange={event=>setFormData({...formData,outputUnit:event.target.value as ProductionRecipe['outputUnit']})} className="block w-full border rounded-xl p-3">
+              <option value="unidad">Unidades</option><option value="kg">Kilogramos</option><option value="litro">Litros</option><option value="pote">Potes</option>
+            </select>
+          </label>
           <label className="block text-sm font-semibold">Producto elaborado
             <select aria-label="Producto elaborado" value={formData.varietyId} onChange={event=>setFormData({...formData,varietyId:event.target.value})} className="block w-full border rounded-xl p-3">
               <option value="">Seleccionar producto</option>{varieties.filter(variety=>variety.isActive!==false).map(variety=><option key={variety.id} value={variety.id}>{variety.name}</option>)}

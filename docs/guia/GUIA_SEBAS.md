@@ -8,6 +8,8 @@ Una vez publicada la corrección, abrir el enlace habitual y recargar la página
 4. En **Cierres & Arqueo**, elegir «Casa de regreso», contar sobrantes y declarar efectivo. El stock devuelto va a esa casa y el carrito queda allí; la liquidación conserva la casa de salida y las reglas económicas existentes.
 5. Si aparece **Guardar existencias anteriores**, revisar que esos lotes del dispositivo no estén ya incluidos en los saldos centrales y que sigan físicamente en cámara antes de confirmar. No sirve para corregir o duplicar inventario ya registrado. Los traslados antiguos se archivan, no acreditan casas otra vez.
 
+**Existencias previas en casas:** si la mercadería se movió antes de esta corrección, confirmar el total físico en **Configuración → Bases Operativas → Conteo físico / ingreso de mercadería** para cada casa y producto. Es un conteo absoluto: escribir el total presente, no sumar de nuevo los traslados antiguos. Al verificar la base el 31/10 todavía no había stock de casas confirmado en SQL; no se rellenó con cifras supuestas.
+
 Las pruebas manuales en el enlace productivo crean operaciones reales: usar cantidades y personas reales, no ventas ficticias. Las pruebas automáticas de ensayo se ejecutan en GitHub Actions con bases aisladas. Para recuperar respaldos históricos, el dueño puede usar **/soporte/recuperacion**; ya no ocupa una pestaña de configuración habitual.
 
 ---

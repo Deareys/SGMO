@@ -198,6 +198,70 @@ async function main() {
     central.carts.some((cart) => cart.code === "la Tota 👓" && !cart.houseId),
   );
   checks.push("Carrito con nombre libre y sin base guarda en SQL");
+
+  await page.getByRole("button", { name: /^Proveedores \(/ }).click();
+  await page
+    .getByRole("button", { name: "Nuevo Proveedor", exact: true })
+    .click();
+  const supplierForm = page
+    .locator("form")
+    .filter({ has: page.getByPlaceholder("Ej: Molinos del Plata SA") });
+  await supplierForm
+    .getByPlaceholder("Ej: Molinos del Plata SA")
+    .fill("Proveedor QA");
+  let catalogSaved = page.waitForResponse(
+    (response) => response.url() === origin + "/api/production/commands",
+  );
+  await supplierForm
+    .getByRole("button", { name: "Guardar Proveedor", exact: true })
+    .click();
+  assert.equal((await catalogSaved).status(), 200);
+  await supplierForm.waitFor({ state: "hidden" });
+  await page.getByRole("button", { name: /^Insumos & Stock \(/ }).click();
+  await page.getByRole("button", { name: "Nuevo Insumo", exact: true }).click();
+  const materialForm = page
+    .locator("form")
+    .filter({ has: page.getByPlaceholder("Ej: Harina 0000 Especial") });
+  await materialForm
+    .getByPlaceholder("Ej: Harina 0000 Especial")
+    .fill("Insumo QA");
+  await materialForm.locator("input[type=number]").nth(0).fill("10");
+  await materialForm.locator("input[type=number]").nth(1).fill("0");
+  await materialForm.locator("input[type=number]").nth(2).fill("3");
+  catalogSaved = page.waitForResponse(
+    (response) => response.url() === origin + "/api/production/commands",
+  );
+  await materialForm
+    .getByRole("button", { name: "Guardar Insumo", exact: true })
+    .click();
+  assert.equal((await catalogSaved).status(), 200);
+  await materialForm.waitFor({ state: "hidden" });
+  await page.getByRole("button", { name: /^Recetas Maestras \(/ }).click();
+  await page.getByRole("button", { name: "Nueva Receta", exact: true }).click();
+  const recipeForm = page
+    .locator("form")
+    .filter({
+      has: page.getByPlaceholder("Ej: Mayonesa de Zanahoria Artesanal (20 kg)"),
+    });
+  await recipeForm
+    .getByPlaceholder("Ej: Mayonesa de Zanahoria Artesanal (20 kg)")
+    .fill("Receta QA");
+  await recipeForm.getByLabel("Producto elaborado").selectOption("QA-VARIETY");
+  await recipeForm.locator("input[type=number]").nth(0).fill("100");
+  await recipeForm.locator("input[type=number]").nth(1).fill("0");
+  await recipeForm.locator("input[type=number]").nth(2).fill("0");
+  await recipeForm.getByLabel("Receta Insumo QA", { exact: true }).fill("2");
+  catalogSaved = page.waitForResponse(
+    (response) => response.url() === origin + "/api/production/commands",
+  );
+  await recipeForm
+    .getByRole("button", { name: "Guardar Receta", exact: true })
+    .click();
+  assert.equal((await catalogSaved).status(), 200);
+  await recipeForm.waitFor({ state: "hidden" });
+  checks.push(
+    "Proveedor, insumo y receta se guardan desde formularios; receta elige producto e ingredientes reales",
+  );
   async function inventory(target) {
     await target.getByTitle("Abrir menú de navegación").click();
     await target
@@ -208,14 +272,12 @@ async function main() {
   await page
     .getByRole("button", { name: "Registrar Lote Fabricado", exact: true })
     .click();
-  const batchForm = page
-    .locator("form")
-    .filter({
-      has: page.getByRole("button", {
-        name: "Crear y Almacenar Lote",
-        exact: true,
-      }),
-    });
+  const batchForm = page.locator("form").filter({
+    has: page.getByRole("button", {
+      name: "Crear y Almacenar Lote",
+      exact: true,
+    }),
+  });
   await batchForm.locator("select").selectOption("QA-VARIETY");
   await batchForm.locator("input[type=number]").nth(0).fill("100");
   const batchSaved = page.waitForResponse(
@@ -232,13 +294,21 @@ async function main() {
       .remainingUnitsInCentral,
     100,
   );
+  assert.equal(
+    central.productionBatches.find((batch) => batch.varietyId === "QA-VARIETY")
+      .totalBatchCost,
+    6,
+  );
+  assert.equal(
+    central.rawMaterials.find((material) => material.name === "Insumo QA")
+      .currentStock,
+    8,
+  );
   await page.reload({ waitUntil: "networkidle" });
   await inventory(page);
-  const batchRow = page
-    .getByRole("row")
-    .filter({
-      has: page.getByRole("cell", { name: "Producto propio QA", exact: true }),
-    });
+  const batchRow = page.getByRole("row").filter({
+    has: page.getByRole("cell", { name: "Producto propio QA", exact: true }),
+  });
   assert.ok((await batchRow.count()) > 0);
   await seller.reload({ waitUntil: "networkidle" });
   await inventory(seller);
@@ -254,14 +324,12 @@ async function main() {
   await page
     .getByRole("button", { name: "Trasladar a Casas", exact: true })
     .click();
-  const transferForm = page
-    .locator("form")
-    .filter({
-      has: page.getByRole("button", {
-        name: "Confirmar Traslado",
-        exact: true,
-      }),
-    });
+  const transferForm = page.locator("form").filter({
+    has: page.getByRole("button", {
+      name: "Confirmar Traslado",
+      exact: true,
+    }),
+  });
   await transferForm.locator("select").nth(0).selectOption("QA-HOUSE-A");
   await transferForm
     .getByLabel("Trasladar Producto propio QA", { exact: true })
@@ -381,17 +449,106 @@ async function main() {
     "Paleta clara y texto oscuro verificados en inventario; capturas desktop y móvil",
   );
 
-  assert.equal((await write(owner,'/api/zones',[{id:'ZONE-INVENTORY',name:'Playa ensayo',description:'',touristAffluence:'baja',avgDailySalesUnits:0,recommendedStartUnits:0}],'PUT')).status(),200);
-  await page.reload({waitUntil:'networkidle'});
-  await page.locator('header select:visible').first().selectOption('QA-HOUSE-A');
-  await page.getByTitle('Abrir menú de navegación').click();await page.getByRole('button',{name:'Despacho & Asesor IA',exact:true}).click();
-  const dispatchForm=page.locator('form').filter({has:page.getByRole('button',{name:'Confirmar Salida & Despachar Carrito a la Playa',exact:true})});
-  await dispatchForm.locator('select').nth(0).selectOption('USR-VEND-01');const cart=(await snapshot(owner)).carts.find(cart=>cart.code==='la Tota 👓');await dispatchForm.locator('select').nth(1).selectOption(cart.id);await dispatchForm.locator('select').nth(2).selectOption('ZONE-INVENTORY');await dispatchForm.getByLabel('Despachar Producto propio QA',{exact:true}).fill('10');
-  page.once('dialog',dialog=>dialog.accept());const dispatched=page.waitForResponse(response=>response.url()===origin+'/api/shifts'&&response.request().method()==='POST');await dispatchForm.getByRole('button',{name:'Confirmar Salida & Despachar Carrito a la Playa',exact:true}).click();assert.equal((await dispatched).status(),201);
-  await page.getByTitle('Abrir menú de navegación').click();await page.getByRole('button',{name:'Cierres & Arqueo',exact:true}).click();await page.getByLabel('Casa de regreso',{exact:true}).selectOption('QA-HOUSE-B');
-  const closed=page.waitForResponse(response=>response.url().endsWith('/close')&&response.request().method()==='PUT');await page.getByRole('button',{name:'Realizar Cierre de Jornada & Calcular Liquidación',exact:true}).click();assert.equal((await closed).status(),200);
-  const completed=(await snapshot(owner)).shifts.find(shift=>shift.cartId===cart.id);assert.equal(completed.houseId,'QA-HOUSE-A');assert.equal(completed.returnHouseId,'QA-HOUSE-B');assert.equal(completed.totalUnitsReturned,10);
-  const completedState=await snapshot(owner);assert.equal(completedState.houses.find(house=>house.id==='QA-HOUSE-A').currentStock.find(stock=>stock.varietyId==='QA-VARIETY').quantity,15);assert.equal(completedState.houses.find(house=>house.id==='QA-HOUSE-B').currentStock.find(stock=>stock.varietyId==='QA-VARIETY').quantity,25);checks.push('Despacho con producto propio y carrito sin base; formulario de cierre devuelve a casa diferente conservando origen');
+  assert.equal(
+    (
+      await write(
+        owner,
+        "/api/zones",
+        [
+          {
+            id: "ZONE-INVENTORY",
+            name: "Playa ensayo",
+            description: "",
+            touristAffluence: "baja",
+            avgDailySalesUnits: 0,
+            recommendedStartUnits: 0,
+          },
+        ],
+        "PUT",
+      )
+    ).status(),
+    200,
+  );
+  await page.reload({ waitUntil: "networkidle" });
+  await page
+    .locator("header select:visible")
+    .first()
+    .selectOption("QA-HOUSE-A");
+  await page.getByTitle("Abrir menú de navegación").click();
+  await page
+    .getByRole("button", { name: "Despacho & Asesor IA", exact: true })
+    .click();
+  const dispatchForm = page
+    .locator("form")
+    .filter({
+      has: page.getByRole("button", {
+        name: "Confirmar Salida & Despachar Carrito a la Playa",
+        exact: true,
+      }),
+    });
+  await dispatchForm.locator("select").nth(0).selectOption("USR-VEND-01");
+  const cart = (await snapshot(owner)).carts.find(
+    (cart) => cart.code === "la Tota 👓",
+  );
+  await dispatchForm.locator("select").nth(1).selectOption(cart.id);
+  await dispatchForm.locator("select").nth(2).selectOption("ZONE-INVENTORY");
+  await dispatchForm
+    .getByLabel("Despachar Producto propio QA", { exact: true })
+    .fill("10");
+  page.once("dialog", (dialog) => dialog.accept());
+  const dispatched = page.waitForResponse(
+    (response) =>
+      response.url() === origin + "/api/shifts" &&
+      response.request().method() === "POST",
+  );
+  await dispatchForm
+    .getByRole("button", {
+      name: "Confirmar Salida & Despachar Carrito a la Playa",
+      exact: true,
+    })
+    .click();
+  assert.equal((await dispatched).status(), 201);
+  await page.getByTitle("Abrir menú de navegación").click();
+  await page
+    .getByRole("button", { name: "Cierres & Arqueo", exact: true })
+    .click();
+  await page
+    .getByLabel("Casa de regreso", { exact: true })
+    .selectOption("QA-HOUSE-B");
+  const closed = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/close") &&
+      response.request().method() === "PUT",
+  );
+  await page
+    .getByRole("button", {
+      name: "Realizar Cierre de Jornada & Calcular Liquidación",
+      exact: true,
+    })
+    .click();
+  assert.equal((await closed).status(), 200);
+  const completed = (await snapshot(owner)).shifts.find(
+    (shift) => shift.cartId === cart.id,
+  );
+  assert.equal(completed.houseId, "QA-HOUSE-A");
+  assert.equal(completed.returnHouseId, "QA-HOUSE-B");
+  assert.equal(completed.totalUnitsReturned, 10);
+  const completedState = await snapshot(owner);
+  assert.equal(
+    completedState.houses
+      .find((house) => house.id === "QA-HOUSE-A")
+      .currentStock.find((stock) => stock.varietyId === "QA-VARIETY").quantity,
+    15,
+  );
+  assert.equal(
+    completedState.houses
+      .find((house) => house.id === "QA-HOUSE-B")
+      .currentStock.find((stock) => stock.varietyId === "QA-VARIETY").quantity,
+    25,
+  );
+  checks.push(
+    "Despacho con producto propio y carrito sin base; formulario de cierre devuelve a casa diferente conservando origen",
+  );
   assert.deepEqual(pageErrors, []);
   await fs.writeFile(
     path.join(directory, "inventory-summary.json"),

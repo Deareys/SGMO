@@ -107,9 +107,7 @@ const catalogFields: Record<string, string[]> = {
 };
 export class ProductionRepository {
   /** Una lectura MVCC para cámara y stock de casas: no mezclar lados de un traslado. */
-  async snapshot(
-    includeFactory = true,
-  ): Promise<{
+  async snapshot(includeFactory = true): Promise<{
     factory: FactoryState;
     houseStock: Array<{
       houseId: string;
@@ -566,6 +564,7 @@ export class ProductionRepository {
     doc: FactoryState,
   ): Promise<void> {
     row.name = text(row.name, "Nombre", 120);
+    row.isActive ??= true;
     if (row.isActive !== undefined && typeof row.isActive !== "boolean")
       reject("Estado inválido.");
     if (collection === "rawMaterials") {
@@ -615,6 +614,8 @@ export class ProductionRepository {
         reject("Producto de receta no disponible.");
     }
     if (collection === "suppliers") {
+      row.suppliedCategoryIds ??= [];
+      row.suppliedMaterialIds ??= [];
       text(row.phone ?? "", "Teléfono", 100, true);
       if (
         !Array.isArray(row.suppliedCategoryIds) ||

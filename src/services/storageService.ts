@@ -664,7 +664,7 @@ export class StorageService {
     const state=JSON.parse(localStorage.getItem(FACTORY_BACKUP_KEY)||'null');if(!state)throw new Error('No hay existencias anteriores en este dispositivo.');
     await this.persistFactoryCommand('import-local',{state});localStorage.removeItem(FACTORY_BACKUP_KEY);
   }
-  public async addMaterialPurchase(data:Omit<MaterialPurchase,'id'|'registeredBy'>):Promise<void>{await this.persistFactoryCommand('purchase',data);}
+  public async addMaterialPurchase(data:Omit<MaterialPurchase,'id'|'registeredBy'>):Promise<void>{await this.persistFactoryCommand('purchase',{materialId:data.materialId,quantity:data.quantity,unitCost:data.unitCost,supplier:data.supplier});}
   public async registerProductionBatch(batchData:{varietyId:string;unitsProduced:number;laborCost:number;energyAndPackagingCost:number;ingredientsUsed:{materialId:string;quantity:number}[];notes?:string}):Promise<ProductionBatch>{
     const receipt=await this.persistFactoryCommand('batch',batchData);return this.state.productionBatches.find(batch=>batch.id===receipt.id)!;
   }
@@ -1853,7 +1853,7 @@ export class StorageService {
   public async createSupplyCategory(data:Omit<SupplyCategory,'id'>):Promise<SupplyCategory>{
     const id=`CAT-${crypto.randomUUID()}`;const receipt=await this.persistFactoryCommand('catalog',{collection:'supplyCategories',entityId:id,attributes:{...data},create:true});return this.state.supplyCategories.find(entry=>entry.id===receipt.entityId)!;
   }
-  public async createProductionOrder(data:Omit<ProductionOrder,'id'|'createdAt'|'status'>):Promise<ProductionOrder>{const receipt=await this.persistFactoryCommand('order-create',data);return this.state.productionOrders.find(order=>order.id===receipt.id)!;}
+  public async createProductionOrder(data:Omit<ProductionOrder,'id'|'createdAt'|'status'>):Promise<ProductionOrder>{const receipt=await this.persistFactoryCommand('order-create',{recipeId:data.recipeId,requestedQuantity:data.requestedQuantity,targetDate:data.targetDate,productionNotes:data.productionNotes});return this.state.productionOrders.find(order=>order.id===receipt.id)!;}
   public async startProductionOrder(orderId:string):Promise<void>{await this.persistFactoryCommand('order-start',{orderId});}
   public async completeProductionOrder(orderId:string,realProducedQuantity:number,wasteQuantity:number,wasteReason?:string,notes?:string):Promise<ProductionBatch|null>{const receipt=await this.persistFactoryCommand('order-complete',{orderId,realProducedQuantity,wasteQuantity,wasteReason,notes});return this.state.productionBatches.find(batch=>batch.id===receipt.id)||null;}
   public async reportFactoryIncident(incidentData:{type:FactoryIncident['type'];severity:FactoryIncident['severity'];message:string}):Promise<FactoryIncident>{const receipt=await this.persistFactoryCommand('incident',incidentData);return this.state.factoryIncidents.find(incident=>incident.id===receipt.id)!;}

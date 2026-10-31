@@ -288,6 +288,8 @@ try {
     await configuration.saveEntity('varieties','VAR-FACTORY',{name:'Producto propio ensayo',basePriceIndividual:10,comboPrices:{combo3:25,combo6:45,combo12:85}},actor.userId,true);
   });
   await check('Insumo, compra, receta y lote usan costos del servidor y persisten en lecturas nuevas',async()=>{
+    await command('FAC-SUPPLIER','catalog',{collection:'suppliers',entityId:'SUP-FACTORY',create:true,attributes:{name:'Proveedor ensayo'}});
+    assert.deepEqual((await factory.snapshot()).factory.suppliers.find(supplier=>supplier.id==='SUP-FACTORY')?.suppliedMaterialIds,[]);
     await command('FAC-MATERIAL','catalog',{collection:'rawMaterials',entityId:'MAT-FACTORY',create:true,attributes:{name:'Insumo ensayo',unit:'kg',currentStock:10,minStockAlert:1,costPerUnit:2,isActive:true}});
     await command('FAC-PURCHASE','purchase',{materialId:'MAT-FACTORY',quantity:5,unitCost:3,supplier:'Proveedor ensayo'});
     await command('FAC-RECIPE','catalog',{collection:'recipes',entityId:'REC-FACTORY',create:true,attributes:{name:'Receta ensayo',varietyId:'VAR-FACTORY',type:'tequenos',outputUnit:'unidad',expectedYield:100,estimatedLaborCost:2,estimatedEnergyPackagingCost:1,ingredients:[{materialId:'MAT-FACTORY',quantityRequired:1}],isActive:true}});

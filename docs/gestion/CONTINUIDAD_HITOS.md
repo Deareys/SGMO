@@ -28,7 +28,9 @@ Antes de adoptar fábrica central se conserva SGMO_FACTORY_LEGACY_V1. La acción
 
 ## Validación en curso
 
-202 pruebas unitarias aprobadas; SQL WASM operativo y Chromium real de configuración/inventario/ventas ejecutados. Pendiente consolidar resultado final, CI PostgreSQL con sockets y publicación exacta. No usar este registro provisional como certificación productiva.
+202 pruebas unitarias aprobadas. La primera revisión 1847b4f aprobó ambos jobs de Actions 41237896690 (31 grupos operativos en PostgreSQL, más auth/HTTP/contraseñas/configuración y navegador). La revisión final amplía cobertura del formulario proveedor→insumo→receta y costos editables, con 8 escenarios de inventario locales aprobados y 30 grupos operativos WASM. Se vuelve a ejecutar CI sobre esa revisión antes de publicar.
+
+Migración 012 ya aplicada a production con permisos sgmo_app y verificada con ese rol: conserva 9 usuarios, 4 casas, 6 carritos, 9 productos, 1 archivo anterior y ninguna venta/jornada; cero operaciones QA creadas. También se actualizó la base de preview sgmo-pruebas: mantiene su jornada/venta de ensayo. Producción tenía cero filas de house_stock y ninguna fábrica compartida anterior: los saldos físicos deben declararse con conteo real, no inventarse desde aquí. El dominio aún se mantiene en la revisión anterior hasta que apruebe el gate final.
 
 ---
 
