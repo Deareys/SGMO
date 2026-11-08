@@ -116,6 +116,7 @@ export interface AppState {
   alerts: OperationalAlert[];
   auditLogs: AuditLog[];
   transfers: StockTransfer[];
+  centralStock: { varietyId: string; varietyName: string; quantity: number }[];
 }
 
 export interface CentralSnapshot extends Partial<FactoryState> {
@@ -127,6 +128,7 @@ export interface CentralSnapshot extends Partial<FactoryState> {
   carts: SellingCart[];
   zones: BeachZone[];
   systemConfig: SystemConfig;
+  centralStock?: { varietyId: string; varietyName: string; quantity: number }[];
 }
 
 export interface SaleSyncResult {
@@ -224,6 +226,7 @@ export class StorageService {
           return {
             ...parsed,
             ...collections,
+            centralStock: Array.isArray(parsed.centralStock) ? parsed.centralStock : [],
             currentUser: null, // La identidad se restaura exclusivamente contra el servidor.
             centralHydrated: false, // Una caché anterior no confirma la vigencia de esta carga.
             centralStatus: 'not_loaded',
@@ -289,7 +292,8 @@ export class StorageService {
       expenses: [],
       alerts: [],
       auditLogs: [],
-      transfers: []
+      transfers: [],
+      centralStock: []
     };
   }
 
@@ -393,6 +397,7 @@ export class StorageService {
       this.state.carts = snapshot.carts;
       this.state.zones = snapshot.zones;
       this.state.systemConfig = snapshot.systemConfig;
+      this.state.centralStock = Array.isArray(snapshot.centralStock) ? snapshot.centralStock : [];
       if (Array.isArray(snapshot.productionBatches)) {
         // Una única copia antes de adoptar fábrica central; nunca borrar lotes locales silenciosamente.
         if (!localStorage.getItem('SGMO_FACTORY_CENTRAL_V1') && !this.state.demoMode) {
@@ -1971,7 +1976,13 @@ export class StorageService {
       expenses: INITIAL_EXPENSES,
       alerts: INITIAL_ALERTS,
       auditLogs: INITIAL_AUDIT_LOGS,
-      transfers: INITIAL_TRANSFERS
+      transfers: INITIAL_TRANSFERS,
+      centralStock: INITIAL_PRODUCTION_BATCHES.reduce<{ varietyId: string; varietyName: string; quantity: number }[]>((summary, batch) => {
+        const existing = summary.find(row => row.varietyId === batch.varietyId);
+        if (existing) existing.quantity += batch.remainingUnitsInCentral;
+        else summary.push({ varietyId: batch.varietyId, varietyName: batch.varietyName, quantity: batch.remainingUnitsInCentral });
+        return summary;
+      }, [])
     };
     if (typeof window !== 'undefined') {
       localStorage.removeItem(STORAGE_KEY);

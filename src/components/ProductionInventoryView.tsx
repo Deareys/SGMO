@@ -26,7 +26,8 @@ interface ProductionInventoryViewProps {
 }
 
 export const ProductionInventoryView: React.FC<ProductionInventoryViewProps> = ({ state }) => {
-  const { rawMaterials, productionBatches, houses, varieties, transfers, materialPurchases } = state;
+  const { rawMaterials, productionBatches, houses, varieties, transfers, materialPurchases, centralStock } = state;
+  const canManageProduction = state.currentUser?.role === 'admin' || state.currentUser?.role === 'factory_worker';
 
   const [operationError,setOperationError]=useState('');
   const [saving,setSaving]=useState(false);
@@ -105,6 +106,19 @@ export const ProductionInventoryView: React.FC<ProductionInventoryViewProps> = (
       {operationError&&<p role="alert" className="sticky top-2 z-[100] rounded-xl border-2 border-rose-300 bg-rose-50 p-3 text-rose-900">{operationError}</p>}
       {state.currentUser?.role==='admin'&&storageService.hasLegacyFactoryData()&&<div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-slate-950">Hay existencias de fábrica anteriores en este dispositivo. Revisalas antes de sumarlas al inventario compartido. <button disabled={saving} className="underline font-bold" onClick={()=>{if(window.confirm('¿Confirmás que las existencias anteriores de este dispositivo son reales y todavía están en cámara? Los traslados anteriores no volverán a sumar stock en casas.'))void run(()=>storageService.importLegacyFactoryData());}}>Guardar existencias anteriores</button></div>}
       
+      {!canManageProduction && (
+        <section aria-label="Stock central disponible" className="rounded-2xl border-2 border-sky-300 bg-white p-5 text-slate-950">
+          <h2 className="text-lg font-bold">Existencias en cámara central</h2>
+          <p className="text-sm text-slate-700">Cantidades confirmadas por el servidor, disponibles para trasladar a una base.</p>
+          {centralStock.length === 0
+            ? <p className="mt-3 font-semibold">No hay existencias centrales registradas.</p>
+            : <ul className="mt-3 space-y-2">{centralStock.map(stock => (
+                <li key={stock.varietyId} className="flex justify-between border-b border-slate-200 py-2">
+                  <span>{stock.varietyName}</span><strong>{stock.quantity.toLocaleString()} u</strong>
+                </li>
+              ))}</ul>}
+        </section>
+      )}
       {/* Cabecera */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
         <div>
@@ -121,21 +135,21 @@ export const ProductionInventoryView: React.FC<ProductionInventoryViewProps> = (
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button
+          {canManageProduction && <button
             onClick={() => setShowPurchaseModal(true)}
             className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 flex items-center space-x-1.5 transition-all"
           >
             <Plus className="w-4 h-4 text-emerald-400" />
             <span>Comprar Insumos</span>
-          </button>
+          </button>}
 
-          <button
+          {canManageProduction && <button
             onClick={() => setShowNewBatchModal(true)}
             className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold rounded-xl shadow-lg shadow-amber-500/20 flex items-center space-x-1.5 transition-all"
           >
             <Factory className="w-4 h-4" />
             <span>Registrar Lote Fabricado</span>
-          </button>
+          </button>}
 
           <button
             onClick={() => setShowTransferModal(true)}
@@ -148,7 +162,7 @@ export const ProductionInventoryView: React.FC<ProductionInventoryViewProps> = (
       </div>
 
       {/* 1. Materias Primas e Insumos */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+      {canManageProduction && <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-2">
             <PackagePlus className="w-5 h-5 text-emerald-400" />
@@ -193,10 +207,10 @@ export const ProductionInventoryView: React.FC<ProductionInventoryViewProps> = (
             );
           })}
         </div>
-      </div>
+      </div>}
 
       {/* 2. Lotes de Producción y Costo Unitario Real */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+      {canManageProduction && <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-2">
             <Factory className="w-5 h-5 text-amber-400" />
@@ -253,7 +267,7 @@ export const ProductionInventoryView: React.FC<ProductionInventoryViewProps> = (
             </tbody>
           </table>
         </div>
-      </div>
+      </div>}
 
       {/* 3. Traslados hacia las Casas/Bases Operativas */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">

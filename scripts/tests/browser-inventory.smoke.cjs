@@ -321,6 +321,27 @@ async function main() {
   checks.push(
     "Lote visible en cámara después de recargar y desde segunda sesión móvil",
   );
+  // Una tercera identidad debe leer la misma cámara sin recibir precios de fábrica.
+  const coordinator = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const coordinatorPage = await coordinator.newPage();
+  coordinatorPage.on("pageerror", error => pageErrors.push(redact(error.message)));
+  const createdCoordinator = await write(owner, "/api/users", {
+    id: "QA-COORDINATOR-INVENTORY", userCode: "QA-COORDINATOR",
+    name: "Coordinación inventario QA", role: "coordinator",
+    assignedHouseId: "QA-HOUSE-A", commissionRate: 0.15,
+    password, isActive: true,
+  });
+  assert.equal(createdCoordinator.status(), 201);
+  await login(coordinatorPage, "QA-COORDINATOR");
+  const coordinatorBeforeTransfer = await snapshot(coordinator);
+  assert.deepEqual(coordinatorBeforeTransfer.productionBatches, []);
+  assert.deepEqual(coordinatorBeforeTransfer.rawMaterials, []);
+  assert.equal(coordinatorBeforeTransfer.centralStock.find(entry => entry.varietyId === "QA-VARIETY").quantity, 100);
+  await inventory(coordinatorPage);
+  await coordinatorPage.getByText("Existencias en cámara central", { exact: true }).waitFor();
+  assert.equal(await coordinatorPage.getByRole("button", { name: "Comprar Insumos" }).count(), 0);
+  assert.equal(await coordinatorPage.getByRole("button", { name: "Registrar Lote Fabricado" }).count(), 0);
+  checks.push("Coordinación recibe existencias centrales sin recetas ni costos ni permisos de fabricar");
   await page
     .getByRole("button", { name: "Trasladar a Casas", exact: true })
     .click();
@@ -354,6 +375,16 @@ async function main() {
       .currentStock.find((stock) => stock.varietyId === "QA-VARIETY").quantity,
     40,
   );
+  const coordinatorAfterTransfer = await snapshot(coordinator);
+  assert.equal(coordinatorAfterTransfer.centralStock.find(entry => entry.varietyId === "QA-VARIETY").quantity, 60);
+  assert.equal(coordinatorAfterTransfer.houses.find(entry => entry.id === "QA-HOUSE-A").currentStock.find(entry => entry.varietyId === "QA-VARIETY").quantity, 40);
+  assert.ok(coordinatorAfterTransfer.transfers.some(transfer => transfer.toHouseId === "QA-HOUSE-A"));
+  await coordinatorPage.reload({ waitUntil: "networkidle" });
+  await inventory(coordinatorPage);
+  await coordinatorPage.getByText("Existencias en cámara central", { exact: true }).waitFor();
+  assert.ok((await coordinatorPage.getByText("60 u", { exact: true }).count()) > 0);
+  checks.push("Traslado del administrador visible desde sesión coordinadora independiente y recarga");
+
   await page
     .getByRole("button", { name: "Trasladar a Casas", exact: true })
     .click();

@@ -26,7 +26,7 @@ bootstrapRouter.get('/bootstrap', authenticateToken, async (req, res) => {
       houses: initial.INITIAL_HOUSES, carts: initial.INITIAL_CARTS, varieties: initial.INITIAL_VARIETIES,
       zones: initial.INITIAL_ZONES, systemConfig: initial.INITIAL_SYSTEM_CONFIG
     };
-    const production = configured ? await productionRepository.snapshot(['admin','factory_worker'].includes(current.role)) : {factory:emptyFactoryState(),houseStock:[]};
+    const production = configured ? await productionRepository.snapshot(['admin','factory_worker'].includes(current.role),current.role==='coordinator') : {factory:emptyFactoryState(),houseStock:[],centralStock:[]};
     if(configured) catalog.houses = catalog.houses.map(house=>({...house,currentStock:production.houseStock.filter(entry=>entry.houseId===house.id).map(({houseId,...entry})=>entry)}));
     const allShifts = configured ? await shiftRepository.getAll() : initial.INITIAL_SHIFTS;
     const shifts = allShifts.filter((shift) => current.role === 'admin'
@@ -44,7 +44,7 @@ bootstrapRouter.get('/bootstrap', authenticateToken, async (req, res) => {
     const state = {
       users: users.map(publicProfile), shifts,
       sales: allSales.filter((sale) => current.role === 'admin' || shiftIds.has(sale.shiftId)),
-      ...catalog, houses,
+      ...catalog, houses, centralStock:production.centralStock,
       carts: current.role === 'admin' ? catalog.carts : catalog.carts.filter((cart) => !cart.houseId || current.role === 'coordinator' || houseIds.has(cart.houseId) || cart.currentSellerId === current.id),
       ...production.factory, incidents: [], expenses: [], alerts: [], auditLogs: [], beachReports: []
     };
