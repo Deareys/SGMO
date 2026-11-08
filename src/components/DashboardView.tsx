@@ -38,6 +38,7 @@ import {
   CartesianGrid
 } from 'recharts';
 import { AppState } from '../services/storageService';
+import { businessDate } from '../utils/businessDate';
 
 interface DashboardViewProps {
   state: AppState;
@@ -50,9 +51,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ state, onNavigate 
   const { shifts, sales, houses, productionBatches, carts, alerts } = state;
 
   // Cálculos consolidados del día de hoy
-  const today = new Date().toISOString().slice(0, 10);
+  const today = businessDate(new Date());
   const todayShifts = (shifts || []).filter((s) => s.date === today || s.status === 'en_curso');
-  const todaySales = (sales || []).filter((s) => s.timestamp.startsWith(today));
+  const todaySales = (sales || []).filter((s) => businessDate(new Date(s.timestamp)) === today);
 
   const totalGrossSales = todayShifts.reduce((sum, s) => sum + (s?.totalGrossSales || 0), 0);
   const totalCashSales = todayShifts.reduce((sum, s) => sum + (s?.totalCashSales || 0), 0);
@@ -76,17 +77,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ state, onNavigate 
   );
 
   // Estimación de costo unitario promedio ponderado
-  const avgUnitCost = (productionBatches || []).length > 0
-    ? (productionBatches || []).reduce((sum, b) => sum + (b?.unitCostCalculated || 0), 0) / productionBatches.length
-    : 220;
-  const totalEstCostOfGoods = totalUnitsSold * avgUnitCost;
+  const hasCostData = state.currentUser?.role === 'admin' && productionBatches.length > 0;
+  const avgUnitCost = hasCostData
+    ? productionBatches.reduce((sum, b) => sum + (b.unitCostCalculated || 0), 0) / productionBatches.length
+    : null;
+  const totalEstCostOfGoods = avgUnitCost === null ? null : totalUnitsSold * avgUnitCost;
   const totalCommissions = todayShifts.reduce((sum, s) => sum + (s?.grossCommission || 0), 0);
-  const estGrossMargin = totalGrossSales > 0 ? ((totalGrossSales - totalEstCostOfGoods - totalCommissions) / totalGrossSales) * 100 : 54;
+  const estGrossMargin = totalGrossSales > 0 && totalEstCostOfGoods !== null
+    ? ((totalGrossSales - totalEstCostOfGoods - totalCommissions) / totalGrossSales) * 100 : null;
 
-  const totalTransferSales = (sales || [])
-    .filter((s) => s.paymentMethod === 'transferencia' && s.timestamp.startsWith(today))
-    .reduce((sum, s) => sum + s.totalAmount, 0) +
-    todayShifts.reduce((sum, s) => sum + (s?.totalTransferSales || 0), 0);
+  // Las ventas ya están incorporadas a los totales de sus jornadas; no sumarlas dos veces.
+  const totalTransferSales = todayShifts.reduce((sum, s) => sum + (s?.totalTransferSales || 0), 0);
 
   // Recaudación y Unidades por Localidad / Playa Costera
   const localityStats = useMemo(() => {
@@ -215,11 +216,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ state, onNavigate 
             </div>
           </div>
           <div className="text-xl sm:text-2xl font-black text-white">
-            {(estGrossMargin ?? 0).toFixed(1)}%
+            {estGrossMargin === null ? 'Sin datos' : `${estGrossMargin.toFixed(1)}%`}
           </div>
           <div className="text-[11px] text-slate-400 mt-2 flex items-center justify-between">
             <span>Comisiones: ${totalCommissions.toLocaleString()}</span>
-            <span className="text-emerald-400">Rentable</span>
+            <span className={estGrossMargin === null ? 'text-amber-400' : estGrossMargin >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{estGrossMargin === null ? 'Costo real no disponible' : estGrossMargin >= 0 ? 'Margen positivo estimado' : 'Margen negativo estimado'}</span>
           </div>
         </div>
 
