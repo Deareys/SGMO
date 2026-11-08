@@ -116,6 +116,7 @@ export interface AppState {
   alerts: OperationalAlert[];
   auditLogs: AuditLog[];
   transfers: StockTransfer[];
+  centralStock: { varietyId: string; varietyName: string; quantity: number }[];
 }
 
 export interface CentralSnapshot extends Partial<FactoryState> {
@@ -127,6 +128,7 @@ export interface CentralSnapshot extends Partial<FactoryState> {
   carts: SellingCart[];
   zones: BeachZone[];
   systemConfig: SystemConfig;
+  centralStock?: { varietyId: string; varietyName: string; quantity: number }[];
 }
 
 export interface SaleSyncResult {
@@ -224,6 +226,7 @@ export class StorageService {
           return {
             ...parsed,
             ...collections,
+            centralStock: Array.isArray(parsed.centralStock) ? parsed.centralStock : [],
             currentUser: null, // La identidad se restaura exclusivamente contra el servidor.
             centralHydrated: false, // Una caché anterior no confirma la vigencia de esta carga.
             centralStatus: 'not_loaded',
@@ -289,7 +292,8 @@ export class StorageService {
       expenses: [],
       alerts: [],
       auditLogs: [],
-      transfers: []
+      transfers: [],
+      centralStock: []
     };
   }
 
@@ -393,6 +397,7 @@ export class StorageService {
       this.state.carts = snapshot.carts;
       this.state.zones = snapshot.zones;
       this.state.systemConfig = snapshot.systemConfig;
+      this.state.centralStock = Array.isArray(snapshot.centralStock) ? snapshot.centralStock : [];
       if (Array.isArray(snapshot.productionBatches)) {
         // Una única copia antes de adoptar fábrica central; nunca borrar lotes locales silenciosamente.
         if (!localStorage.getItem('SGMO_FACTORY_CENTRAL_V1') && !this.state.demoMode) {
