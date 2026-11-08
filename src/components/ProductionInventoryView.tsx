@@ -103,7 +103,7 @@ export const ProductionInventoryView: React.FC<ProductionInventoryViewProps> = (
 
   return (
     <div className="space-y-6 pb-12">
-      {operationError&&<p role="alert" className="sticky top-2 z-[100] rounded-xl border-2 border-rose-300 bg-rose-50 p-3 text-rose-900">{operationError}</p>}
+      {operationError && !showTransferModal && <p role="alert" className="sticky top-2 z-[100] rounded-xl border-2 border-rose-300 bg-rose-50 p-3 text-rose-900">{operationError}</p>}
       {state.currentUser?.role==='admin'&&storageService.hasLegacyFactoryData()&&<div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-slate-950">Hay existencias de fábrica anteriores en este dispositivo. Revisalas antes de sumarlas al inventario compartido. <button disabled={saving} className="underline font-bold" onClick={()=>{if(window.confirm('¿Confirmás que las existencias anteriores de este dispositivo son reales y todavía están en cámara? Los traslados anteriores no volverán a sumar stock en casas.'))void run(()=>storageService.importLegacyFactoryData());}}>Guardar existencias anteriores</button></div>}
       
       {!canManageProduction && (
@@ -151,13 +151,13 @@ export const ProductionInventoryView: React.FC<ProductionInventoryViewProps> = (
             <span>Registrar Lote Fabricado</span>
           </button>}
 
-          <button
+          {state.currentUser?.role !== 'factory_worker' && <button
             onClick={() => setShowTransferModal(true)}
             className="px-3.5 py-2 bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-sky-600/20 flex items-center space-x-1.5 transition-all"
           >
             <Truck className="w-4 h-4" />
             <span>Trasladar a Casas</span>
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -524,6 +524,7 @@ export const ProductionInventoryView: React.FC<ProductionInventoryViewProps> = (
               <button onClick={() => setShowTransferModal(false)} className="text-slate-400 hover:text-white">✕</button>
             </div>
 
+            {operationError && <p role="alert" className="rounded-lg border-2 border-rose-300 bg-rose-50 p-3 text-sm font-bold text-rose-900">{operationError}</p>}
             <form onSubmit={handleCreateTransfer} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">Casa de Destino</label>
@@ -536,6 +537,7 @@ export const ProductionInventoryView: React.FC<ProductionInventoryViewProps> = (
                     <option key={h.id} value={h.id}>{h.name}</option>
                   ))}
                 </select>
+                <p className="mt-1 text-xs text-slate-300">Capacidad disponible: {Math.max(0, (houses.find(house => house.id === (transferTargetHouseId || houses[0]?.id))?.freezerCapacityUnits || 0) - (houses.find(house => house.id === (transferTargetHouseId || houses[0]?.id))?.currentStock || []).reduce((sum, entry) => sum + entry.quantity, 0)).toLocaleString()} unidades</p>
               </div>
 
               <label className="block text-sm font-semibold">Origen
