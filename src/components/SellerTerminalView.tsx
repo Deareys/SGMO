@@ -2542,7 +2542,7 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
                     Reporte de Estado de Playa
                   </h3>
                   <span className="text-[11px] text-sky-800 font-bold">
-                    Costa Atlántica • Información en Tiempo Real
+                    Costa Atlántica • Registro local, sin sincronización automática
                   </span>
                 </div>
               </div>
@@ -2559,10 +2559,11 @@ export const SellerTerminalView: React.FC<SellerTerminalViewProps> = ({ state, o
               <div className="p-4 bg-emerald-50 border-2 border-emerald-300 rounded-xl text-center space-y-2 text-emerald-900">
                 <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-700" />
                 <p className="font-black text-sm">{beachReportSuccessMsg}</p>
-                <p className="text-xs text-slate-600">Actualizando radar operativo...</p>
+                <p className="text-xs text-slate-600">Registro local: avisá a coordinación por el canal habitual.</p>
               </div>
             ) : (
               <form onSubmit={handleConfirmBeachReport} className="space-y-4">
+                <p role="status" className="rounded-lg border-2 border-amber-300 bg-amber-50 p-3 text-xs font-bold text-amber-950">Este reporte sólo se guarda en tu dispositivo; no aparecerá en las otras cuentas. Comunicá cualquier novedad urgente directamente a coordinación.</p>
                 {/* 1. Localidad y Sector */}
                 <div className="space-y-2">
                   <label className="block text-xs font-black uppercase tracking-wider text-slate-800">
