@@ -107,8 +107,9 @@ const catalogFields: Record<string, string[]> = {
 };
 export class ProductionRepository {
   /** Una lectura MVCC para cámara y stock de casas: no mezclar lados de un traslado. */
-  async snapshot(includeFactory = true): Promise<{
+  async snapshot(includeFactory = true, includeCoordinatorInventory = false): Promise<{
     factory: FactoryState;
+    centralStock: Array<{ varietyId: string; varietyName: string; quantity: number }>;
     houseStock: Array<{
       houseId: string;
       varietyId: string;
@@ -116,14 +117,36 @@ export class ProductionRepository {
       quantity: number;
     }>;
   }> {
+    // El coordinador necesita existencias y traslados, no recetas, materias primas ni costos.
+    // Derivar el resumen en el servidor evita exponer el documento privado completo.
+    const includeProductionPayload = includeFactory || includeCoordinatorInventory;
     const r = await query(
-      `SELECT ${includeFactory ? "f.payload" : "'{}'::jsonb"} AS payload,COALESCE((SELECT jsonb_agg(jsonb_build_object('houseId',s.house_id,'varietyId',s.variety_id,'varietyName',v.name,'quantity',s.units)) FROM house_stock s JOIN product_varieties v ON v.id=s.variety_id),'[]'::jsonb) AS stock FROM factory_state f WHERE f.id=1`,
+      `SELECT ${includeProductionPayload ? "f.payload" : "'{}'::jsonb"} AS payload,COALESCE((SELECT jsonb_agg(jsonb_build_object('houseId',s.house_id,'varietyId',s.variety_id,'varietyName',v.name,'quantity',s.units)) FROM house_stock s JOIN product_varieties v ON v.id=s.variety_id),'[]'::jsonb) AS stock FROM factory_state f WHERE f.id=1`,
     );
     if (!r.rows[0]) throw new Error("Falta el esquema de producción.");
+    const persistedFactory = { ...emptyFactoryState(), ...r.rows[0].payload } as FactoryState;
+    const centralByVariety = new Map<string, { varietyId: string; varietyName: string; quantity: number }>();
+    if (includeProductionPayload) {
+      for (const batch of persistedFactory.productionBatches) {
+        const current = centralByVariety.get(batch.varietyId);
+        if (current) current.quantity += batch.remainingUnitsInCentral;
+        else centralByVariety.set(batch.varietyId, {
+          varietyId: batch.varietyId, varietyName: batch.varietyName,
+          quantity: batch.remainingUnitsInCentral,
+        });
+      }
+    }
     return {
-      factory: includeFactory
-        ? { ...emptyFactoryState(), ...r.rows[0].payload }
-        : emptyFactoryState(),
+      factory: includeFactory ? persistedFactory : {
+        ...emptyFactoryState(),
+        transfers: includeCoordinatorInventory ? persistedFactory.transfers.map((transfer) => ({
+          id: transfer.id, date: transfer.date, fromLocation: transfer.fromLocation,
+          toHouseId: transfer.toHouseId, toHouseName: transfer.toHouseName,
+          transferredBy: transfer.transferredBy, status: transfer.status,
+          items: transfer.items.map(({ varietyId, varietyName, quantity }) => ({ varietyId, varietyName, quantity })),
+        })) : [],
+      },
+      centralStock: [...centralByVariety.values()].sort((a, b) => a.varietyName.localeCompare(b.varietyName)),
       houseStock: r.rows[0].stock,
     };
   }
