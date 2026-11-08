@@ -69,7 +69,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ state, onNavigate 
   const suspiciousVouchers = (sales || []).filter((s) => s.paymentMethod === 'mercado_pago' && s.validationStatus === 'sospechosa').length;
 
   // Stock total en frío
-  const totalCentralStock = (productionBatches || []).reduce((sum, b) => sum + (b?.remainingUnitsInCentral || 0), 0);
+  const totalCentralStock = (state.centralStock || []).reduce((sum, stock) => sum + stock.quantity, 0);
   const totalHousesStock = (houses || []).reduce(
     (sum, h) => sum + (h?.currentStock || []).reduce((sSum, item) => sSum + (item?.quantity || 0), 0),
     0
