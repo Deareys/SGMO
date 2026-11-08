@@ -1976,7 +1976,13 @@ export class StorageService {
       expenses: INITIAL_EXPENSES,
       alerts: INITIAL_ALERTS,
       auditLogs: INITIAL_AUDIT_LOGS,
-      transfers: INITIAL_TRANSFERS
+      transfers: INITIAL_TRANSFERS,
+      centralStock: INITIAL_PRODUCTION_BATCHES.reduce<{ varietyId: string; varietyName: string; quantity: number }[]>((summary, batch) => {
+        const existing = summary.find(row => row.varietyId === batch.varietyId);
+        if (existing) existing.quantity += batch.remainingUnitsInCentral;
+        else summary.push({ varietyId: batch.varietyId, varietyName: batch.varietyName, quantity: batch.remainingUnitsInCentral });
+        return summary;
+      }, [])
     };
     if (typeof window !== 'undefined') {
       localStorage.removeItem(STORAGE_KEY);
