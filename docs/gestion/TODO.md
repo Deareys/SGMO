@@ -1,3 +1,17 @@
+# Auditoría transversal — 8/11/2026
+
+Informe vigente: [AUDITORIA_TRANSVERSAL_2026_11_08.md](AUDITORIA_TRANSVERSAL_2026_11_08.md).
+
+- [x] Reparar visibilidad de stock central entre administración/coordinación y desplegar PR #3 (commit `b266136`).
+- [x] Comprobar Neon production: 26 tablas, 12 migraciones, 1 lote de 25.000 unidades y 0 traslados confirmados, sin anomalías de integridad observadas.
+- [ ] Verificar HTTP `/api/health`, `/api/db/status` y sesiones reales en Production; la conexión Vercel del equipo exige autorización.
+- [ ] Centralizar `cart_incidents`, `operational_expenses`, reportes de playa y temporadas; actualmente las acciones de UI son locales.
+- [ ] Optimizar bootstrap por rol/cursor para no descargar todas las ventas y jornadas cada 30 segundos.
+- [ ] Auditar uso de `motion` y lockfiles; ejecutar escaneo de vulnerabilidades NPM y medir bundle con CI antes de eliminar dependencias.
+- [ ] Ensayar dos teléfonos, corte de conexión, proveedores MP/Gemini y cierre contable completo con datos de ensayo.
+
+---
+
 # Corrección de stock — 31/10/2026
 
 - [x] Diagnóstico: fábrica/traslados locales, catálogo fijo y casa obligatoria en carritos.
