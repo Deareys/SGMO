@@ -210,7 +210,7 @@ export const ProductionInventoryView: React.FC<ProductionInventoryViewProps> = (
       </div>}
 
       {/* 2. Lotes de Producción y Costo Unitario Real */}
-      {canManageProduction &&       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+      {canManageProduction && <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-2">
             <Factory className="w-5 h-5 text-amber-400" />
