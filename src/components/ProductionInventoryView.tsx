@@ -103,7 +103,7 @@ export const ProductionInventoryView: React.FC<ProductionInventoryViewProps> = (
 
   return (
     <div className="space-y-6 pb-12">
-      {operationError&&<p role="alert" className="sticky top-2 z-[100] rounded-xl border-2 border-rose-300 bg-rose-50 p-3 text-rose-900">{operationError}</p>}
+      {operationError && !showTransferModal && <p role="alert" className="sticky top-2 z-[100] rounded-xl border-2 border-rose-300 bg-rose-50 p-3 text-rose-900">{operationError}</p>}
       {state.currentUser?.role==='admin'&&storageService.hasLegacyFactoryData()&&<div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-slate-950">Hay existencias de fábrica anteriores en este dispositivo. Revisalas antes de sumarlas al inventario compartido. <button disabled={saving} className="underline font-bold" onClick={()=>{if(window.confirm('¿Confirmás que las existencias anteriores de este dispositivo son reales y todavía están en cámara? Los traslados anteriores no volverán a sumar stock en casas.'))void run(()=>storageService.importLegacyFactoryData());}}>Guardar existencias anteriores</button></div>}
       
       {!canManageProduction && (
